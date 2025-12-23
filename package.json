@@ -1,0 +1,101 @@
+{
+  "name": "karate-dsl-generator",
+  "displayName": "Karate DSL Test Generator",
+  "description": "Generate Karate DSL tests from OpenAPI specifications and Confluence documentation",
+  "version": "0.1.0",
+  "publisher": "karate-tools",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Testing",
+    "Other"
+  ],
+  "keywords": [
+    "karate",
+    "api testing",
+    "openapi",
+    "swagger",
+    "confluence",
+    "test generation"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "karate-dsl.generateFromOpenAPI",
+        "title": "Karate: Generate Tests from OpenAPI"
+      },
+      {
+        "command": "karate-dsl.generateFromConfluence",
+        "title": "Karate: Generate Tests from Confluence"
+      },
+      {
+        "command": "karate-dsl.generateCombined",
+        "title": "Karate: Generate Combined Tests"
+      }
+    ],
+    "configuration": {
+      "title": "Karate DSL Generator",
+      "properties": {
+        "karateDsl.outputPath": {
+          "type": "string",
+          "default": "src/test/karate",
+          "description": "Default output path for generated Karate feature files"
+        },
+        "karateDsl.confluence.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Confluence base URL (e.g., https://yourcompany.atlassian.net/wiki)"
+        },
+        "karateDsl.confluence.email": {
+          "type": "string",
+          "default": "",
+          "description": "Confluence user email for authentication"
+        },
+        "karateDsl.testTemplate": {
+          "type": "string",
+          "enum": [
+            "standard",
+            "detailed",
+            "minimal"
+          ],
+          "default": "standard",
+          "description": "Test generation template style"
+        },
+        "karateDsl.useCopilot": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use GitHub Copilot to enhance generated tests (requires GitHub Copilot subscription)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.56.0",
+    "mocha": "^10.2.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@scalar/openapi-parser": "^0.7.0",
+    "axios": "^1.6.2",
+    "js-yaml": "^4.1.0"
+  }
+}
