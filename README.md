@@ -254,10 +254,10 @@ MIT License - see LICENSE file for details
 
 ## Support
 
-- Report issues: [GitHub Issues](https://github.com/yourusername/karate-dsl-generator/issues)
-- Documentation: [Wiki](https://github.com/yourusername/karate-dsl-generator/wiki)
-- Copilot Integration: [Copilot Guide](docs/COPILOT_GUIDE.md)
-- Privacy & Data Sharing: [Privacy Policy](docs/PRIVACY.md)
+- Report issues: GitHub Issues
+- Documentation: See included documentation files
+- **Copilot Integration**: See COPILOT_GUIDE.md in the docs folder
+- **Privacy & Data Sharing**: See PRIVACY.md in the docs folder
 
 ## Roadmap
 

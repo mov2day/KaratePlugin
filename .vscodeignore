@@ -1,9 +1,12 @@
-out
-node_modules
-.vscode-test
-src
+.vscode-test/**
+.vscode/**
+src/**
 .gitignore
 tsconfig.json
 .eslintrc.json
 **/*.map
 **/*.ts
+!out/**/*.js
+node_modules/**
+.DS_Store
+*.vsix
