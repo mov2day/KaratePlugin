@@ -1,5 +1,4 @@
-import { validate } from '@scalar/openapi-parser';
-import * as yaml from 'js-yaml';
+import SwaggerParser from '@apidevtools/swagger-parser';
 import * as fs from 'fs';
 import { OpenAPIEndpoint } from '../types';
 import { logger } from '../utils/logger';
@@ -12,22 +11,14 @@ export class OpenAPIParser {
         try {
             logger.info(`Parsing OpenAPI spec: ${filePath}`);
 
-            const fileContent = fs.readFileSync(filePath, 'utf-8');
+            // Parse and validate the OpenAPI spec
+            const api = await SwaggerParser.validate(filePath) as any;
 
-            // Parse the OpenAPI spec
-            const result = await validate(fileContent);
-
-            if (!result.valid) {
-                const errors = result.errors?.map((e: any) => e.message).join(', ') || 'Unknown error';
-                throw new Error(`Invalid OpenAPI specification: ${errors}`);
-            }
-
-            const spec = result.schema;
             const endpoints: OpenAPIEndpoint[] = [];
 
             // Extract endpoints from paths
-            if (spec && spec.paths) {
-                for (const [path, pathItem] of Object.entries(spec.paths)) {
+            if (api && api.paths) {
+                for (const [path, pathItem] of Object.entries(api.paths)) {
                     const methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head'];
 
                     for (const method of methods) {

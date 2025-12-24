@@ -2,11 +2,21 @@ import * as vscode from 'vscode';
 import { generateFromOpenAPI } from './commands/generateFromOpenAPI';
 import { generateFromConfluence } from './commands/generateFromConfluence';
 import { generateCombined } from './commands/generateCombined';
+import { KarateWebviewProvider } from './webview/WebviewProvider';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Karate DSL Generator extension is now active');
 
-    // Register commands
+    // Register webview provider
+    const webviewProvider = new KarateWebviewProvider(context.extensionUri, context);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(
+            KarateWebviewProvider.viewType,
+            webviewProvider
+        )
+    );
+
+    // Register commands (keep for backward compatibility)
     const openApiCommand = vscode.commands.registerCommand(
         'karate-dsl.generateFromOpenAPI',
         () => generateFromOpenAPI(context)
@@ -22,9 +32,15 @@ export function activate(context: vscode.ExtensionContext) {
         () => generateCombined(context)
     );
 
-    context.subscriptions.push(openApiCommand, confluenceCommand, combinedCommand);
+    // Command to open webview panel
+    const openPanelCommand = vscode.commands.registerCommand(
+        'karate-dsl.openPanel',
+        () => {
+            vscode.commands.executeCommand('karateGenerator.webview.focus');
+        }
+    );
+
+    context.subscriptions.push(openApiCommand, confluenceCommand, combinedCommand, openPanelCommand);
 }
 
-export function deactivate() {
-    console.log('Karate DSL Generator extension is now deactivated');
-}
+export function deactivate() { }

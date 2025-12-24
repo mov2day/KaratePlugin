@@ -33,8 +33,21 @@
       {
         "command": "karate-dsl.generateCombined",
         "title": "Karate: Generate Combined Tests"
+      },
+      {
+        "command": "karate-dsl.openPanel",
+        "title": "Karate: Open Test Generator"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "type": "webview",
+          "id": "karateGenerator.webview",
+          "name": "Karate Test Generator"
+        }
+      ]
+    },
     "configuration": {
       "title": "Karate DSL Generator",
       "properties": {
@@ -94,8 +107,9 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@scalar/openapi-parser": "^0.7.0",
+    "@apidevtools/swagger-parser": "^12.1.0",
     "axios": "^1.6.2",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "swagger-parser": "^10.0.3"
   }
 }

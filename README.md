@@ -2,7 +2,42 @@
 
 A powerful VS Code extension that automatically generates Karate DSL test files from OpenAPI specifications and Confluence documentation.
 
+## User Interface
+
+The extension provides two ways to generate Karate tests:
+
+### 1. Webview Panel UI (Recommended)
+
+A modern, visual interface in the VS Code sidebar:
+
+1. **Open the panel:**
+   - Click the "Karate Test Generator" view in the Explorer sidebar
+   - Or run command: `Karate: Open Test Generator`
+
+2. **Use the tabbed interface:**
+   - **OpenAPI Tab**: Select an OpenAPI spec file and generate tests
+   - **Confluence Tab**: Enter a Confluence page URL/ID and generate tests
+   - **Combined Tab**: Merge both sources into comprehensive tests
+   - **Settings Tab**: Configure output paths, Copilot, and Confluence credentials
+
+3. **Features:**
+   - 📁 Visual file picker
+   - ⚙️ Easy configuration management
+   - 📊 Real-time progress tracking
+   - 👁️ Preview generated tests
+   - 🎨 Theme-aware design (light/dark mode)
+   - ✅ Success/error notifications
+
+### 2. Command Palette (Alternative)
+
+Traditional command-based workflow:
+
+- `Karate: Generate Tests from OpenAPI`
+- `Karate: Generate Tests from Confluence`
+- `Karate: Generate Combined Tests`
+
 ## Features
+
 
 ### 🚀 Generate from OpenAPI Specification
 - Parse OpenAPI 2.0, 3.0, and 3.1 specifications
