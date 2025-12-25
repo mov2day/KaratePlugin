@@ -2,8 +2,8 @@
   "name": "karate-dsl-generator",
   "displayName": "Karate DSL Test Generator",
   "description": "Generate Karate DSL tests from OpenAPI specifications and Confluence documentation",
-  "version": "0.1.0",
-  "publisher": "karate-tools",
+  "version": "1.0.0",
+  "publisher": "MuthuKumarKoodalingam",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -21,7 +21,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/muthu/KaratePlugin.git"
+    "url": "https://github.com/mov2day/KaratePlugin.git"
   },
   "main": "./out/extension.js",
   "contributes": {
