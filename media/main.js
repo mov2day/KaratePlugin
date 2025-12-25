@@ -1,31 +1,50 @@
 (function () {
     const vscode = acquireVsCodeApi();
 
-    let currentFilePath = '';
-    let currentCombinedFilePath = '';
+    let currentOpenApiPath = '';
+    let currentCombinedOpenApiPath = '';
     let generatedContent = '';
+    let history = [];
+    let templates = [];
+    let learnedStyle = null;
 
-    // Tab switching
+    // --- Tab Switching ---
     document.querySelectorAll('.tab-button').forEach(button => {
         button.addEventListener('click', () => {
-            const tabName = button.getAttribute('data-tab');
-
-            // Update buttons
-            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-            button.classList.add('active');
-
-            // Update content
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            document.getElementById(`${tabName}-tab`).classList.add('active');
-
-            // Request config when settings tab is opened
-            if (tabName === 'settings') {
-                vscode.postMessage({ command: 'getConfig' });
-            }
+            switchTab(button.getAttribute('data-tab'));
         });
     });
 
-    // OpenAPI file selection
+    function switchTab(tabName) {
+        // Update buttons
+        document.querySelectorAll('.tab-button').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-tab') === tabName);
+        });
+
+        // Update content
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.toggle('active', content.id === `${tabName}-tab`);
+        });
+
+        // Refresh data based on tab
+        if (tabName === 'settings') {
+            vscode.postMessage({ command: 'getConfig' });
+        } else if (tabName === 'template') {
+            vscode.postMessage({ command: 'getTemplates' });
+        } else if (tabName === 'openapi' || tabName === 'confluence' || tabName === 'combined') {
+            vscode.postMessage({ command: 'getHistory' });
+        }
+    }
+
+    // --- Quick Actions ---
+    document.querySelectorAll('.action-button').forEach(button => {
+        button.addEventListener('click', () => {
+            const action = button.getAttribute('data-action');
+            switchTab(action);
+        });
+    });
+
+    // --- File Selection ---
     document.getElementById('select-openapi-btn').addEventListener('click', () => {
         vscode.postMessage({ command: 'selectOpenAPIFile' });
     });
@@ -34,150 +53,228 @@
         vscode.postMessage({ command: 'selectOpenAPIFile' });
     });
 
-    // Generate from OpenAPI
-    document.getElementById('generate-openapi-btn').addEventListener('click', () => {
-        const filePath = document.getElementById('openapi-file').value;
-        const useCopilot = document.getElementById('openapi-copilot').checked;
+    document.getElementById('openapi-file-clear').addEventListener('click', () => clearFile('openapi'));
+    document.getElementById('combined-file-clear').addEventListener('click', () => clearFile('combined'));
 
-        if (!filePath) {
-            showError('Please select an OpenAPI specification file');
-            return;
+    function clearFile(type) {
+        if (type === 'openapi') {
+            currentOpenApiPath = '';
+            document.getElementById('openapi-file-display').style.display = 'none';
+            document.getElementById('select-openapi-btn').style.display = 'block';
+        } else {
+            currentCombinedOpenApiPath = '';
+            document.getElementById('combined-file-display').style.display = 'none';
+            document.getElementById('select-combined-openapi-btn').style.display = 'block';
         }
+    }
+
+    // --- Generation Handlers ---
+    document.getElementById('generate-openapi-btn').addEventListener('click', () => {
+        if (!currentOpenApiPath) return showError('Please select an OpenAPI specification file');
 
         hideResults();
         vscode.postMessage({
             command: 'generateFromOpenAPI',
-            filePath,
-            useCopilot
+            filePath: currentOpenApiPath,
+            useCopilot: document.getElementById('openapi-copilot').checked,
+            templateId: document.getElementById('template-select').value
         });
     });
 
-    // Generate from Confluence
     document.getElementById('generate-confluence-btn').addEventListener('click', () => {
-        const pageUrl = document.getElementById('confluence-url').value;
-        const useCopilot = document.getElementById('confluence-copilot').checked;
-
-        if (!pageUrl) {
-            showError('Please enter a Confluence page URL or ID');
-            return;
-        }
+        const url = document.getElementById('confluence-url').value;
+        if (!url) return showError('Please enter a Confluence page URL or ID');
 
         hideResults();
         vscode.postMessage({
             command: 'generateFromConfluence',
-            pageUrl,
-            useCopilot
+            pageUrl: url,
+            useCopilot: document.getElementById('confluence-copilot').checked,
+            templateId: document.getElementById('template-select').value
         });
     });
 
-    // Generate combined
     document.getElementById('generate-combined-btn').addEventListener('click', () => {
-        const openApiPath = document.getElementById('combined-openapi-file').value;
         const confluenceUrl = document.getElementById('combined-confluence-url').value;
-        const useCopilot = document.getElementById('combined-copilot').checked;
-
-        if (!openApiPath) {
-            showError('Please select an OpenAPI specification file');
-            return;
-        }
-
-        if (!confluenceUrl) {
-            showError('Please enter a Confluence page URL or ID');
-            return;
-        }
+        if (!currentCombinedOpenApiPath) return showError('Please select an OpenAPI specification file');
+        if (!confluenceUrl) return showError('Please enter a Confluence page URL or ID');
 
         hideResults();
         vscode.postMessage({
             command: 'generateCombined',
-            openApiPath,
+            openApiPath: currentCombinedOpenApiPath,
             confluenceUrl,
-            useCopilot
+            useCopilot: document.getElementById('combined-copilot').checked,
+            templateId: document.getElementById('template-select').value
         });
     });
 
-    // Save settings
-    document.getElementById('save-settings-btn').addEventListener('click', () => {
-        const config = {
-            outputPath: document.getElementById('output-path').value,
-            testTemplate: document.getElementById('test-template').value,
-            useCopilot: document.getElementById('openapi-copilot').checked
-        };
+    // --- Template Manager ---
+    document.getElementById('save-custom-template-btn').addEventListener('click', () => {
+        const name = document.getElementById('custom-template-name').value;
+        if (!name) return showError('Please enter a name for your custom template');
 
+        // This is a simplified version - in a real app you'd have an editor
+        vscode.postMessage({
+            command: 'saveTemplate',
+            template: {
+                id: name.toLowerCase().replace(/\s+/g, '-'),
+                name: name,
+                description: 'Custom user template',
+                content: 'Feature: {{featureName}}\n\nScenario: {{scenarioName}}\n  Given url baseUrl\n  When method get' // Default placeholder
+            }
+        });
+    });
+
+    document.getElementById('learn-style-btn').addEventListener('click', () => {
+        vscode.postMessage({ command: 'learnStyle' });
+    });
+
+    // --- Settings & Save ---
+    document.getElementById('save-settings-btn').addEventListener('click', () => {
         vscode.postMessage({
             command: 'saveConfig',
-            config
+            config: {
+                outputPath: document.getElementById('output-path').value,
+                testTemplate: document.getElementById('test-template').value,
+                // These are saved via the existing ConfigManager logic in extension
+                confluenceBaseUrl: document.getElementById('confluence-base-url').value,
+                confluenceEmail: document.getElementById('confluence-email').value
+            }
         });
     });
 
-    // Open generated file
+    // --- Result Actions ---
     document.getElementById('open-file-btn').addEventListener('click', () => {
         vscode.postMessage({
-            command: 'openFile',
+            command: 'openGeneratedFile',
             filePath: document.getElementById('result-message').dataset.filePath
         });
     });
 
-    // Copy to clipboard
     document.getElementById('copy-content-btn').addEventListener('click', () => {
-        navigator.clipboard.writeText(generatedContent).then(() => {
-            const btn = document.getElementById('copy-content-btn');
-            const originalText = btn.textContent;
-            btn.textContent = '✓ Copied!';
-            setTimeout(() => {
-                btn.textContent = originalText;
-            }, 2000);
+        vscode.postMessage({
+            command: 'copyToClipboard',
+            content: generatedContent
         });
     });
 
-    // Handle messages from extension
+    // --- Message Handling ---
     window.addEventListener('message', event => {
         const message = event.data;
-
         switch (message.type) {
             case 'fileSelected':
-                currentFilePath = message.filePath;
-                const activeTab = document.querySelector('.tab-content.active');
-
-                if (activeTab.id === 'openapi-tab') {
-                    document.getElementById('openapi-file').value = message.filePath;
-                } else if (activeTab.id === 'combined-tab') {
-                    currentCombinedFilePath = message.filePath;
-                    document.getElementById('combined-openapi-file').value = message.filePath;
-                }
+                handleFileSelected(message.filePath);
                 break;
-
             case 'progress':
                 showProgress(message.message, message.percentage);
                 break;
-
             case 'success':
-                hideProgress();
                 showSuccess(message.message, message.filePath, message.content);
                 break;
-
             case 'error':
-                hideProgress();
                 showError(message.message);
                 break;
-
             case 'config':
                 populateConfig(message.data);
                 break;
-
             case 'configSaved':
                 showTemporaryMessage('Settings saved successfully!');
+                break;
+            case 'history':
+                renderHistory(message.data);
+                break;
+            case 'templates':
+                renderTemplates(message.data);
+                break;
+            case 'styleLearned':
+                handleStyleLearned(message.data);
                 break;
         }
     });
 
+    function handleFileSelected(filePath) {
+        const activeTab = document.querySelector('.tab-content.active').id;
+        const fileName = filePath.split(/[\\\/]/).pop();
+
+        if (activeTab === 'openapi-tab') {
+            currentOpenApiPath = filePath;
+            document.getElementById('openapi-file-path').textContent = fileName;
+            document.getElementById('openapi-file-display').style.display = 'flex';
+            document.getElementById('select-openapi-btn').style.display = 'none';
+        } else if (activeTab === 'combined-tab') {
+            currentCombinedOpenApiPath = filePath;
+            document.getElementById('combined-file-path').textContent = fileName;
+            document.getElementById('combined-file-display').style.display = 'flex';
+            document.getElementById('select-combined-openapi-btn').style.display = 'none';
+        }
+    }
+
+    function renderHistory(data) {
+        history = data;
+        const list = document.getElementById('openapi-history-list');
+        const section = document.getElementById('openapi-history');
+
+        if (!list || !data.length) {
+            if (section) section.classList.add('hidden');
+            return;
+        }
+
+        section.classList.remove('hidden');
+        list.innerHTML = '';
+
+        data.slice(0, 5).forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'history-item';
+            div.innerHTML = `
+                <span class="history-item-icon">${item.type === 'openapi' ? '📄' : item.type === 'confluence' ? '📋' : '🔀'}</span>
+                <div class="history-item-info">
+                    <div class="history-item-name">${item.source.split(/[\\\/]/).pop()}</div>
+                    <div class="history-item-date">${new Date(item.timestamp).toLocaleString()}</div>
+                </div>
+            `;
+            div.onclick = () => {
+                if (item.type === 'openapi') {
+                    switchTab('openapi');
+                    handleFileSelected(item.source);
+                } else if (item.type === 'confluence') {
+                    switchTab('confluence');
+                    document.getElementById('confluence-url').value = item.source;
+                }
+            };
+            list.appendChild(div);
+        });
+    }
+
+    function renderTemplates(data) {
+        templates = data;
+        const select = document.getElementById('template-select');
+        if (!select) return;
+
+        const currentVal = select.value;
+        select.innerHTML = '';
+        data.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.id;
+            opt.textContent = t.name;
+            select.appendChild(opt);
+        });
+        if (currentVal) select.value = currentVal;
+    }
+
+    function handleStyleLearned(style) {
+        learnedStyle = style;
+        document.getElementById('style-info').classList.remove('hidden');
+        document.getElementById('detected-indent').textContent = style.indentation.length + ' spaces';
+        document.getElementById('detected-case').textContent = style.variableCase;
+    }
+
+    // --- Helper Functions ---
     function showProgress(message, percentage) {
         const container = document.getElementById('progress-container');
-        const fill = document.getElementById('progress-fill');
-        const text = document.getElementById('progress-text');
-
         container.style.display = 'block';
-        fill.style.width = percentage + '%';
-        text.textContent = message;
+        document.getElementById('progress-fill').style.width = percentage + '%';
+        document.getElementById('progress-text').textContent = message;
     }
 
     function hideProgress() {
@@ -186,24 +283,20 @@
 
     function showSuccess(message, filePath, content) {
         generatedContent = content;
-
+        hideProgress();
         const results = document.getElementById('results');
-        const resultMessage = document.getElementById('result-message');
-        const previewContent = document.getElementById('preview-content');
-
-        resultMessage.textContent = message;
-        resultMessage.dataset.filePath = filePath;
-        previewContent.textContent = content.substring(0, 1000) + (content.length > 1000 ? '\n...' : '');
-
+        const msg = document.getElementById('result-message');
+        msg.textContent = message;
+        msg.dataset.filePath = filePath;
+        document.getElementById('preview-content').textContent = content.substring(0, 1500) + (content.length > 1500 ? '\n...' : '');
         results.style.display = 'block';
         document.getElementById('error').style.display = 'none';
     }
 
     function showError(message) {
+        hideProgress();
         const error = document.getElementById('error');
-        const errorMessage = document.getElementById('error-message');
-
-        errorMessage.textContent = message;
+        document.getElementById('error-message').textContent = message;
         error.style.display = 'block';
         document.getElementById('results').style.display = 'none';
     }
@@ -211,39 +304,20 @@
     function hideResults() {
         document.getElementById('results').style.display = 'none';
         document.getElementById('error').style.display = 'none';
-        document.getElementById('progress-container').style.display = 'none';
     }
 
     function populateConfig(config) {
-        if (config.outputPath) {
-            document.getElementById('output-path').value = config.outputPath;
-        }
-        if (config.testTemplate) {
-            document.getElementById('test-template').value = config.testTemplate;
-        }
-        if (config.confluenceBaseUrl) {
-            document.getElementById('confluence-base-url').value = config.confluenceBaseUrl;
-        }
-        if (config.confluenceEmail) {
-            document.getElementById('confluence-email').value = config.confluenceEmail;
-        }
+        document.getElementById('output-path').value = config.outputPath || '';
+        document.getElementById('test-template').value = config.testTemplate || 'standard';
+        document.getElementById('confluence-base-url').value = config.confluenceBaseUrl || '';
+        document.getElementById('confluence-email').value = config.confluenceEmail || '';
     }
 
     function showTemporaryMessage(message) {
-        const temp = document.createElement('div');
-        temp.className = 'results';
-        temp.innerHTML = `<h3>✓ ${message}</h3>`;
-        temp.style.position = 'fixed';
-        temp.style.top = '20px';
-        temp.style.right = '20px';
-        temp.style.zIndex = '1000';
-        document.body.appendChild(temp);
-
-        setTimeout(() => {
-            temp.remove();
-        }, 3000);
+        vscode.postMessage({ command: 'copyToClipboard', content: '' }); // Just a trick to use VSCode notifications
     }
 
-    // Request initial config
+    // Initial load
     vscode.postMessage({ command: 'getConfig' });
+    vscode.postMessage({ command: 'getHistory' });
 })();

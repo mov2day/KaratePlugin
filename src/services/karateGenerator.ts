@@ -4,9 +4,23 @@ import { OpenAPIParser } from './openApiParser';
 
 export class KarateGenerator {
     private openApiParser: OpenAPIParser;
+    private style: any = {
+        indentation: '  ',
+        variableCase: 'camelCase',
+        lineSpacing: 1
+    };
+    private template: string | null = null;
 
     constructor() {
         this.openApiParser = new OpenAPIParser();
+    }
+
+    public setStyle(style: any) {
+        this.style = { ...this.style, ...style };
+    }
+
+    public setTemplate(template: string) {
+        this.template = template;
     }
 
     /**
@@ -136,6 +150,10 @@ export class KarateGenerator {
      * Convert Karate feature to .feature file content
      */
     featureToString(feature: KarateFeature): string {
+        if (this.template) {
+            return this.applyTemplate(feature);
+        }
+
         const lines: string[] = [];
 
         // Feature declaration
@@ -178,10 +196,41 @@ export class KarateGenerator {
     }
 
     /**
+     * Apply custom template to the feature
+     */
+    private applyTemplate(feature: KarateFeature): string {
+        if (!this.template) return '';
+
+        let content = this.template
+            .replace('{{featureName}}', feature.name)
+            .replace('{{featureDescription}}', feature.description || '')
+            .replace('{{backgroundSteps}}', feature.background ? feature.background.steps.map(s => this.stepToString(s, 4)).join('\n') : '')
+            .replace('{{scenarios}}', feature.scenarios.map(s => this.scenarioToString(s)).join('\n\n'));
+
+        return content;
+    }
+
+    private scenarioToString(scenario: KarateScenario): string {
+        const lines: string[] = [];
+        if (scenario.tags && scenario.tags.length > 0) {
+            lines.push(`  @${scenario.tags.join(' @')}`);
+        }
+        lines.push(`  Scenario: ${scenario.name}`);
+        if (scenario.description) {
+            lines.push(`    # ${scenario.description}`);
+        }
+        for (const step of scenario.steps) {
+            lines.push(this.stepToString(step, 4));
+        }
+        return lines.join('\n');
+    }
+
+    /**
      * Convert a step to string
      */
     private stepToString(step: KarateStep, indent: number): string {
-        const spaces = ' '.repeat(indent);
+        const indentation = this.style.indentation || '  ';
+        const spaces = indentation.repeat(Math.floor(indent / 2)); // Adjust based on base indent
         let line = `${spaces}${step.keyword} ${step.text}`;
 
         if (step.docString) {
@@ -204,9 +253,10 @@ export class KarateGenerator {
     generateBackground(baseUrl?: string): KarateFeature['background'] {
         const steps: KarateStep[] = [];
 
+        const varName = this.style.variableCase === 'snake_case' ? 'base_url' : 'baseUrl';
         steps.push({
             keyword: 'Given',
-            text: `def baseUrl = '${baseUrl || 'http://localhost:8080'}'`
+            text: `def ${varName} = '${baseUrl || 'http://localhost:8080'}'`
         });
 
         const template = ConfigManager.getTestTemplate();

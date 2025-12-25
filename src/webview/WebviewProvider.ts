@@ -9,10 +9,15 @@ import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
-    public static readonly viewType = 'karateGenerator.webview';
+    public static readonly viewType = 'karateGenerator.mainView';
     private _view?: vscode.WebviewView;
+    private _historyManager: any;
+    private _templateManager: any;
+    private _learnedStyle: any = null;
 
-    constructor(private readonly _extensionUri: vscode.Uri, private readonly _context: vscode.ExtensionContext) { }
+    constructor(private readonly _extensionUri: vscode.Uri, private readonly _context: vscode.ExtensionContext) {
+        // We'll import these dynamically or initialize them here if types are available
+    }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -28,6 +33,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
+        // Initialize managers
+        const { HistoryManager } = require('../services/historyManager');
+        const { TemplateManager } = require('../services/templateManager');
+        this._historyManager = new HistoryManager(this._context);
+        this._templateManager = new TemplateManager(this._context);
+
         // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.command) {
@@ -35,19 +46,37 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     await this.handleSelectOpenAPIFile();
                     break;
                 case 'generateFromOpenAPI':
-                    await this.handleGenerateFromOpenAPI(data.filePath, data.useCopilot);
+                    await this.handleGenerateFromOpenAPI(data.filePath, data.useCopilot, data.templateId);
                     break;
                 case 'generateFromConfluence':
-                    await this.handleGenerateFromConfluence(data.pageUrl, data.useCopilot);
+                    await this.handleGenerateFromConfluence(data.pageUrl, data.useCopilot, data.templateId);
                     break;
                 case 'generateCombined':
-                    await this.handleGenerateCombined(data.openApiPath, data.confluenceUrl, data.useCopilot);
+                    await this.handleGenerateCombined(data.openApiPath, data.confluenceUrl, data.useCopilot, data.templateId);
                     break;
                 case 'getConfig':
                     await this.sendConfig();
                     break;
                 case 'saveConfig':
                     await this.handleSaveConfig(data.config);
+                    break;
+                case 'getHistory':
+                    await this.sendHistory();
+                    break;
+                case 'getTemplates':
+                    await this.sendTemplates();
+                    break;
+                case 'saveTemplate':
+                    await this.handleSaveTemplate(data.template);
+                    break;
+                case 'learnStyle':
+                    await this.handleLearnStyle();
+                    break;
+                case 'openGeneratedFile':
+                    await this.handleOpenGeneratedFile(data.filePath);
+                    break;
+                case 'copyToClipboard':
+                    await this.handleCopyToClipboard(data.content);
                     break;
             }
         });
@@ -70,7 +99,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async handleGenerateFromOpenAPI(filePath: string, useCopilot: boolean) {
+    private async handleGenerateFromOpenAPI(filePath: string, useCopilot: boolean, templateId?: string) {
         try {
             this.sendProgress('Parsing OpenAPI specification...', 30);
 
@@ -80,6 +109,15 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendProgress('Generating Karate tests...', 60);
 
             const generator = new KarateGenerator();
+            if (this._learnedStyle) {
+                generator.setStyle(this._learnedStyle);
+            }
+            if (templateId) {
+                const template = await this._templateManager.getTemplate(templateId);
+                if (template) {
+                    generator.setTemplate(template.content);
+                }
+            }
             const specFileName = path.basename(filePath, path.extname(filePath));
             const feature = generator.generateFromOpenAPI(endpoints, specFileName);
             feature.background = generator.generateBackground();
@@ -114,13 +152,22 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendSuccess(`Generated ${endpoints.length} test scenarios`, uniqueFile, featureContent);
             logger.info(`Generated tests: ${uniqueFile}`);
 
+            // Record history
+            await this._historyManager.addToHistory({
+                type: 'openapi',
+                source: filePath,
+                outputPath: uniqueFile,
+                template: ConfigManager.getTestTemplate()
+            });
+            await this.sendHistory();
+
         } catch (error) {
             this.sendError((error as Error).message);
             logger.error('Failed to generate from OpenAPI', error as Error);
         }
     }
 
-    private async handleGenerateFromConfluence(pageUrl: string, useCopilot: boolean) {
+    private async handleGenerateFromConfluence(pageUrl: string, useCopilot: boolean, templateId?: string) {
         try {
             this.sendProgress('Fetching Confluence page...', 30);
 
@@ -146,15 +193,25 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             const testData = parser.parsePageContent(page);
 
             const generator = new KarateGenerator();
+            if (this._learnedStyle) {
+                generator.setStyle(this._learnedStyle);
+            }
+            if (templateId) {
+                const template = await this._templateManager.getTemplate(templateId);
+                if (template) {
+                    generator.setTemplate(template.content);
+                }
+            }
             const scenarios = this.createScenariosFromConfluence(testData);
 
             const feature = {
                 name: page.title,
                 description: `Test scenarios from Confluence page ${pageId}`,
-                scenarios
+                scenarios,
+                background: generator.generateBackground()
             };
 
-            let featureContent = generator.featureToString(feature);
+            let featureContent = generator.featureToString(feature as any);
 
             // Copilot enhancement
             if (useCopilot) {
@@ -184,13 +241,22 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendSuccess(`Generated ${scenarios.length} test scenarios`, uniqueFile, featureContent);
             logger.info(`Generated tests: ${uniqueFile}`);
 
+            // Record history
+            await this._historyManager.addToHistory({
+                type: 'confluence',
+                source: pageUrl,
+                outputPath: uniqueFile,
+                template: ConfigManager.getTestTemplate()
+            });
+            await this.sendHistory();
+
         } catch (error) {
             this.sendError((error as Error).message);
             logger.error('Failed to generate from Confluence', error as Error);
         }
     }
 
-    private async handleGenerateCombined(openApiPath: string, confluenceUrl: string, useCopilot: boolean) {
+    private async handleGenerateCombined(openApiPath: string, confluenceUrl: string, useCopilot: boolean, templateId?: string) {
         try {
             this.sendProgress('Processing both sources...', 20);
 
@@ -217,17 +283,26 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             const testData = confluenceParser.parsePageContent(page);
 
             const generator = new KarateGenerator();
+            if (this._learnedStyle) {
+                generator.setStyle(this._learnedStyle);
+            }
+            if (templateId) {
+                const template = await this._templateManager.getTemplate(templateId);
+                if (template) {
+                    generator.setTemplate(template.content);
+                }
+            }
             const scenarios = this.createScenariosFromConfluence(testData);
 
             const specFileName = path.basename(openApiPath, path.extname(openApiPath));
             const feature = {
                 name: `${specFileName} - ${page.title}`,
-                description: 'Combined tests from OpenAPI and Confluence',
-                background: generator.generateBackground(),
-                scenarios
+                description: `Combined tests: OpenAPI (${specFileName}) + Confluence (${page.title})`,
+                scenarios,
+                background: generator.generateBackground()
             };
 
-            let featureContent = generator.featureToString(feature);
+            let featureContent = generator.featureToString(feature as any);
 
             // Copilot enhancement
             if (useCopilot) {
@@ -262,6 +337,16 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
 
             this.sendSuccess(`Generated ${scenarios.length} combined test scenarios`, uniqueFile, featureContent);
             logger.info(`Generated combined tests: ${uniqueFile}`);
+
+            // Record history
+            await this._historyManager.addToHistory({
+                type: 'combined',
+                source: openApiPath,
+                secondarySource: confluenceUrl,
+                outputPath: uniqueFile,
+                template: ConfigManager.getTestTemplate()
+            });
+            await this.sendHistory();
 
         } catch (error) {
             this.sendError((error as Error).message);
@@ -351,6 +436,48 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage(message);
     }
 
+    private async sendHistory() {
+        const history = this._historyManager.getHistory();
+        this.sendMessage({ type: 'history', data: history });
+    }
+
+    private async sendTemplates() {
+        const templates = this._templateManager.getAllTemplates();
+        this.sendMessage({ type: 'templates', data: templates });
+    }
+
+    private async handleSaveTemplate(template: any) {
+        await this._templateManager.saveCustomTemplate(template);
+        await this.sendTemplates();
+        vscode.window.showInformationMessage(`Template "${template.name}" saved.`);
+    }
+
+    private async handleLearnStyle() {
+        const fileUri = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            openLabel: 'Select Sample Karate Test',
+            filters: { 'Karate Feature': ['feature'] }
+        });
+
+        if (fileUri && fileUri.length > 0) {
+            const { StyleAnalyzer } = require('../services/styleAnalyzer');
+            this._learnedStyle = StyleAnalyzer.analyze(fileUri[0].fsPath);
+
+            this.sendMessage({ type: 'styleLearned', data: this._learnedStyle });
+            vscode.window.showInformationMessage('Style patterns detected from sample.');
+        }
+    }
+
+    private async handleOpenGeneratedFile(filePath: string) {
+        const doc = await vscode.workspace.openTextDocument(filePath);
+        await vscode.window.showTextDocument(doc);
+    }
+
+    private async handleCopyToClipboard(content: string) {
+        await vscode.env.clipboard.writeText(content);
+        vscode.window.showInformationMessage('Content copied to clipboard.');
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'style.css'));
@@ -365,98 +492,271 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
     <div class="container">
-        <h1>🥋 Karate Test Generator</h1>
-        
+        <!-- Header -->
+        <div class="header">
+            <h1>🥋 Karate Test Generator</h1>
+            <p class="header-subtitle">Generate API tests from specs and docs</p>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-icon">🚀</span>
+                <span class="card-title">Quick Start</span>
+            </div>
+            <div class="quick-actions">
+                <button class="action-button" data-action="openapi">
+                    <span class="action-icon">📄</span>
+                    <span class="action-label">OpenAPI</span>
+                </button>
+                <button class="action-button" data-action="confluence">
+                    <span class="action-icon">📋</span>
+                    <span class="action-label">Confluence</span>
+                </button>
+                <button class="action-button" data-action="combined">
+                    <span class="action-icon">🔀</span>
+                    <span class="action-label">Combined</span>
+                </button>
+                <button class="action-button" data-action="template">
+                    <span class="action-icon">📝</span>
+                    <span class="action-label">Template</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Tabs -->
         <div class="tabs">
-            <button class="tab-button active" data-tab="openapi">OpenAPI</button>
-            <button class="tab-button" data-tab="confluence">Confluence</button>
-            <button class="tab-button" data-tab="combined">Combined</button>
-            <button class="tab-button" data-tab="settings">Settings</button>
+            <button class="tab-button active" data-tab="openapi">
+                <span>📄</span> OpenAPI
+            </button>
+            <button class="tab-button" data-tab="confluence">
+                <span>📋</span> Confluence
+            </button>
+            <button class="tab-button" data-tab="combined">
+                <span>🔀</span> Combined
+            </button>
+            <button class="tab-button" data-tab="template">
+                <span>📝</span> Templates
+            </button>
+            <button class="tab-button" data-tab="settings">
+                <span>⚙️</span> Settings
+            </button>
         </div>
 
         <!-- OpenAPI Tab -->
         <div class="tab-content active" id="openapi-tab">
-            <h2>OpenAPI Spec</h2>
-            <div class="form-group">
-                <label>File:</label>
-                <div class="file-input">
-                    <input type="text" id="openapi-file" readonly placeholder="No file selected">
-                    <button id="select-openapi-btn">📁 Browse</button>
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📁</span>
+                    <span class="card-title">Source File</span>
+                </div>
+                <div class="form-group">
+                    <div class="file-input">
+                        <div class="file-display" id="openapi-file-display" style="display: none;">
+                            <span class="file-icon">📄</span>
+                            <span class="file-path" id="openapi-file-path"></span>
+                            <span class="file-clear" id="openapi-file-clear">✕</span>
+                        </div>
+                        <button id="select-openapi-btn" class="secondary-button">📂 Browse OpenAPI Spec</button>
+                    </div>
                 </div>
             </div>
-            <div class="form-group">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="openapi-copilot">
-                    Use Copilot AI
-                </label>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">⚙️</span>
+                    <span class="card-title">Options</span>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="openapi-copilot">
+                        <span>🤖 AI Enhancement (Copilot)</span>
+                    </label>
+                </div>
             </div>
-            <button class="primary-button" id="generate-openapi-btn">🚀 Generate Tests</button>
+
+            <button class="primary-button" id="generate-openapi-btn">
+                <span>🚀</span> Generate Tests
+            </button>
+
+            <!-- Recent OpenAPI History -->
+            <div id="openapi-history" class="card history-section hidden">
+                <div class="card-header">
+                    <span class="card-icon">📊</span>
+                    <span class="card-title">Recent OpenAPI</span>
+                </div>
+                <div id="openapi-history-list" class="history-list"></div>
+            </div>
         </div>
 
         <!-- Confluence Tab -->
         <div class="tab-content" id="confluence-tab">
-            <h2>Confluence Page</h2>
-            <div class="form-group">
-                <label>Page URL or ID:</label>
-                <input type="text" id="confluence-url" placeholder="URL or page ID">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🔗</span>
+                    <span class="card-title">Confluence Page</span>
+                </div>
+                <div class="form-group">
+                    <label>Page URL or ID</label>
+                    <input type="text" id="confluence-url" placeholder="https://... or page ID">
+                    <p class="info-text">Enter Confluence page URL or numeric page ID</p>
+                </div>
             </div>
-            <div class="form-group">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="confluence-copilot">
-                    Use Copilot AI
-                </label>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">⚙️</span>
+                    <span class="card-title">Options</span>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="confluence-copilot">
+                        <span>🤖 AI Enhancement (Copilot)</span>
+                    </label>
+                </div>
             </div>
-            <button class="primary-button" id="generate-confluence-btn">🚀 Generate Tests</button>
+
+            <button class="primary-button" id="generate-confluence-btn">
+                <span>🚀</span> Generate Tests
+            </button>
         </div>
 
         <!-- Combined Tab -->
         <div class="tab-content" id="combined-tab">
-            <h2>Combined</h2>
-            <div class="form-group">
-                <label>OpenAPI File:</label>
-                <div class="file-input">
-                    <input type="text" id="combined-openapi-file" readonly placeholder="No file selected">
-                    <button id="select-combined-openapi-btn">📁 Browse</button>
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📄</span>
+                    <span class="card-title">OpenAPI Spec</span>
+                </div>
+                <div class="form-group">
+                    <div class="file-input">
+                        <div class="file-display" id="combined-file-display" style="display: none;">
+                            <span class="file-icon">📄</span>
+                            <span class="file-path" id="combined-file-path"></span>
+                            <span class="file-clear" id="combined-file-clear">✕</span>
+                        </div>
+                        <button id="select-combined-openapi-btn" class="secondary-button">📂 Browse OpenAPI Spec</button>
+                    </div>
                 </div>
             </div>
-            <div class="form-group">
-                <label>Confluence Page:</label>
-                <input type="text" id="combined-confluence-url" placeholder="URL or page ID">
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📋</span>
+                    <span class="card-title">Confluence Page</span>
+                </div>
+                <div class="form-group">
+                    <label>Page URL or ID</label>
+                    <input type="text" id="combined-confluence-url" placeholder="https://... or page ID">
+                </div>
             </div>
-            <div class="form-group">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="combined-copilot">
-                    Use Copilot AI
-                </label>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">⚙️</span>
+                    <span class="card-title">Options</span>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="combined-copilot">
+                        <span>🤖 AI Enhancement (Copilot)</span>
+                    </label>
+                </div>
             </div>
-            <button class="primary-button" id="generate-combined-btn">🚀 Generate Tests</button>
+
+            <button class="primary-button" id="generate-combined-btn">
+                <span>🚀</span> Generate Tests
+            </button>
+        </div>
+
+                <div class="card-header">
+                    <span class="card-icon">📝</span>
+                    <span class="card-title">Template Manager</span>
+                </div>
+                <div class="form-group">
+                    <label>Active Template</label>
+                    <select id="template-select">
+                        <option value="standard">Standard</option>
+                        <option value="detailed">Detailed</option>
+                        <option value="minimal">Minimal</option>
+                    </select>
+                </div>
+                <div class="divider"></div>
+                <div class="form-group">
+                    <label>Save as Custom Template</label>
+                    <input type="text" id="custom-template-name" placeholder="My Template Name">
+                    <button class="secondary-button" id="save-custom-template-btn" style="margin-top: 8px;">
+                        <span>💾</span> Save Current as Custom
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🎨</span>
+                    <span class="card-title">Style Learning</span>
+                </div>
+                <div id="style-info" class="style-patterns hidden">
+                    <div class="patterns-grid">
+                        <div class="pattern-item">
+                            <span class="pattern-label">Indentation</span>
+                            <span id="detected-indent" class="pattern-value">-</span>
+                        </div>
+                        <div class="pattern-item">
+                            <span class="pattern-label">Casing</span>
+                            <span id="detected-case" class="pattern-value">-</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <button class="secondary-button" id="learn-style-btn">
+                        <span>📂</span> Browse Sample Test
+                    </button>
+                    <p class="info-text">Analyze existing tests to match their style</p>
+                </div>
+            </div>
         </div>
 
         <!-- Settings Tab -->
         <div class="tab-content" id="settings-tab">
-            <h2>Settings</h2>
-            <div class="form-group">
-                <label>Output Path:</label>
-                <input type="text" id="output-path" placeholder="src/test/karate">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📁</span>
+                    <span class="card-title">Output Settings</span>
+                </div>
+                <div class="form-group">
+                    <label>Output Path</label>
+                    <input type="text" id="output-path" placeholder="src/test/karate">
+                    <p class="info-text">Default location for generated test files</p>
+                </div>
+                <div class="form-group">
+                    <label>Template Style</label>
+                    <select id="test-template">
+                        <option value="standard">Standard</option>
+                        <option value="detailed">Detailed</option>
+                        <option value="minimal">Minimal</option>
+                    </select>
+                </div>
             </div>
-            <div class="form-group">
-                <label>Template:</label>
-                <select id="test-template">
-                    <option value="standard">Standard</option>
-                    <option value="detailed">Detailed</option>
-                    <option value="minimal">Minimal</option>
-                </select>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🔗</span>
+                    <span class="card-title">Confluence Settings</span>
+                </div>
+                <div class="form-group">
+                    <label>Base URL</label>
+                    <input type="text" id="confluence-base-url" placeholder="https://company.atlassian.net/wiki">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="text" id="confluence-email" placeholder="email@company.com">
+                </div>
             </div>
-            <div class="form-group">
-                <label>Confluence URL:</label>
-                <input type="text" id="confluence-base-url" placeholder="https://company.atlassian.net/wiki">
-                <p class="info-text">Your Confluence instance URL</p>
-            </div>
-            <div class="form-group">
-                <label>Confluence Email:</label>
-                <input type="text" id="confluence-email" placeholder="email@company.com">
-            </div>
-            <button class="primary-button" id="save-settings-btn">💾 Save Settings</button>
+
+            <button class="primary-button" id="save-settings-btn">
+                <span>💾</span> Save Settings
+            </button>
         </div>
 
         <!-- Progress Bar -->
@@ -472,8 +772,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             <h3>✅ Success!</h3>
             <p id="result-message"></p>
             <div class="result-actions">
-                <button id="open-file-btn">Open File</button>
-                <button id="copy-content-btn">Copy to Clipboard</button>
+                <button id="open-file-btn" class="secondary-button">📂 Open File</button>
+                <button id="copy-content-btn" class="secondary-button">📋 Copy</button>
             </div>
             <div class="preview">
                 <h4>Preview:</h4>

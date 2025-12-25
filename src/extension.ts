@@ -36,7 +36,7 @@ export function activate(context: vscode.ExtensionContext) {
     const openPanelCommand = vscode.commands.registerCommand(
         'karate-dsl.openPanel',
         () => {
-            vscode.commands.executeCommand('karateGenerator.webview.focus');
+            vscode.commands.executeCommand('karateGenerator.mainView.focus');
         }
     );
 

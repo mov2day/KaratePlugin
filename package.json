@@ -43,12 +43,21 @@
         "title": "Karate: Open Test Generator"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "karate-generator",
+          "title": "Karate Test Generator",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "karate-generator": [
         {
           "type": "webview",
-          "id": "karateGenerator.webview",
-          "name": "Karate Test Generator"
+          "id": "karateGenerator.mainView",
+          "name": "Test Generator"
         }
       ]
     },
