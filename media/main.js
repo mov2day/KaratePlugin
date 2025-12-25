@@ -21,6 +21,20 @@
             btn.classList.toggle('active', btn.getAttribute('data-tab') === tabName);
         });
 
+        // Toggle Dashboard
+        const dashboard = document.getElementById('dashboard');
+        if (tabName === 'home' || !tabName) {
+            dashboard.classList.remove('hidden');
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            // Ensure no tab is shown as active if we are on home (unless we want 'Home' tab active)
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-tab') === 'home');
+            });
+            return;
+        }
+
+        dashboard.classList.add('hidden');
+
         // Update content
         document.querySelectorAll('.tab-content').forEach(content => {
             content.classList.toggle('active', content.id === `${tabName}-tab`);
@@ -34,23 +48,10 @@
         } else if (tabName === 'openapi' || tabName === 'confluence' || tabName === 'combined') {
             vscode.postMessage({ command: 'getHistory' });
         }
-
-        // Toggle Dashboard
-        const dashboard = document.getElementById('dashboard');
-        if (tabName === 'openapi' || tabName === 'confluence' || tabName === 'combined' || tabName === 'template') {
-            dashboard.classList.add('hidden');
-        } else if (tabName === 'settings') {
-            dashboard.classList.add('hidden');
-        } else {
-            dashboard.classList.remove('hidden');
-        }
     }
 
-    document.querySelectorAll('.action-button').forEach(button => {
-        button.addEventListener('click', () => {
-            const action = button.getAttribute('data-action');
-            switchTab(action);
-        });
+    document.getElementById('header-logo').addEventListener('click', () => {
+        switchTab('home');
     });
 
     document.querySelectorAll('.welcome-card').forEach(card => {
@@ -60,8 +61,18 @@
         });
     });
 
-    document.getElementById('header-logo').addEventListener('click', () => {
-        switchTab(null);
+    // Variable Chips insertion
+    document.querySelectorAll('.chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const variable = chip.getAttribute('data-var');
+            const editor = document.getElementById('template-content-editor');
+            const start = editor.selectionStart;
+            const end = editor.selectionEnd;
+            const text = editor.value;
+            editor.value = text.substring(0, start) + variable + text.substring(end);
+            editor.focus();
+            editor.selectionStart = editor.selectionEnd = start + variable.length;
+        });
     });
 
     // --- File Selection ---
@@ -384,4 +395,5 @@
     vscode.postMessage({ command: 'getConfig' });
     vscode.postMessage({ command: 'getTemplates' });
     vscode.postMessage({ command: 'getHistory' });
+    switchTab('home');
 })();

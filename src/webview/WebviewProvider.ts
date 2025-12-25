@@ -298,13 +298,19 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     generator.setTemplate(template.content);
                 }
             }
-            const scenarios = this.createScenariosFromConfluence(testData);
 
+            // Generate scenarios from BOTH sources
             const specFileName = path.basename(openApiPath, path.extname(openApiPath));
+            const openApiScenarios = generator.generateFromOpenAPI(endpoints, specFileName).scenarios;
+            const confluenceScenarios = this.createScenariosFromConfluence(testData);
+
+            // Merge: Confluence requirements first, then the rest of the API surface
+            const mergedScenarios = [...confluenceScenarios, ...openApiScenarios];
+
             const feature = {
                 name: `${specFileName} - ${page.title}`,
-                description: `Combined tests: OpenAPI (${specFileName}) + Confluence (${page.title})`,
-                scenarios,
+                description: `Combined AI tests: OpenAPI (${specFileName}) + Confluence (${page.title})`,
+                scenarios: mergedScenarios,
                 background: generator.generateBackground()
             };
 
@@ -341,7 +347,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             const uniqueFile = FileUtils.getUniqueFilename(outputFile);
             FileUtils.writeFile(uniqueFile, featureContent);
 
-            this.sendSuccess(`Generated ${scenarios.length} combined test scenarios`, uniqueFile, featureContent);
+            this.sendSuccess(`Generated ${mergedScenarios.length} combined test scenarios`, uniqueFile, featureContent);
             logger.info(`Generated combined tests: ${uniqueFile}`);
 
             // Record history
@@ -509,15 +515,39 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         <!-- Header -->
         <div class="header">
             <div class="header-main" id="header-logo" style="cursor: pointer;">
-                <h1>🥋 Karate Test Generator</h1>
-                <p class="header-subtitle">AI-Powered API Test Automation</p>
+                <div class="header-brand">
+                    <img src="${webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'icon.svg'))}" class="brand-icon" alt="Karate Logo">
+                    <h1>Karate Test Generator</h1>
+                </div>
             </div>
             <div class="header-stats hidden" id="style-badge">
                 <span class="badge">Learned Style Active</span>
             </div>
         </div>
 
-        <!-- Dashboard / Welcome (Visible when no specific tab is deep) -->
+        <!-- Unified Navigation Tabs -->
+        <div class="tabs">
+            <button class="tab-button" data-tab="home" id="home-tab-btn">
+                <span>🏠</span> Home
+            </button>
+            <button class="tab-button active" data-tab="openapi">
+                <span>📄</span> OpenAPI
+            </button>
+            <button class="tab-button" data-tab="confluence">
+                <span>📋</span> Confluence
+            </button>
+            <button class="tab-button" data-tab="combined">
+                <span>🔀</span> Combined
+            </button>
+            <button class="tab-button" data-tab="template">
+                <span>📝</span> Templates
+            </button>
+            <button class="tab-button" data-tab="settings">
+                <span>⚙️</span> Settings
+            </button>
+        </div>
+
+        <!-- Dashboard / Welcome (Hidden when tabs are active) -->
         <div id="dashboard" class="dashboard-grid">
             <div class="welcome-card card" data-target="openapi">
                 <div class="welcome-icon">📄</div>
@@ -534,26 +564,6 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 <h3>Personalize</h3>
                 <p>Styles & Templates</p>
             </div>
-        </div>
-
-
-        <!-- Tabs -->
-        <div class="tabs">
-            <button class="tab-button active" data-tab="openapi">
-                <span>📄</span> OpenAPI
-            </button>
-            <button class="tab-button" data-tab="confluence">
-                <span>📋</span> Confluence
-            </button>
-            <button class="tab-button" data-tab="combined">
-                <span>🔀</span> Combined
-            </button>
-            <button class="tab-button" data-tab="template">
-                <span>📝</span> Templates
-            </button>
-            <button class="tab-button" data-tab="settings">
-                <span>⚙️</span> Settings
-            </button>
         </div>
 
         <!-- OpenAPI Tab -->
@@ -702,18 +712,19 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 </div>
                 <div class="form-group">
                     <label>Template Editor</label>
-                    <textarea id="template-content-editor" class="code-editor" spellcheck="false" placeholder="Feature: {{featureName}}..."></textarea>
-                    <div class="info-text">
-                        <span>Variables:</span>
-                        <code>{{featureName}}</code> <code>{{scenarios}}</code> <code>{{backgroundSteps}}</code>
+                    <div class="variable-chips">
+                        <button class="chip" data-var="{{featureName}}" title="Insert Feature Name">{{featureName}}</button>
+                        <button class="chip" data-var="{{scenarios}}" title="Insert Scenarios">{{scenarios}}</button>
+                        <button class="chip" data-var="{{backgroundSteps}}" title="Insert Background Steps">{{backgroundSteps}}</button>
                     </div>
+                    <textarea id="template-content-editor" class="code-editor" spellcheck="false" placeholder="Feature: {{featureName}}..."></textarea>
                 </div>
                 <div class="divider"></div>
                 <div class="form-group">
                     <label>Save as New Template</label>
                     <div class="flex-row">
-                        <input type="text" id="custom-template-name" placeholder="Expert Style..." class="flex-grow">
-                        <button class="secondary-button" id="save-custom-template-btn">
+                        <input type="text" id="custom-template-name" placeholder="Expert Style..." class="flex-grow" style="height: 32px;">
+                        <button class="secondary-button" id="save-custom-template-btn" style="width: 80px; flex-shrink: 0;">
                             <span>💾</span> Save
                         </button>
                     </div>

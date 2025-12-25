@@ -39,15 +39,34 @@ body {
     align-items: flex-start;
 }
 
+.header-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: 2px;
+}
+
+.brand-icon {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+}
+
 .header-main h1 {
     margin: 0;
-    font-size: 20px;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
 }
 
 .header-subtitle {
-    margin: 4px 0 0 0;
+    margin: 0;
     color: var(--vscode-descriptionForeground);
-    font-size: 11px;
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-left: 36px;
 }
 
 .badge {
@@ -55,7 +74,7 @@ body {
     color: white;
     padding: 2px 8px;
     border-radius: 10px;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
 }
 
@@ -119,74 +138,37 @@ body {
 }
 
 .card-icon {
-    font-size: 18px;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
 }
 
 .card-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--vscode-foreground);
     flex: 1;
 }
 
 .card-badge {
-    font-size: 10px;
+    font-size: 9px;
     padding: 2px 6px;
     background-color: var(--vscode-badge-background);
     color: var(--vscode-badge-foreground);
     border-radius: 10px;
 }
 
-/* Quick Actions */
-.quick-actions {
+/* Tabs - Modern Unified Grid Design */
+.tabs {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
-    gap: var(--spacing-sm);
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, auto);
+    gap: 4px;
     margin-bottom: var(--spacing-lg);
-}
-
-.action-button {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-md);
-    background-color: var(--vscode-button-secondaryBackground);
-    color: var(--vscode-button-secondaryForeground);
+    background-color: var(--vscode-sideBar-background);
     border: 1px solid var(--vscode-panel-border);
     border-radius: var(--border-radius);
-    cursor: pointer;
-    transition: all var(--transition-speed);
-    text-align: center;
-}
-
-.action-button:hover {
-    background-color: var(--vscode-button-secondaryHoverBackground);
-    border-color: var(--vscode-focusBorder);
-    transform: translateY(-2px);
-}
-
-.action-button:active {
-    transform: translateY(0);
-}
-
-.action-icon {
-    font-size: 24px;
-}
-
-.action-label {
-    font-size: 11px;
-    font-weight: 500;
-}
-
-/* Tabs - Modern Design */
-.tabs {
-    display: flex;
-    gap: var(--spacing-xs);
-    margin-bottom: var(--spacing-lg);
-    border-bottom: 2px solid var(--vscode-panel-border);
-    overflow-x: auto;
-    scrollbar-width: none;
+    padding: 4px;
 }
 
 .tabs::-webkit-scrollbar {
@@ -197,17 +179,22 @@ body {
     background: transparent;
     border: none;
     color: var(--vscode-foreground);
-    padding: var(--spacing-sm) var(--spacing-md);
+    padding: 8px 4px;
     cursor: pointer;
-    font-size: 13px;
-    border-bottom: 2px solid transparent;
+    font-size: 10px;
+    border-radius: 4px;
     transition: all var(--transition-speed);
-    white-space: nowrap;
-    flex-shrink: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 6px;
-    opacity: 0.7;
+    justify-content: center;
+    gap: 4px;
+    opacity: 0.8;
+    height: 52px;
+}
+
+.tab-button span {
+    font-size: 16px;
 }
 
 .tab-button:hover {
@@ -216,10 +203,12 @@ body {
 }
 
 .tab-button.active {
-    border-bottom-color: var(--vscode-focusBorder);
+    background-color: var(--vscode-button-secondaryBackground);
     color: var(--vscode-focusBorder);
     opacity: 1;
     font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--vscode-focusBorder);
 }
 
 .tab-content {
@@ -259,7 +248,8 @@ body {
 .form-group input[type="text"],
 .form-group select {
     width: 100%;
-    padding: 8px 10px;
+    height: 32px;
+    padding: 0 10px;
     background-color: var(--vscode-input-background);
     color: var(--vscode-input-foreground);
     border: 1px solid var(--vscode-input-border);
@@ -336,7 +326,8 @@ body {
 
 /* Buttons */
 button {
-    padding: 8px 14px;
+    height: 32px;
+    padding: 0 14px;
     background-color: var(--vscode-button-background);
     color: var(--vscode-button-foreground);
     border: none;
@@ -347,6 +338,9 @@ button {
     font-weight: 500;
     transition: all var(--transition-speed);
     width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 button:hover {
@@ -589,6 +583,35 @@ button:active {
     gap: var(--spacing-md);
 }
 
+/* Variable Chips */
+.variable-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-sm);
+}
+
+.chip {
+    background-color: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+    border: none;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-family: var(--vscode-editor-font-family);
+    cursor: pointer;
+    width: auto;
+    transition: filter 0.2s;
+}
+
+.chip:hover {
+    filter: brightness(1.2);
+}
+
+.chip:active {
+    transform: scale(0.95);
+}
+
 .pattern-item {
     display: flex;
     flex-direction: column;
@@ -620,17 +643,19 @@ button:active {
 /* Code Editor */
 .code-editor {
     width: 100%;
-    height: 120px;
+    height: 180px;
     background-color: var(--vscode-editor-background);
     color: var(--vscode-editor-foreground);
     border: 1px solid var(--vscode-panel-border);
     border-radius: var(--border-radius);
-    padding: var(--spacing-sm);
-    font-family: var(--vscode-editor-font-family);
-    font-size: 11px;
+    padding: var(--spacing-md);
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.6;
     resize: vertical;
     outline: none;
     transition: border-color var(--transition-speed);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .code-editor:focus {
@@ -643,8 +668,14 @@ button:active {
     border-radius: var(--border-radius);
     color: var(--vscode-foreground);
     cursor: pointer;
-    padding: 4px 8px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
     transition: all var(--transition-speed);
+    font-size: 12px;
 }
 
 .icon-button:hover {

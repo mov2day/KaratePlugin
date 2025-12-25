@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate Test Generator",
   "description": "AI-Powered Test Generation for Karate DSL from OpenAPI specs and Confluence documentation",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "MuthuKumarKoodalingam",
   "icon": "resources/icon.png",
   "engines": {
