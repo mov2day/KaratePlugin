@@ -1,6 +1,6 @@
-# Karate DSL Test Generator
+# Karate Test Generator
 
-A powerful VS Code extension that automatically generates Karate DSL test files from OpenAPI specifications and Confluence documentation.
+A powerful VS Code extension that automatically generates Karate test files from OpenAPI specifications and Confluence documentation.
 
 ## User Interface
 
@@ -21,14 +21,23 @@ A modern, visual interface in the VS Code sidebar:
    - **Settings Tab**: Configure output paths, Copilot, and Confluence credentials
 
 3. **Features:**
-   - 📁 Visual file picker
-   - ⚙️ Easy configuration management
-   - 📊 Real-time progress tracking
-   - 👁️ Preview generated tests
-   - 🎨 Theme-aware design (light/dark mode)
-   - ✅ Success/error notifications
+   - 🏰 **Central Dashboard**: Instant access to all primary workflows.
+   - 📁 **Visual File Picker**: Easy selection of specifications.
+   - ⚙️ **Config Management**: Tabbed interface for all settings.
+   - 📊 **Smart History**: Quick access to recent generations.
+   - 👁️ **Live Preview**: See generated test content instantly.
+   - 🎨 **Theme-aware**: Automatic dark/light mode switching.
+   - 🎓 **Style Learning**: Analyze existing tests to match their format.
 
-### 2. Command Palette (Alternative)
+### 2. Context Menu Integration (Right-Click)
+
+Generate tests directly from your files:
+
+- **Generate from Spec**: Right-click any `.json`, `.yaml`, or `.yml` file in the Explorer.
+- **Learn Style**: Right-click any `.feature` file to analyze and match its style patterns.
+- **Editor Support**: Available in both the Sidebar Explorer and the active Editor.
+
+### 3. Command Palette (Alternative)
 
 Traditional command-based workflow:
 
@@ -56,23 +65,31 @@ Traditional command-based workflow:
 - Map test cases to corresponding API endpoints
 - Generate comprehensive test suites with business context
 
-### 🤖 AI-Powered Enhancement with GitHub Copilot (Optional)
-- Automatically improve generated tests with Copilot suggestions
-- Add comprehensive assertions and edge cases
-- Include error scenarios and security tests
-- Enhance test data and validations
-- Requires GitHub Copilot subscription
+### 🤖 AI-Powered Enhancement with GitHub Copilot
+- Automatically improve generated tests with Copilot suggestions.
+- Add comprehensive assertions, edge cases, and security tests.
+- **Full Context Sharing**: Shares OpenAPI specs and requirements for deep understanding.
+- Requires GitHub Copilot subscription.
+
+### 🎨 Advanced Template Designer
+- **Preset Styles**: Choose between Standard, Detailed, and Minimal templates.
+- **Custom Editor**: Create and save your own templates directly in the UI.
+- **Variables**: Use `{{featureName}}`, `{{scenarios}}`, and `{{backgroundSteps}}` for dynamic content.
+
+### 🎓 Style Auto-Match (Learning)
+- Analyze existing Karate features to detect indentation and variable casing.
+- Automatically apply detected styles to all future generated tests.
 
 ## Installation
 
 1. Open VS Code
 2. Go to Extensions (Cmd+Shift+X / Ctrl+Shift+X)
-3. Search for "Karate DSL Test Generator"
+3. Search for "Karate Test Generator"
 4. Click Install
 
 Or install from VSIX:
 ```bash
-code --install-extension karate-dsl-generator-0.1.0.vsix
+code --install-extension karate-test-generator-1.1.0.vsix
 ```
 
 ## Configuration
@@ -262,7 +279,7 @@ MIT License - see LICENSE file for details
 ## Roadmap
 
 - [ ] Support for GraphQL schemas
-- [ ] Custom template editor
 - [ ] Test execution integration
 - [ ] More Confluence diagram formats
 - [ ] Jira integration for test cases
+- [ ] Batch generation for entire directories

@@ -1,9 +1,10 @@
 {
-  "name": "karate-dsl-generator",
-  "displayName": "Karate DSL Test Generator",
-  "description": "Generate Karate DSL tests from OpenAPI specifications and Confluence documentation",
-  "version": "1.0.0",
+  "name": "karate-test-generator",
+  "displayName": "Karate Test Generator",
+  "description": "AI-Powered Test Generation for Karate DSL from OpenAPI specs and Confluence documentation",
+  "version": "1.1.0",
   "publisher": "MuthuKumarKoodalingam",
+  "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -17,7 +18,11 @@
     "openapi",
     "swagger",
     "confluence",
-    "test generation"
+    "test generation",
+    "AI Test Generation",
+    "Copilot",
+    "AI Test Automation",
+    "Test Automation"
   ],
   "repository": {
     "type": "git",
@@ -41,6 +46,14 @@
       {
         "command": "karate-dsl.openPanel",
         "title": "Karate: Open Test Generator"
+      },
+      {
+        "command": "karate-dsl.generateFromExplorer",
+        "title": "Karate: Generate Tests from OpenAPI Spec"
+      },
+      {
+        "command": "karate-dsl.learnStyleFromExplorer",
+        "title": "Karate: Learn Style from Sample Test"
       }
     ],
     "viewsContainers": {
@@ -49,6 +62,32 @@
           "id": "karate-generator",
           "title": "Karate Test Generator",
           "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "karate-dsl.generateFromExplorer",
+          "when": "resourceExtname == .json || resourceExtname == .yaml || resourceExtname == .yml",
+          "group": "karate@1"
+        },
+        {
+          "command": "karate-dsl.learnStyleFromExplorer",
+          "when": "resourceExtname == .feature",
+          "group": "karate@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "karate-dsl.generateFromExplorer",
+          "when": "resourceExtname == .json || resourceExtname == .yaml || resourceExtname == .yml",
+          "group": "karate@1"
+        },
+        {
+          "command": "karate-dsl.learnStyleFromExplorer",
+          "when": "resourceExtname == .feature",
+          "group": "karate@2"
         }
       ]
     },

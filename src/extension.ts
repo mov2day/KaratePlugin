@@ -3,9 +3,10 @@ import { generateFromOpenAPI } from './commands/generateFromOpenAPI';
 import { generateFromConfluence } from './commands/generateFromConfluence';
 import { generateCombined } from './commands/generateCombined';
 import { KarateWebviewProvider } from './webview/WebviewProvider';
+import { logger } from './utils/logger';
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('Karate DSL Generator extension is now active');
+    logger.info('Karate DSL Generator extension is now active');
 
     // Register webview provider
     const webviewProvider = new KarateWebviewProvider(context.extensionUri, context);
@@ -16,7 +17,7 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // Register commands (keep for backward compatibility)
+    // Command registrations
     const openApiCommand = vscode.commands.registerCommand(
         'karate-dsl.generateFromOpenAPI',
         () => generateFromOpenAPI(context)
@@ -32,7 +33,6 @@ export function activate(context: vscode.ExtensionContext) {
         () => generateCombined(context)
     );
 
-    // Command to open webview panel
     const openPanelCommand = vscode.commands.registerCommand(
         'karate-dsl.openPanel',
         () => {
@@ -40,7 +40,40 @@ export function activate(context: vscode.ExtensionContext) {
         }
     );
 
-    context.subscriptions.push(openApiCommand, confluenceCommand, combinedCommand, openPanelCommand);
+    const generateFromExplorerCommand = vscode.commands.registerCommand(
+        'karate-dsl.generateFromExplorer',
+        async (uri: vscode.Uri) => {
+            if (!uri) return;
+            await vscode.commands.executeCommand('karateGenerator.mainView.focus');
+            webviewProvider.postMessageToWebview({
+                command: 'preFillSource',
+                filePath: uri.fsPath,
+                target: 'openapi'
+            });
+        }
+    );
+
+    const learnStyleFromExplorerCommand = vscode.commands.registerCommand(
+        'karate-dsl.learnStyleFromExplorer',
+        async (uri: vscode.Uri) => {
+            if (!uri) return;
+            await vscode.commands.executeCommand('karateGenerator.mainView.focus');
+            webviewProvider.postMessageToWebview({
+                command: 'preFillSource',
+                filePath: uri.fsPath,
+                target: 'style'
+            });
+        }
+    );
+
+    context.subscriptions.push(
+        openApiCommand,
+        confluenceCommand,
+        combinedCommand,
+        openPanelCommand,
+        generateFromExplorerCommand,
+        learnStyleFromExplorerCommand
+    );
 }
 
 export function deactivate() { }

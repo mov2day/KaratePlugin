@@ -1,27 +1,26 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Karate belt with "K" symbol -->
-  <g id="karate-icon">
-    <!-- Belt background -->
-    <rect x="20" y="50" width="88" height="28" rx="4" fill="#FF6B35"/>
+  <!-- Ninja AI Logo (Simplified for SVG) -->
+  <g id="ninja-ai-icon">
+    <!-- Skin/Head silhouette -->
+    <path d="M64 20 C40 20 20 40 20 64 C20 88 40 108 64 108 C88 108 108 88 108 64 C108 40 88 20 64 20 Z" fill="#1A2A40"/>
     
-    <!-- Belt knot -->
-    <path d="M64 78 L54 88 L64 98 L74 88 Z" fill="#E85D2E"/>
-    <path d="M64 78 L64 98" stroke="#C44E26" stroke-width="2"/>
+    <!-- Mask -->
+    <path d="M22 60 C22 55 25 50 30 50 L98 50 C103 50 106 55 106 60 L106 85 C106 95 95 106 64 106 C33 106 22 95 22 85 Z" fill="#2D3E50"/>
     
-    <!-- "K" letter -->
-    <g transform="translate(64, 64)">
-      <!-- Vertical line of K -->
-      <rect x="-3" y="-20" width="6" height="40" rx="2" fill="white"/>
-      
-      <!-- Upper diagonal of K -->
-      <path d="M 3 -8 L 18 -20 L 22 -16 L 7 -4 Z" fill="white"/>
-      
-      <!-- Lower diagonal of K -->
-      <path d="M 3 8 L 18 20 L 22 16 L 7 4 Z" fill="white"/>
-    </g>
+    <!-- Eyes -->
+    <path d="M48 65 L40 60 L48 55 Z" fill="white" opacity="0.9"/>
+    <path d="M80 65 L88 60 L80 55 Z" fill="white" opacity="0.9"/>
     
-    <!-- Decorative stitching -->
-    <line x1="25" y1="54" x2="103" y2="54" stroke="#C44E26" stroke-width="1" stroke-dasharray="4 4" opacity="0.5"/>
-    <line x1="25" y1="74" x2="103" y2="74" stroke="#C44E26" stroke-width="1" stroke-dasharray="4 4" opacity="0.5"/>
+    <!-- AI Circuit Headband (Karate Belt style) -->
+    <path d="M15 45 L113 45 L113 55 L15 55 Z" fill="#FF6B35"/>
+    
+    <!-- Circuit nodes on headband -->
+    <circle cx="35" cy="50" r="2" fill="white" opacity="0.8"/>
+    <circle cx="64" cy="50" r="2" fill="white" opacity="0.8"/>
+    <circle cx="93" cy="50" r="2" fill="white" opacity="0.8"/>
+    <path d="M35 50 L64 50 L93 50" stroke="white" stroke-width="1" stroke-dasharray="2 2" opacity="0.4"/>
+    
+    <!-- Headband tails -->
+    <path d="M110 45 L125 35 L120 55 L110 50 Z" fill="#E85D2E"/>
   </g>
 </svg>

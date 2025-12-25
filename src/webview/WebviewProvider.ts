@@ -19,6 +19,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         // We'll import these dynamically or initialize them here if types are available
     }
 
+    public postMessageToWebview(message: any) {
+        if (this._view) {
+            this._view.webview.postMessage(message);
+        }
+    }
+
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
         context: vscode.WebviewViewResolveContext,
@@ -70,7 +76,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     await this.handleSaveTemplate(data.template);
                     break;
                 case 'learnStyle':
-                    await this.handleLearnStyle();
+                    await this.handleLearnStyle(data.filePath);
                     break;
                 case 'openGeneratedFile':
                     await this.handleOpenGeneratedFile(data.filePath);
@@ -452,16 +458,24 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         vscode.window.showInformationMessage(`Template "${template.name}" saved.`);
     }
 
-    private async handleLearnStyle() {
-        const fileUri = await vscode.window.showOpenDialog({
-            canSelectMany: false,
-            openLabel: 'Select Sample Karate Test',
-            filters: { 'Karate Feature': ['feature'] }
-        });
+    private async handleLearnStyle(filePath?: string) {
+        let selectedPath = filePath;
 
-        if (fileUri && fileUri.length > 0) {
+        if (!selectedPath) {
+            const fileUri = await vscode.window.showOpenDialog({
+                canSelectMany: false,
+                openLabel: 'Select Sample Karate Test',
+                filters: { 'Karate Feature': ['feature'] }
+            });
+
+            if (fileUri && fileUri.length > 0) {
+                selectedPath = fileUri[0].fsPath;
+            }
+        }
+
+        if (selectedPath) {
             const { StyleAnalyzer } = require('../services/styleAnalyzer');
-            this._learnedStyle = StyleAnalyzer.analyze(fileUri[0].fsPath);
+            this._learnedStyle = StyleAnalyzer.analyze(selectedPath);
 
             this.sendMessage({ type: 'styleLearned', data: this._learnedStyle });
             vscode.window.showInformationMessage('Style patterns detected from sample.');
@@ -494,35 +508,34 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <h1>🥋 Karate Test Generator</h1>
-            <p class="header-subtitle">Generate API tests from specs and docs</p>
+            <div class="header-main" id="header-logo" style="cursor: pointer;">
+                <h1>🥋 Karate Test Generator</h1>
+                <p class="header-subtitle">AI-Powered API Test Automation</p>
+            </div>
+            <div class="header-stats hidden" id="style-badge">
+                <span class="badge">Learned Style Active</span>
+            </div>
         </div>
 
-        <!-- Quick Actions -->
-        <div class="card">
-            <div class="card-header">
-                <span class="card-icon">🚀</span>
-                <span class="card-title">Quick Start</span>
+        <!-- Dashboard / Welcome (Visible when no specific tab is deep) -->
+        <div id="dashboard" class="dashboard-grid">
+            <div class="welcome-card card" data-target="openapi">
+                <div class="welcome-icon">📄</div>
+                <h3>OpenAPI</h3>
+                <p>Generate from Swagger/JSON</p>
             </div>
-            <div class="quick-actions">
-                <button class="action-button" data-action="openapi">
-                    <span class="action-icon">📄</span>
-                    <span class="action-label">OpenAPI</span>
-                </button>
-                <button class="action-button" data-action="confluence">
-                    <span class="action-icon">📋</span>
-                    <span class="action-label">Confluence</span>
-                </button>
-                <button class="action-button" data-action="combined">
-                    <span class="action-icon">🔀</span>
-                    <span class="action-label">Combined</span>
-                </button>
-                <button class="action-button" data-action="template">
-                    <span class="action-icon">📝</span>
-                    <span class="action-label">Template</span>
-                </button>
+            <div class="welcome-card card" data-target="confluence">
+                <div class="welcome-icon">📋</div>
+                <h3>Confluence</h3>
+                <p>Fetch from Wiki docs</p>
+            </div>
+            <div class="welcome-card card" data-target="template">
+                <div class="welcome-icon">🎨</div>
+                <h3>Personalize</h3>
+                <p>Styles & Templates</p>
             </div>
         </div>
+
 
         <!-- Tabs -->
         <div class="tabs">
@@ -669,25 +682,41 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             </button>
         </div>
 
+        <!-- Template Tab -->
+        <div class="tab-content" id="template-tab">
+            <div class="card">
                 <div class="card-header">
                     <span class="card-icon">📝</span>
-                    <span class="card-title">Template Manager</span>
+                    <span class="card-title">Template Designer</span>
                 </div>
                 <div class="form-group">
-                    <label>Active Template</label>
-                    <select id="template-select">
-                        <option value="standard">Standard</option>
-                        <option value="detailed">Detailed</option>
-                        <option value="minimal">Minimal</option>
-                    </select>
+                    <label>Base Template</label>
+                    <div class="flex-row">
+                        <select id="template-select" class="flex-grow">
+                            <option value="standard">Standard</option>
+                            <option value="detailed">Detailed</option>
+                            <option value="minimal">Minimal</option>
+                        </select>
+                        <button class="icon-button" id="refresh-templates-btn" title="Refresh templates">🔄</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Template Editor</label>
+                    <textarea id="template-content-editor" class="code-editor" spellcheck="false" placeholder="Feature: {{featureName}}..."></textarea>
+                    <div class="info-text">
+                        <span>Variables:</span>
+                        <code>{{featureName}}</code> <code>{{scenarios}}</code> <code>{{backgroundSteps}}</code>
+                    </div>
                 </div>
                 <div class="divider"></div>
                 <div class="form-group">
-                    <label>Save as Custom Template</label>
-                    <input type="text" id="custom-template-name" placeholder="My Template Name">
-                    <button class="secondary-button" id="save-custom-template-btn" style="margin-top: 8px;">
-                        <span>💾</span> Save Current as Custom
-                    </button>
+                    <label>Save as New Template</label>
+                    <div class="flex-row">
+                        <input type="text" id="custom-template-name" placeholder="Expert Style..." class="flex-grow">
+                        <button class="secondary-button" id="save-custom-template-btn">
+                            <span>💾</span> Save
+                        </button>
+                    </div>
                 </div>
             </div>
 

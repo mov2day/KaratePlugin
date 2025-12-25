@@ -34,14 +34,34 @@
         } else if (tabName === 'openapi' || tabName === 'confluence' || tabName === 'combined') {
             vscode.postMessage({ command: 'getHistory' });
         }
+
+        // Toggle Dashboard
+        const dashboard = document.getElementById('dashboard');
+        if (tabName === 'openapi' || tabName === 'confluence' || tabName === 'combined' || tabName === 'template') {
+            dashboard.classList.add('hidden');
+        } else if (tabName === 'settings') {
+            dashboard.classList.add('hidden');
+        } else {
+            dashboard.classList.remove('hidden');
+        }
     }
 
-    // --- Quick Actions ---
     document.querySelectorAll('.action-button').forEach(button => {
         button.addEventListener('click', () => {
             const action = button.getAttribute('data-action');
             switchTab(action);
         });
+    });
+
+    document.querySelectorAll('.welcome-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const target = card.getAttribute('data-target');
+            switchTab(target);
+        });
+    });
+
+    document.getElementById('header-logo').addEventListener('click', () => {
+        switchTab(null);
     });
 
     // --- File Selection ---
@@ -110,20 +130,36 @@
     });
 
     // --- Template Manager ---
+    const templateSelect = document.getElementById('template-select');
+    const templateEditor = document.getElementById('template-content-editor');
+
+    templateSelect.addEventListener('change', () => {
+        const selectedId = templateSelect.value;
+        const template = templates.find(t => t.id === selectedId);
+        if (template) {
+            templateEditor.value = template.content;
+        }
+    });
+
     document.getElementById('save-custom-template-btn').addEventListener('click', () => {
         const name = document.getElementById('custom-template-name').value;
+        const content = templateEditor.value;
         if (!name) return showError('Please enter a name for your custom template');
+        if (!content) return showError('Template content cannot be empty');
 
-        // This is a simplified version - in a real app you'd have an editor
         vscode.postMessage({
             command: 'saveTemplate',
             template: {
                 id: name.toLowerCase().replace(/\s+/g, '-'),
                 name: name,
                 description: 'Custom user template',
-                content: 'Feature: {{featureName}}\n\nScenario: {{scenarioName}}\n  Given url baseUrl\n  When method get' // Default placeholder
+                content: content
             }
         });
+    });
+
+    document.getElementById('refresh-templates-btn').addEventListener('click', () => {
+        vscode.postMessage({ command: 'getTemplates' });
     });
 
     document.getElementById('learn-style-btn').addEventListener('click', () => {
@@ -137,7 +173,6 @@
             config: {
                 outputPath: document.getElementById('output-path').value,
                 testTemplate: document.getElementById('test-template').value,
-                // These are saved via the existing ConfigManager logic in extension
                 confluenceBaseUrl: document.getElementById('confluence-base-url').value,
                 confluenceEmail: document.getElementById('confluence-email').value
             }
@@ -166,6 +201,9 @@
             case 'fileSelected':
                 handleFileSelected(message.filePath);
                 break;
+            case 'preFillSource':
+                handlePreFill(message.filePath, message.target);
+                break;
             case 'progress':
                 showProgress(message.message, message.percentage);
                 break;
@@ -192,6 +230,18 @@
                 break;
         }
     });
+
+    function handlePreFill(filePath, target) {
+        if (target === 'openapi') {
+            switchTab('openapi');
+            handleFileSelected(filePath);
+        } else if (target === 'style') {
+            switchTab('template');
+            // We need to trigger the learn style logic but we already have the path
+            // In a real app we'd just call the analyzer with this path
+            vscode.postMessage({ command: 'learnStyle', filePath: filePath });
+        }
+    }
 
     function handleFileSelected(filePath) {
         const activeTab = document.querySelector('.tab-content.active').id;
@@ -259,7 +309,16 @@
             opt.textContent = t.name;
             select.appendChild(opt);
         });
-        if (currentVal) select.value = currentVal;
+
+        // Update editor with first or currently selected
+        if (currentVal) {
+            select.value = currentVal;
+            const template = templates.find(t => t.id === currentVal);
+            if (template) templateEditor.value = template.content;
+        } else if (data.length > 0) {
+            select.value = data[0].id;
+            templateEditor.value = data[0].content;
+        }
     }
 
     function handleStyleLearned(style) {
@@ -267,6 +326,10 @@
         document.getElementById('style-info').classList.remove('hidden');
         document.getElementById('detected-indent').textContent = style.indentation.length + ' spaces';
         document.getElementById('detected-case').textContent = style.variableCase;
+
+        // Show badge in header
+        const badge = document.getElementById('style-badge');
+        if (badge) badge.classList.remove('hidden');
     }
 
     // --- Helper Functions ---
@@ -314,10 +377,11 @@
     }
 
     function showTemporaryMessage(message) {
-        vscode.postMessage({ command: 'copyToClipboard', content: '' }); // Just a trick to use VSCode notifications
+        vscode.postMessage({ command: 'copyToClipboard', content: '' });
     }
 
     // Initial load
     vscode.postMessage({ command: 'getConfig' });
+    vscode.postMessage({ command: 'getTemplates' });
     vscode.postMessage({ command: 'getHistory' });
 })();
