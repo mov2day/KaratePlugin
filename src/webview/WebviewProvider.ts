@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
 import { OpenAPIParser } from '../services/openApiParser';
 import { KarateGenerator } from '../services/karateGenerator';
 import { ConfluenceClient } from '../services/confluenceClient';
@@ -7,6 +9,7 @@ import { ConfluenceParser } from '../services/confluenceParser';
 import { ConfigManager } from '../utils/configManager';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
+import { SpecHashManager, SpecMetadata } from '../services/specHashManager';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'karateGenerator.mainView';
@@ -14,9 +17,11 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _historyManager: any;
     private _templateManager: any;
     private _learnedStyle: any = null;
+    private _specHashManager: SpecHashManager;
 
     constructor(private readonly _extensionUri: vscode.Uri, private readonly _context: vscode.ExtensionContext) {
-        // We'll import these dynamically or initialize them here if types are available
+        // Initialize SpecHashManager for AI-Powered Test Maintenance
+        this._specHashManager = new SpecHashManager(_context);
     }
 
     public postMessageToWebview(message: any) {
@@ -83,6 +88,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'copyToClipboard':
                     await this.handleCopyToClipboard(data.content);
+                    break;
+                case 'syncTests':
+                    await this.handleSyncTests(data.specPath, data.updatePlan);
                     break;
             }
         });
@@ -166,6 +174,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 template: ConfigManager.getTestTemplate()
             });
             await this.sendHistory();
+
+            // Save metadata for AI-Powered Test Maintenance
+            await this.saveSpecMetadata(filePath, endpoints, uniqueFile);
 
         } catch (error) {
             this.sendError((error as Error).message);
@@ -498,6 +509,70 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         vscode.window.showInformationMessage('Content copied to clipboard.');
     }
 
+    /**
+     * Save metadata for spec change tracking
+     */
+    private async saveSpecMetadata(specPath: string, endpoints: any[], testFilePath: string): Promise<void> {
+        try {
+            // Calculate spec hash
+            const specContent = fs.readFileSync(specPath, 'utf-8');
+            const specHash = crypto.createHash('sha256').update(specContent).digest('hex');
+
+            // Determine OpenAPI version (simplified)
+            const specVersion = specContent.includes('"openapi"') ? '3.0' : '2.0';
+
+            // Create metadata
+            const metadata: SpecMetadata = {
+                specPath: specPath,
+                specHash: specHash,
+                generatedTests: [testFilePath],
+                lastGenerated: Date.now(),
+                endpoints: endpoints.map(e => ({
+                    path: e.path,
+                    method: e.method,
+                    operationId: e.operationId,
+                    testScenarioName: `Test ${e.method} ${e.path}`,
+                    testFilePath: testFilePath
+                })),
+                version: specVersion
+            };
+
+            // Save metadata
+            await this._specHashManager.saveMetadata(metadata);
+
+            logger.info(`Saved metadata for spec: ${path.basename(specPath)} (${endpoints.length} endpoints)`);
+        } catch (error) {
+            logger.error('Failed to save spec metadata', error as Error);
+        }
+    }
+
+    /**
+     * Handle test synchronization request
+     */
+    private async handleSyncTests(specPath: string, updatePlan: any): Promise<void> {
+        try {
+            logger.info(`Syncing tests for ${specPath}`);
+
+            // Import TestSyncManager
+            const { TestSyncManager } = await import('../services/testSyncManager');
+            const { KarateGenerator } = await import('../services/karateGenerator');
+
+            const generator = new KarateGenerator();
+            const syncManager = new TestSyncManager(this._specHashManager, generator);
+
+            // Perform sync
+            await syncManager.syncTests(specPath, updatePlan);
+
+            // Refresh history
+            await this.sendHistory();
+
+            this.sendMessage({ type: 'syncComplete' });
+        } catch (error) {
+            logger.error('Failed to sync tests', error as Error);
+            this.sendError(`Failed to sync tests: ${(error as Error).message}`);
+        }
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'style.css'));
@@ -544,6 +619,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             </button>
             <button class="tab-button" data-tab="settings">
                 <span>⚙️</span> Settings
+            </button>
+            <button class="tab-button" data-tab="sync">
+                <span>🔄</span> Sync
             </button>
         </div>
 
@@ -797,6 +875,60 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             <button class="primary-button" id="save-settings-btn">
                 <span>💾</span> Save Settings
             </button>
+        </div>
+
+        <!-- Sync Tab (AI-Powered Test Maintenance) -->
+        <div class="tab-content" id="sync-tab">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🔄</span>
+                    <span class="card-title">Spec Changes Detected</span>
+                </div>
+                
+                <div id="sync-content" class="hidden">
+                    <div class="sync-summary">
+                        <h3 id="sync-spec-name">Loading...</h3>
+                        <p class="text-muted" id="sync-last-generated">Last generated: --</p>
+                        <p id="sync-summary-text" style="margin-top: 8px; font-weight: 600;">--</p>
+                    </div>
+                    
+                    <div class="divider"></div>
+                    
+                    <div class="change-details">
+                        <h4>Changes</h4>
+                        <div id="sync-changes-list" class="change-list">
+                            <!-- Dynamically populated -->
+                        </div>
+                    </div>
+                    
+                    <div class="divider"></div>
+                    
+                    <div class="affected-tests">
+                        <h4>Affected Tests (<span id="sync-affected-count">0</span>)</h4>
+                        <div id="sync-affected-list" class="test-list">
+                            <!-- Dynamically populated -->
+                        </div>
+                    </div>
+                    
+                    <div class="sync-actions" style="margin-top: 16px;">
+                        <button class="primary-button" id="sync-tests-btn">
+                            <span>🔄</span> Update All Tests
+                        </button>
+                        <button class="secondary-button" id="ignore-sync-btn" style="margin-top: 8px;">
+                            <span>🚫</span> Ignore Changes
+                        </button>
+                    </div>
+                    
+                    <div class="info-text" style="margin-top: 12px;">
+                        <p>⚠️ A backup will be created before updating tests</p>
+                    </div>
+                </div>
+                
+                <div id="sync-empty" class="text-center" style="padding: 40px 20px;">
+                    <p class="text-muted">No spec changes detected</p>
+                    <p class="info-text" style="margin-top: 8px;">Changes will appear here automatically when tracked OpenAPI specs are modified</p>
+                </div>
+            </div>
         </div>
 
         <!-- Progress Bar -->

@@ -215,6 +215,9 @@
             case 'preFillSource':
                 handlePreFill(message.filePath, message.target);
                 break;
+            case 'generateFromFileDirect':
+                handleDirectGeneration(message.filePath, message.useCopilot);
+                break;
             case 'progress':
                 showProgress(message.message, message.percentage);
                 break;
@@ -239,6 +242,12 @@
             case 'styleLearned':
                 handleStyleLearned(message.data);
                 break;
+            case 'showSyncPanel':
+                handleShowSyncPanel(message);
+                break;
+            case 'syncComplete':
+                handleSyncComplete();
+                break;
         }
     });
 
@@ -246,12 +255,39 @@
         if (target === 'openapi') {
             switchTab('openapi');
             handleFileSelected(filePath);
+        } else if (target === 'combined') {
+            switchTab('combined');
+            // Pre-fill the OpenAPI file in combined tab
+            currentCombinedOpenApiPath = filePath;
+            const fileName = filePath.split(/[\\\/]/).pop();
+            document.getElementById('combined-file-path').textContent = fileName;
+            document.getElementById('combined-file-display').style.display = 'flex';
+            document.getElementById('select-combined-openapi-btn').style.display = 'none';
         } else if (target === 'style') {
             switchTab('template');
             // We need to trigger the learn style logic but we already have the path
             // In a real app we'd just call the analyzer with this path
             vscode.postMessage({ command: 'learnStyle', filePath: filePath });
         }
+    }
+
+    function handleDirectGeneration(filePath, useCopilot) {
+        // Pre-fill the file
+        currentOpenApiPath = filePath;
+        const fileName = filePath.split(/[\\\/]/).pop();
+
+        // Switch to OpenAPI tab
+        switchTab('openapi');
+
+        // Update UI
+        document.getElementById('openapi-file-path').textContent = fileName;
+        document.getElementById('openapi-file-display').style.display = 'flex';
+        document.getElementById('select-openapi-btn').style.display = 'none';
+
+        // Auto-trigger generation
+        setTimeout(() => {
+            document.getElementById('generate-openapi-btn').click();
+        }, 100);
     }
 
     function handleFileSelected(filePath) {
@@ -396,4 +432,138 @@
     vscode.postMessage({ command: 'getTemplates' });
     vscode.postMessage({ command: 'getHistory' });
     switchTab('home');
+
+    // Sync panel handlers
+    function handleShowSyncPanel(data) {
+        // Debug logging
+        console.log('=== SYNC PANEL DATA ===');
+        console.log('Full data:', data);
+        console.log('Spec path:', data.specPath);
+        console.log('Diff:', data.diff);
+        console.log('Affected:', data.affected);
+        console.log('======================');
+
+        // Switch to sync tab
+        switchTab('sync');
+
+        // Show sync content, hide empty state
+        document.getElementById('sync-content').classList.remove('hidden');
+        document.getElementById('sync-empty').classList.add('hidden');
+
+        // Populate spec info
+        const specName = data.specPath.split(/[\\\/]/).pop();
+        document.getElementById('sync-spec-name').textContent = specName;
+
+        const lastGen = new Date(data.metadata.lastGenerated).toLocaleString();
+        document.getElementById('sync-last-generated').textContent = `Last generated: ${lastGen}`;
+
+        document.getElementById('sync-summary-text').textContent = data.diff.summary;
+
+        // Populate changes
+        const changesList = document.getElementById('sync-changes-list');
+        changesList.innerHTML = '';
+
+        if (data.diff.added.length > 0) {
+            const addedGroup = document.createElement('div');
+            addedGroup.className = 'change-group';
+            addedGroup.innerHTML = `
+                <h5>✅ Added (${data.diff.added.length})</h5>
+                <ul>
+                    ${data.diff.added.map(e => `<li><code>${e.method} ${e.path}</code></li>`).join('')}
+                </ul>
+            `;
+            changesList.appendChild(addedGroup);
+        }
+
+        if (data.diff.removed.length > 0) {
+            const removedGroup = document.createElement('div');
+            removedGroup.className = 'change-group';
+            removedGroup.innerHTML = `
+                <h5>❌ Removed (${data.diff.removed.length})</h5>
+                <ul>
+                    ${data.diff.removed.map(e => `<li><code>${e.method} ${e.path}</code></li>`).join('')}
+                </ul>
+            `;
+            changesList.appendChild(removedGroup);
+        }
+
+        if (data.diff.modified.length > 0) {
+            const modifiedGroup = document.createElement('div');
+            modifiedGroup.className = 'change-group';
+            modifiedGroup.innerHTML = `
+                <h5>⚠️ Modified (${data.diff.modified.length})</h5>
+                <ul>
+                    ${data.diff.modified.map(e => {
+                const hasBreaking = e.details.some(d => d.isBreaking);
+                return `<li><code>${e.method} ${e.path}</code>${hasBreaking ? ' <span class="badge">Breaking</span>' : ''}</li>`;
+            }).join('')}
+                </ul>
+            `;
+            changesList.appendChild(modifiedGroup);
+        }
+
+        // Populate affected tests
+        document.getElementById('sync-affected-count').textContent = data.affected.length;
+
+        const affectedList = document.getElementById('sync-affected-list');
+        affectedList.innerHTML = '';
+
+        data.affected.forEach(test => {
+            const testItem = document.createElement('div');
+            testItem.className = 'test-item';
+            testItem.innerHTML = `
+                <div class="test-info">
+                    <strong>${test.scenarioName}</strong>
+                    <p class="text-muted">${test.testPath}</p>
+                    <p class="reason">${test.reason}</p>
+                </div>
+                <div class="test-action">
+                    <span class="badge ${test.changeImpact}">${test.changeImpact}</span>
+                    <span class="action-label">${test.suggestedAction}</span>
+                </div>
+            `;
+            affectedList.appendChild(testItem);
+        });
+
+        // Store data for sync action
+        window.syncData = data;
+    }
+
+    function handleSyncComplete() {
+        showTemporaryMessage('✅ Tests synchronized successfully!');
+
+        // Hide sync content
+        document.getElementById('sync-content').classList.add('hidden');
+        document.getElementById('sync-empty').classList.remove('hidden');
+
+        // Switch back to home
+        switchTab('home');
+    }
+
+    // Sync button handlers
+    document.getElementById('sync-tests-btn').addEventListener('click', () => {
+        if (window.syncData) {
+            const updatePlan = {
+                specPath: window.syncData.specPath,
+                diff: window.syncData.diff,
+                affectedTests: window.syncData.affected,
+                updateStrategy: 'regenerate'
+            };
+
+            vscode.postMessage({
+                command: 'syncTests',
+                specPath: window.syncData.specPath,
+                updatePlan: updatePlan
+            });
+        }
+    });
+
+    document.getElementById('ignore-sync-btn').addEventListener('click', () => {
+        // Hide sync content
+        document.getElementById('sync-content').classList.add('hidden');
+        document.getElementById('sync-empty').classList.remove('hidden');
+
+        // Switch back to home
+        switchTab('home');
+    });
 })();

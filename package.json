@@ -1,8 +1,8 @@
 {
   "name": "karate-test-generator",
   "displayName": "Karate Test Generator",
-  "description": "AI-Powered Test Generation for Karate DSL from OpenAPI specs and Confluence documentation",
-  "version": "1.1.1",
+  "description": "AI-Powered Test Generation & Maintenance for Karate DSL - Generate tests from OpenAPI specs with GitHub Copilot integration",
+  "version": "1.2.0",
   "publisher": "MuthuKumarKoodalingam",
   "icon": "resources/icon.png",
   "engines": {
@@ -49,11 +49,31 @@
       },
       {
         "command": "karate-dsl.generateFromExplorer",
-        "title": "Karate: Generate Tests from OpenAPI Spec"
+        "title": "Karate: Open in Test Generator"
+      },
+      {
+        "command": "karate-dsl.generateFromExplorerDirect",
+        "title": "Karate: Generate Tests Now"
       },
       {
         "command": "karate-dsl.learnStyleFromExplorer",
-        "title": "Karate: Learn Style from Sample Test"
+        "title": "Karate: Open Style Learning"
+      },
+      {
+        "command": "karate-dsl.learnStyleFromExplorerDirect",
+        "title": "Karate: Learn Style Now"
+      },
+      {
+        "command": "karate-dsl.viewTrackedSpecs",
+        "title": "Karate: View Tracked Specs"
+      },
+      {
+        "command": "karate-dsl.checkSpecChanges",
+        "title": "Karate: Check for Spec Changes"
+      },
+      {
+        "command": "karate-dsl.compareOpenAPIVersions",
+        "title": "Karate: Compare OpenAPI Versions"
       }
     ],
     "viewsContainers": {
@@ -68,26 +88,46 @@
     "menus": {
       "explorer/context": [
         {
-          "command": "karate-dsl.generateFromExplorer",
+          "command": "karate-dsl.generateFromExplorerDirect",
           "when": "resourceExtname == .json || resourceExtname == .yaml || resourceExtname == .yml",
           "group": "karate@1"
         },
         {
+          "command": "karate-dsl.generateFromExplorer",
+          "when": "resourceExtname == .json || resourceExtname == .yaml || resourceExtname == .yml",
+          "group": "karate@2"
+        },
+        {
+          "command": "karate-dsl.learnStyleFromExplorerDirect",
+          "when": "resourceExtname == .feature",
+          "group": "karate@3"
+        },
+        {
           "command": "karate-dsl.learnStyleFromExplorer",
           "when": "resourceExtname == .feature",
-          "group": "karate@2"
+          "group": "karate@4"
         }
       ],
       "editor/context": [
         {
-          "command": "karate-dsl.generateFromExplorer",
+          "command": "karate-dsl.generateFromExplorerDirect",
           "when": "resourceExtname == .json || resourceExtname == .yaml || resourceExtname == .yml",
           "group": "karate@1"
         },
         {
+          "command": "karate-dsl.generateFromExplorer",
+          "when": "resourceExtname == .json || resourceExtname == .yaml || resourceExtname == .yml",
+          "group": "karate@2"
+        },
+        {
+          "command": "karate-dsl.learnStyleFromExplorerDirect",
+          "when": "resourceExtname == .feature",
+          "group": "karate@3"
+        },
+        {
           "command": "karate-dsl.learnStyleFromExplorer",
           "when": "resourceExtname == .feature",
-          "group": "karate@2"
+          "group": "karate@4"
         }
       ]
     },
