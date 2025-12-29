@@ -1,8 +1,8 @@
 {
   "name": "karate-test-generator",
-  "displayName": "Karate Test Generator",
+  "displayName": "Karate API Test Generator",
   "description": "AI-Powered Test Generation & Maintenance for Karate DSL - Generate tests from OpenAPI specs with GitHub Copilot integration",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "publisher": "MuthuKumarKoodalingam",
   "icon": "resources/icon.png",
   "engines": {
@@ -14,15 +14,18 @@
   ],
   "keywords": [
     "karate",
+    "karate dsl",
+    "karate api",
     "api testing",
+    "api test generator",
     "openapi",
     "swagger",
-    "confluence",
-    "test generation",
-    "AI Test Generation",
-    "Copilot",
-    "AI Test Automation",
-    "Test Automation"
+    "openapi test generator",
+    "rest api testing",
+    "bdd",
+    "qa automation",
+    "contract testing",
+    "test automation"
   ],
   "repository": {
     "type": "git",

@@ -1,13 +1,23 @@
-# Karate Test Generator for VS Code
+# Karate API Test Generator for VS Code
 
-> **AI-Powered Test Generation & Maintenance** for Karate DSL
+AI-powered **Karate API testing** extension that generates and maintains
+**Karate DSL tests from OpenAPI specifications and Confluence documentation**.
 
 Generate comprehensive API tests from OpenAPI specifications, Confluence documentation, or both combined. Automatically maintain tests when your API evolves with intelligent AI assistance.
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
+**Keywords**: Karate API testing, OpenAPI test generation, API automation,
+Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing
+
+[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
-## 🎉 What's New in v1.2.0
+### Why Karate API Test Generator?
+Unlike generic API test generators, this extension is **built specifically for Karate DSL**
+and supports **automatic test maintenance when OpenAPI specs evolve**.
+Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
+
+
+## 🎉 What's New in v1.2.1
 
 ### Major Features
 - 🤖 **AI-Powered Test Maintenance** - Copilot intelligently updates tests when specs change
@@ -312,55 +322,6 @@ Feature: Pet API Tests
 - ⏱️ 30-second cooldown prevents duplicate notifications
 
 [See full changelog](CHANGELOG.md)
-
-## 🔮 Coming Soon
-
-### Version Comparison & Manual Test Updates
-
-**Compare OpenAPI Spec Versions** - Professional workflow for controlled test maintenance:
-
-```
-Command Palette → "Karate: Compare OpenAPI Versions"
-```
-
-**How it works**:
-1. **Select Versions**: Choose old and new OpenAPI specification files
-2. **Intelligent Analysis**: System analyzes differences between versions
-3. **Smart Matching**: Automatically identifies which test files need updates
-4. **Targeted Updates**: Updates only affected scenarios, preserves customizations
-5. **Change Summary**: Detailed report of what was modified
-
-**Use Cases**:
-- **API Version Migration**: Migrating from v1 to v2 of your API
-- **Release Management**: Comparing staging vs production specs
-- **Change Validation**: Review impact before updating tests
-- **Team Collaboration**: Merge changes from multiple team members
-
-**What gets updated**:
-- ✅ **Added Endpoints** → New test scenarios created
-- ✅ **Modified Parameters** → Existing tests updated intelligently
-- ✅ **Removed Endpoints** → Marked as deprecated with timestamp
-- ✅ **Breaking Changes** → Detected and highlighted for review
-
-**Example Workflow**:
-```
-1. Save current spec as "api-v1.0.yaml"
-2. Update spec to v2.0
-3. Run: Compare OpenAPI Versions
-4. Select: api-v1.0.yaml (old) and api-v2.0.yaml (new)
-5. Review: Summary shows "3 added, 2 modified, 1 removed"
-6. Confirm: Tests updated automatically
-7. Result: Only changed scenarios updated, custom logic preserved
-```
-
-**Benefits**:
-- 🎯 **Precision**: Updates only what changed
-- 🔒 **Safety**: Preserves your custom test logic
-- 📊 **Visibility**: Clear summary of all changes
-- ⚡ **Speed**: Faster than manual updates
-- 🤝 **Collaboration**: Perfect for team workflows
-
-This feature is **already implemented** and will be highlighted in the next release!
 
 ## 📄 License
 
