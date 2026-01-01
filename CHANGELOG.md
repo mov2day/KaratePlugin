@@ -5,7 +5,76 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] - 2025-12-29
+## [1.2.2] - 2026-01-01
+
+### 🎉 Major Features
+
+#### Postman Collection Import
+- **Import Postman Collections**: Convert Postman collections to Karate DSL tests
+- **Environment File Support**: Import and merge Postman environment variables
+- **Copilot Enhancement**: Optional AI-powered improvement of converted tests
+  - Better variable handling and definitions
+  - Improved test script → Karate assertion conversion
+  - Realistic test data generation
+  - Enhanced pre-request script conversion
+  - Proper authentication setup
+- **Smart Conversion**: Automatic conversion of:
+  - HTTP requests (GET, POST, PUT, DELETE, etc.)
+  - Headers and query parameters
+  - Request bodies (JSON, form-data, urlencoded)
+  - Authentication (Basic, Bearer, API Key)
+  - Postman variables ({{var}} → #(var))
+- **Folder Structure Preservation**: Maintains collection organization
+- **Right-Click Integration**: Import directly from Explorer context menu
+
+#### Visual Test Coverage Dashboard
+- **Multi-Spec Analysis**: Analyze multiple OpenAPI specifications simultaneously
+- **Multi-Directory Support**: Select specific feature file directories to include
+- **Copilot-Powered Coverage Computation**:
+  - Accurate coverage percentage calculation
+  - Quality assessment (Excellent/Good/Fair/Poor)
+  - Top 5 priority endpoints needing tests
+  - Specific recommendations for improvement
+  - Risk assessment for uncovered endpoints
+- **Enhanced Endpoint Matching**:
+  - Path segment matching
+  - Operation ID matching
+  - Path parameter detection
+  - Case-insensitive matching
+- **Beautiful HTML Reports**: Export comprehensive coverage reports with:
+  - Overall coverage statistics
+  - Method breakdown (GET, POST, PUT, DELETE)
+  - Endpoint-level details
+  - Copilot insights section
+  - Priority recommendations
+- **Intelligent Missing Test Analysis**: Copilot suggests specific test scenarios:
+  - Success cases (200, 201, 204)
+  - Client errors (400, 401, 403, 404)
+  - Server errors (500, 503)
+  - Edge cases and boundary conditions
+  - Security tests
+
+### ✨ Enhancements
+- **Better Coverage Matching**: Improved algorithm for matching endpoints to test scenarios
+- **Flexible Selection**: Choose exactly which specs and features to analyze
+- **Actionable Insights**: Specific, prioritized recommendations
+- **Enhanced Services**: Created `EnhancedCoverageService` for better analysis
+- **Improved Logging**: Better debug information throughout
+
+### 🔧 Technical Improvements
+- Created `PostmanParser` service (300+ lines)
+- Created `PostmanToKarateConverter` service (400+ lines)
+- Created `PostmanImportService` service (300+ lines)
+- Enhanced `CoverageAnalyzer` with Copilot integration (400+ lines)
+- Created `EnhancedCoverageService` for multi-spec analysis (250+ lines)
+- Total new code: ~1650 lines
+
+### 📚 Documentation
+- Updated README with new features
+- Added detailed usage examples
+- Updated version badges
+
+## [1.2.1] - 2025-12-29
 
 ### 🎉 Major Features
 

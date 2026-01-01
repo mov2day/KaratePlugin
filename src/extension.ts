@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { generateFromOpenAPI } from './commands/generateFromOpenAPI';
 import { generateFromConfluence } from './commands/generateFromConfluence';
 import { generateCombined } from './commands/generateCombined';
@@ -350,6 +351,224 @@ export function activate(context: vscode.ExtensionContext) {
         }
     );
 
+    // Show Coverage Dashboard command
+    const showCoverageDashboardCommand = vscode.commands.registerCommand(
+        'karate-dsl.showCoverageDashboard',
+        async () => {
+            try {
+                // Find OpenAPI spec files
+                const specs = await vscode.workspace.findFiles('**/*.{yaml,yml,json}', '**/node_modules/**');
+
+                if (specs.length === 0) {
+                    vscode.window.showWarningMessage('No OpenAPI specification files found in workspace');
+                    return;
+                }
+
+                // Let user select spec if multiple found
+                let selectedSpec: vscode.Uri;
+                if (specs.length === 1) {
+                    selectedSpec = specs[0];
+                } else {
+                    const items = specs.map(s => ({
+                        label: path.basename(s.fsPath),
+                        description: vscode.workspace.asRelativePath(s.fsPath),
+                        uri: s
+                    }));
+
+                    const selected = await vscode.window.showQuickPick(items, {
+                        placeHolder: 'Select OpenAPI specification to analyze'
+                    });
+
+                    if (!selected) return;
+                    selectedSpec = selected.uri;
+                }
+
+                // Analyze coverage
+                await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'Analyzing test coverage...',
+                    cancellable: false
+                }, async (progress) => {
+                    progress.report({ increment: 30, message: 'Scanning feature files...' });
+
+                    const { CoverageAnalyzer } = await import('./services/coverageAnalyzer');
+                    const analyzer = new CoverageAnalyzer();
+
+                    const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath || '';
+
+                    progress.report({ increment: 60, message: 'Calculating coverage...' });
+
+                    const report = await analyzer.analyzeCoverage(selectedSpec.fsPath, workspaceRoot);
+
+                    progress.report({ increment: 100 });
+
+                    // Create webview panel
+                    const panel = vscode.window.createWebviewPanel(
+                        'coverageDashboard',
+                        `Coverage: ${report.specName}`,
+                        vscode.ViewColumn.One,
+                        {
+                            enableScripts: true,
+                            retainContextWhenHidden: true
+                        }
+                    );
+
+                    // Generate HTML content
+                    const htmlContent = analyzer.exportToHtml(report);
+                    panel.webview.html = htmlContent;
+
+                    // Handle messages from webview
+                    panel.webview.onDidReceiveMessage(
+                        async message => {
+                            switch (message.command) {
+                                case 'export':
+                                    const exportPath = await vscode.window.showSaveDialog({
+                                        filters: {
+                                            'HTML': ['html'],
+                                            'JSON': ['json']
+                                        },
+                                        defaultUri: vscode.Uri.file(path.join(workspaceRoot, 'coverage-report.html'))
+                                    });
+
+                                    if (exportPath) {
+                                        const content = message.format === 'json'
+                                            ? analyzer.exportToJson(report)
+                                            : analyzer.exportToHtml(report);
+
+                                        fs.writeFileSync(exportPath.fsPath, content, 'utf-8');
+                                        vscode.window.showInformationMessage(`Coverage report exported to ${exportPath.fsPath}`);
+                                    }
+                                    break;
+                            }
+                        },
+                        undefined,
+                        context.subscriptions
+                    );
+
+                    // Show summary notification
+                    vscode.window.showInformationMessage(
+                        `Coverage: ${report.percentage.toFixed(1)}% (${report.coveredEndpoints}/${report.totalEndpoints} endpoints)`
+                    );
+                });
+            } catch (error) {
+                logger.error('Coverage analysis failed', error as Error);
+                vscode.window.showErrorMessage(`Failed to analyze coverage: ${error}`);
+            }
+        }
+    );
+
+    // Postman Collection Import command
+    const importPostmanCommand = vscode.commands.registerCommand(
+        'karate-dsl.importPostmanCollection',
+        async (uri?: vscode.Uri) => {
+            try {
+                // Select collection file
+                const collectionFile = uri || await vscode.window.showOpenDialog({
+                    canSelectMany: false,
+                    filters: { 'Postman Collection': ['json'] },
+                    title: 'Select Postman Collection'
+                });
+
+                if (!collectionFile || (Array.isArray(collectionFile) && collectionFile.length === 0)) {
+                    return;
+                }
+
+                const collectionPath = Array.isArray(collectionFile) ? collectionFile[0].fsPath : collectionFile.fsPath;
+
+                // Ask for environment file (optional)
+                const includeEnv = await vscode.window.showQuickPick(['Yes', 'No'], {
+                    placeHolder: 'Do you want to include a Postman environment file?'
+                });
+
+                let environmentPath: string | undefined;
+                if (includeEnv === 'Yes') {
+                    const envFile = await vscode.window.showOpenDialog({
+                        canSelectMany: false,
+                        filters: { 'Postman Environment': ['json'] },
+                        title: 'Select Postman Environment'
+                    });
+
+                    if (envFile && envFile.length > 0) {
+                        environmentPath = envFile[0].fsPath;
+                    }
+                }
+
+                // Ask if user wants to use Copilot
+                const useCopilotChoice = await vscode.window.showQuickPick(['Yes', 'No'], {
+                    placeHolder: 'Use GitHub Copilot to enhance variable and script conversion?'
+                });
+
+                const useCopilot = useCopilotChoice === 'Yes';
+
+                // Ask for output directory
+                const workspaceFolders = vscode.workspace.workspaceFolders;
+                if (!workspaceFolders) {
+                    vscode.window.showErrorMessage('No workspace folder open');
+                    return;
+                }
+
+                const outputDir = path.join(workspaceFolders[0].uri.fsPath, 'src', 'test', 'karate');
+
+                // Import with progress
+                await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'Importing Postman Collection...',
+                    cancellable: false
+                }, async (progress) => {
+                    progress.report({ increment: 20, message: 'Parsing collection...' });
+
+                    const { PostmanImportService } = await import('./services/postmanImportService');
+                    const importService = new PostmanImportService();
+
+                    progress.report({ increment: 40, message: 'Converting to Karate...' });
+
+                    const result = await importService.importCollection(collectionPath, outputDir, {
+                        preserveFolders: true,
+                        convertScripts: true,
+                        includeAuth: true,
+                        useCopilot,
+                        environmentFile: environmentPath
+                    });
+
+                    progress.report({ increment: 100 });
+
+                    if (result.success) {
+                        const message = `✅ Successfully imported ${result.featuresCreated} feature file(s)!`;
+                        const action = await vscode.window.showInformationMessage(
+                            message,
+                            'Open Folder',
+                            'Dismiss'
+                        );
+
+                        if (action === 'Open Folder') {
+                            const uri = vscode.Uri.file(outputDir);
+                            await vscode.commands.executeCommand('revealInExplorer', uri);
+                        }
+
+                        // Show warnings if any
+                        if (result.warnings.length > 0) {
+                            vscode.window.showWarningMessage(
+                                `Import completed with warnings: ${result.warnings.join(', ')}`
+                            );
+                        }
+
+                        // Show unsupported features if any
+                        if (result.unsupportedFeatures.length > 0) {
+                            vscode.window.showInformationMessage(
+                                `Note: ${result.unsupportedFeatures.join(', ')}`
+                            );
+                        }
+                    } else {
+                        vscode.window.showErrorMessage(`Import failed: ${result.warnings.join(', ')}`);
+                    }
+                });
+            } catch (error) {
+                logger.error('Postman import failed', error as Error);
+                vscode.window.showErrorMessage(`Failed to import Postman collection: ${error}`);
+            }
+        }
+    );
+
     context.subscriptions.push(
         openApiCommand,
         confluenceCommand,
@@ -361,7 +580,9 @@ export function activate(context: vscode.ExtensionContext) {
         learnStyleFromExplorerDirectCommand,
         viewTrackedSpecsCommand,
         checkSpecChangesCommand,
-        compareOpenAPIVersionsCommand
+        compareOpenAPIVersionsCommand,
+        showCoverageDashboardCommand,
+        importPostmanCommand
     );
 }
 

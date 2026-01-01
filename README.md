@@ -8,7 +8,7 @@ Generate comprehensive API tests from OpenAPI specifications, Confluence documen
 **Keywords**: Karate API testing, OpenAPI test generation, API automation,
 Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing
 
-[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
 ### Why Karate API Test Generator?
@@ -17,25 +17,41 @@ and supports **automatic test maintenance when OpenAPI specs evolve**.
 Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
 
 
-## 🎉 What's New in v1.2.1
+## 🎉 What's New in v1.2.2
 
-### Major Features
-- 🤖 **AI-Powered Test Maintenance** - Copilot intelligently updates tests when specs change
-- 🚫 **Smart Notification System** - No more spam! Intelligent debouncing and processing awareness
-- ⚡ **Direct Generation** - Right-click menu now works independently, no panel needed
-- 🎨 **Style Learning** - Learn from existing tests to maintain consistency
+### 🚀 Major New Features
 
-### Bug Fixes
-- ✅ Fixed "Generate Now" not creating files
-- ✅ Fixed "Learn Style Now" not working
-- ✅ Fixed notification spam during polling
-- ✅ Fixed notifications appearing during Copilot processing
+#### 📦 Postman Collection Import
+- **Import Postman Collections** - Convert your Postman collections to Karate DSL tests
+- **Environment Support** - Import Postman environment variables
+- **Copilot Enhancement** - Optional AI-powered improvement of variables and scripts
+- **Smart Conversion** - Automatically converts test scripts to Karate assertions
+- **Folder Preservation** - Maintains your collection's folder structure
 
-### Improvements
-- 📊 Better error handling and logging
-- 🎯 Simplified notification buttons (Update with Copilot + Ignore)
-- 🔄 Automatic hash updates prevent re-notification
-- ⏱️ 30-second cooldown prevents duplicate notifications
+**How to Access:**
+- Command Palette (`Cmd/Ctrl+Shift+P`) → **"Karate: Import Postman Collection"**
+- Follow the prompts to select your Postman collection file
+- Choose whether to use Copilot for enhanced variable conversion
+
+#### 📊 Visual Test Coverage Dashboard
+- **Multi-Spec Analysis** - Analyze multiple OpenAPI specs at once
+- **Multi-Directory Support** - Select which feature file directories to include
+- **Copilot-Powered Insights** - AI computes accurate coverage percentage
+- **Quality Assessment** - Excellent/Good/Fair/Poor ratings
+- **Priority Recommendations** - Top 5 endpoints that need tests
+- **Risk Assessment** - Understand the impact of uncovered endpoints
+- **Beautiful HTML Reports** - Export detailed coverage reports
+
+**How to Access:**
+- Command Palette (`Cmd/Ctrl+Shift+P`) → **"Karate: Show Test Coverage Dashboard"**
+- Follow the prompts to select specs and feature directories
+- Choose whether to use Copilot for enhanced analysis
+
+### ✨ Enhancements
+- 🤖 **Copilot Integration** - Both features use Copilot for intelligent analysis
+- 📈 **Better Coverage Computation** - More accurate endpoint-to-scenario matching
+- 🎯 **Actionable Insights** - Specific recommendations for improving coverage
+- 🔄 **Flexible Selection** - Choose exactly what to analyze
 
 [See full changelog](CHANGELOG.md)
 
@@ -300,28 +316,6 @@ Feature: Pet API Tests
 - [Copilot Integration Guide](docs/COPILOT_GUIDE.md)
 - [Development Setup](DEVELOPMENT.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
-
-## 🎉 What's New in v1.2.0
-
-### Major Features
-- 🤖 **AI-Powered Test Maintenance** - Copilot intelligently updates tests when specs change
-- 🚫 **Smart Notification System** - No more spam! Intelligent debouncing and processing awareness
-- ⚡ **Direct Generation** - Right-click menu now works independently, no panel needed
-- 🎨 **Style Learning** - Learn from existing tests to maintain consistency
-
-### Bug Fixes
-- ✅ Fixed "Generate Now" not creating files
-- ✅ Fixed "Learn Style Now" not working
-- ✅ Fixed notification spam during polling
-- ✅ Fixed notifications appearing during Copilot processing
-
-### Improvements
-- 📊 Better error handling and logging
-- 🎯 Simplified notification buttons (Update with Copilot + Ignore)
-- 🔄 Automatic hash updates prevent re-notification
-- ⏱️ 30-second cooldown prevents duplicate notifications
-
-[See full changelog](CHANGELOG.md)
 
 ## 📄 License
 
