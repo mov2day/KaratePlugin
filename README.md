@@ -6,9 +6,9 @@ AI-powered **Karate API testing** extension that generates and maintains
 Generate comprehensive API tests from OpenAPI specifications, Confluence documentation, or both combined. Automatically maintain tests when your API evolves with intelligent AI assistance.
 
 **Keywords**: Karate API testing, OpenAPI test generation, API automation,
-Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing
+Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing, Postman to Karate, Postman to Karate converter, Postman migration to Karate,postman
 
-[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.2.3-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
 ### Why Karate API Test Generator?
@@ -17,7 +17,7 @@ and supports **automatic test maintenance when OpenAPI specs evolve**.
 Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
 
 
-## 🎉 What's New in v1.2.2
+## 🎉 What's New in v1.2.3
 
 ### 🚀 Major New Features
 

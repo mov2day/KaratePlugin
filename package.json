@@ -2,12 +2,13 @@
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
   "description": "AI-Powered Test Generation & Maintenance for Karate DSL - Generate tests from OpenAPI specs with GitHub Copilot integration",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "publisher": "MuthuKumarKoodalingam",
   "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
+  "pricing": "Free",
   "categories": [
     "Testing",
     "Other"
@@ -25,7 +26,16 @@
     "bdd",
     "qa automation",
     "contract testing",
-    "test automation"
+    "test automation",
+    "postman",
+    "postman converter",
+    "postman to karate",
+    "postman to karate converter",
+    "postman migration",
+    "postman migration to karate",
+    "AI Test Generator",
+    "AI Test Automation",
+    "AI Test Automation for API"
   ],
   "repository": {
     "type": "git",
