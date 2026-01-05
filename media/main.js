@@ -566,4 +566,9 @@
         // Switch back to home
         switchTab('home');
     });
+
+    // Coverage Dashboard launch button
+    document.getElementById('launch-coverage-btn').addEventListener('click', () => {
+        vscode.postMessage({ command: 'launchCoverageDashboard' });
+    });
 })();

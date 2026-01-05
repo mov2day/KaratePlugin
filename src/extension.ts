@@ -5,6 +5,7 @@ import { generateFromOpenAPI } from './commands/generateFromOpenAPI';
 import { generateFromConfluence } from './commands/generateFromConfluence';
 import { generateCombined } from './commands/generateCombined';
 import { KarateWebviewProvider } from './webview/WebviewProvider';
+import { CoverageDashboardProvider } from './webview/CoverageDashboardProvider';
 import { SpecWatcher } from './services/specWatcher';
 import { SpecHashManager } from './services/specHashManager';
 import { SpecDiffAnalyzer } from './services/specDiffAnalyzer';
@@ -27,6 +28,9 @@ export function activate(context: vscode.ExtensionContext) {
             webviewProvider
         )
     );
+
+    // Create coverage dashboard provider (for standalone panel only)
+    const coverageDashboardProvider = new CoverageDashboardProvider(context.extensionUri);
 
     // Initialize AI-Powered Test Maintenance
     const specHashManager = new SpecHashManager(context);
@@ -355,105 +359,7 @@ export function activate(context: vscode.ExtensionContext) {
     const showCoverageDashboardCommand = vscode.commands.registerCommand(
         'karate-dsl.showCoverageDashboard',
         async () => {
-            try {
-                // Find OpenAPI spec files
-                const specs = await vscode.workspace.findFiles('**/*.{yaml,yml,json}', '**/node_modules/**');
-
-                if (specs.length === 0) {
-                    vscode.window.showWarningMessage('No OpenAPI specification files found in workspace');
-                    return;
-                }
-
-                // Let user select spec if multiple found
-                let selectedSpec: vscode.Uri;
-                if (specs.length === 1) {
-                    selectedSpec = specs[0];
-                } else {
-                    const items = specs.map(s => ({
-                        label: path.basename(s.fsPath),
-                        description: vscode.workspace.asRelativePath(s.fsPath),
-                        uri: s
-                    }));
-
-                    const selected = await vscode.window.showQuickPick(items, {
-                        placeHolder: 'Select OpenAPI specification to analyze'
-                    });
-
-                    if (!selected) return;
-                    selectedSpec = selected.uri;
-                }
-
-                // Analyze coverage
-                await vscode.window.withProgress({
-                    location: vscode.ProgressLocation.Notification,
-                    title: 'Analyzing test coverage...',
-                    cancellable: false
-                }, async (progress) => {
-                    progress.report({ increment: 30, message: 'Scanning feature files...' });
-
-                    const { CoverageAnalyzer } = await import('./services/coverageAnalyzer');
-                    const analyzer = new CoverageAnalyzer();
-
-                    const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath || '';
-
-                    progress.report({ increment: 60, message: 'Calculating coverage...' });
-
-                    const report = await analyzer.analyzeCoverage(selectedSpec.fsPath, workspaceRoot);
-
-                    progress.report({ increment: 100 });
-
-                    // Create webview panel
-                    const panel = vscode.window.createWebviewPanel(
-                        'coverageDashboard',
-                        `Coverage: ${report.specName}`,
-                        vscode.ViewColumn.One,
-                        {
-                            enableScripts: true,
-                            retainContextWhenHidden: true
-                        }
-                    );
-
-                    // Generate HTML content
-                    const htmlContent = analyzer.exportToHtml(report);
-                    panel.webview.html = htmlContent;
-
-                    // Handle messages from webview
-                    panel.webview.onDidReceiveMessage(
-                        async message => {
-                            switch (message.command) {
-                                case 'export':
-                                    const exportPath = await vscode.window.showSaveDialog({
-                                        filters: {
-                                            'HTML': ['html'],
-                                            'JSON': ['json']
-                                        },
-                                        defaultUri: vscode.Uri.file(path.join(workspaceRoot, 'coverage-report.html'))
-                                    });
-
-                                    if (exportPath) {
-                                        const content = message.format === 'json'
-                                            ? analyzer.exportToJson(report)
-                                            : analyzer.exportToHtml(report);
-
-                                        fs.writeFileSync(exportPath.fsPath, content, 'utf-8');
-                                        vscode.window.showInformationMessage(`Coverage report exported to ${exportPath.fsPath}`);
-                                    }
-                                    break;
-                            }
-                        },
-                        undefined,
-                        context.subscriptions
-                    );
-
-                    // Show summary notification
-                    vscode.window.showInformationMessage(
-                        `Coverage: ${report.percentage.toFixed(1)}% (${report.coveredEndpoints}/${report.totalEndpoints} endpoints)`
-                    );
-                });
-            } catch (error) {
-                logger.error('Coverage analysis failed', error as Error);
-                vscode.window.showErrorMessage(`Failed to analyze coverage: ${error}`);
-            }
+            await coverageDashboardProvider.showDashboard();
         }
     );
 

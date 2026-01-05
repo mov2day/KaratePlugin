@@ -5,6 +5,27 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-01-05
+
+### 🎉 Major Features
+
+#### 📊 Next-Gen Interactive Coverage Dashboard
+- **New Re-imagined UI**: A modern, full-screen dashboard replacing the old sidebar view for a more immersive analysis experience.
+- **Interactive Control Panel**: 
+  - **📂 Multi-select Specs**: Easily browse and select multiple OpenAPI specifications.
+  - **📂 Custom Feature Selection**: Manually pick exactly which folders or feature files to include in the analysis.
+  - **🤖 One-Click AI Analysis**: Toggle Copilot's enhanced reasoning with a single switch.
+- **Robust Visualization**: 
+  - **Clean Method Breakdown**: Visual bar charts for GET, POST, PUT, DELETE coverage.
+  - **Real-time Stats**: Instant updates on total coverage percentage and endpoint counts.
+- **Improved AI Insights**: Get prioritized recommendations and quality assessments directly in the dashboard UI.
+- **Direct Action**: Generate missing tests or view details directly from the endpoint list.
+
+### 🔧 Bug Fixes & Improvements
+- **Security Fix**: Applied robust Content Security Policy (CSP) and nonces to the webview.
+- **Stability**: Rewrote webview script core to resolve syntax errors and improve event handling in restricted VS Code environments.
+- **UI/UX**: Better layout responsiveness and VS Code theme integration.
+
 ## [1.2.3] - 2026-01-03
 
 ### 🎉 Major Features

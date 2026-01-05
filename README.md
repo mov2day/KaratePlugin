@@ -11,49 +11,64 @@ Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testi
 [![Version](https://img.shields.io/badge/version-1.2.3-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
-### Why Karate API Test Generator?
-Unlike generic API test generators, this extension is **built specifically for Karate DSL**
-and supports **automatic test maintenance when OpenAPI specs evolve**.
-Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
+![Hero Animation Placeholder - Suggested: GIF showing right-click generation](https://raw.githubusercontent.com/mov2day/KaratePlugin/main/resources/hero.gif)
 
+---
 
-## 🎉 What's New in v1.2.3
+## 🆕 What's New in v1.2.4
 
-### 🚀 Major New Features
+### 🚀 Next-Gen Interactive Coverage Dashboard
+Experience the future of API coverage analysis. The all-new, full-screen dashboard provides a command center for your Karate test suite.
 
-#### 📦 Postman Collection Import
-- **Import Postman Collections** - Convert your Postman collections to Karate DSL tests
-- **Environment Support** - Import Postman environment variables
-- **Copilot Enhancement** - Optional AI-powered improvement of variables and scripts
-- **Smart Conversion** - Automatically converts test scripts to Karate assertions
-- **Folder Preservation** - Maintains your collection's folder structure
+![Interactive Coverage Dashboard](media/coverage-dashboard.png)
 
-**How to Access:**
-- Command Palette (`Cmd/Ctrl+Shift+P`) → **"Karate: Import Postman Collection"**
-- Follow the prompts to select your Postman collection file
-- Choose whether to use Copilot for enhanced variable conversion
+*   **Ultimate Control**: Manually pick your OpenAPI specs and feature directories with ease.
+*   **AI-Powered Precision**: Toggle Copilot insights to get deep quality assessments and prioritized recommendations.
+*   **Actionable Data**: Don't just see the gaps—fix them. Generate missing tests directly from the dashboard.
+*   **Visual Excellence**: Modern, theme-aware charts powered by Chart.js for a premium developer experience.
 
-#### 📊 Visual Test Coverage Dashboard
-- **Multi-Spec Analysis** - Analyze multiple OpenAPI specs at once
-- **Multi-Directory Support** - Select which feature file directories to include
-- **Copilot-Powered Insights** - AI computes accurate coverage percentage
-- **Quality Assessment** - Excellent/Good/Fair/Poor ratings
-- **Priority Recommendations** - Top 5 endpoints that need tests
-- **Risk Assessment** - Understand the impact of uncovered endpoints
-- **Beautiful HTML Reports** - Export detailed coverage reports
+**How to Launch:**
+- Activity Bar → **Test Generator Panel** → Click **🚀 Launch Coverage Dashboard**
+- Or use Command Palette: **"Karate: Show Test Coverage Dashboard"**
 
-**How to Access:**
-- Command Palette (`Cmd/Ctrl+Shift+P`) → **"Karate: Show Test Coverage Dashboard"**
-- Follow the prompts to select specs and feature directories
-- Choose whether to use Copilot for enhanced analysis
+---
 
-### ✨ Enhancements
-- 🤖 **Copilot Integration** - Both features use Copilot for intelligent analysis
-- 📈 **Better Coverage Computation** - More accurate endpoint-to-scenario matching
-- 🎯 **Actionable Insights** - Specific recommendations for improving coverage
-- 🔄 **Flexible Selection** - Choose exactly what to analyze
+## ⚡️ The Karate Generator Advantage
 
-[See full changelog](CHANGELOG.md)
+Stop wasting hours manually writing Boilerplate Gherkin. Let AI handle the structure so you can focus on the business logic.
+
+| Feature | Manual Typing | Karate Generator + Copilot |
+| :--- | :---: | :---: |
+| **New Test Creation** | 15-30 mins | **< 30 seconds** |
+| **OpenAPI Sync** | Manual tracking | **Auto-detect & Update** |
+| **Postman Migration** | Rewrite everything | **One-click Import** |
+| **Test Quality** | Peer review needed | **Copilot Optimized** |
+| **Coverage Visibility** | Spreadsheet hell | **Visual Dashboard** |
+
+---
+
+## 🛠 Functionality Details
+
+### 📦 Postman Collection Import (v1.2.3)
+- **Zero-Effort Migration**: Convert entire Postman collections to Karate DSL in seconds.
+- **Environment Smart**: Automatically handles variables and environments.
+- **AI-Enhanced**: Uses Copilot to intelligently convert Postman scripts into robust Karate assertions.
+
+### 🤖 AI-Powered Maintenance (v1.2.1)
+- **Automatic Sync**: Detects changes in your OpenAPI specs.
+- **Smart Updates**: Copilot suggests updates to existing tests, preserving your custom logic.
+- **Change Analysis**: See exactly what changed before applying AI fixes.
+
+---
+
+## 🤖 AI-Powered Excellence with GitHub Copilot
+
+This extension is designed to work hand-in-hand with GitHub Copilot to provide:
+
+*   **Smart Assertions**: AI automatically generates complex JSONPath/Match statements based on schema logic.
+*   **Edge Case Detection**: Automatically suggests scenarios for 400, 401, 404, and 500 status codes.
+*   **Realistic Data**: Instead of `foo/bar`, Copilot generates realistic names, emails, and UUIDs.
+*   **Test Maintenance**: When your spec changes, AI intelligently decides whether to update, delete, or add scenarios.
 
 ---
 

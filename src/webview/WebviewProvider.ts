@@ -92,6 +92,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 case 'syncTests':
                     await this.handleSyncTests(data.specPath, data.updatePlan);
                     break;
+                case 'launchCoverageDashboard':
+                    await vscode.commands.executeCommand('karate-dsl.showCoverageDashboard');
+                    break;
             }
         });
     }
@@ -623,6 +626,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             <button class="tab-button" data-tab="sync">
                 <span>🔄</span> Sync
             </button>
+            <button class="tab-button" data-tab="coverage">
+                <span>📊</span> Coverage
+            </button>
         </div>
 
         <!-- Dashboard / Welcome (Hidden when tabs are active) -->
@@ -927,6 +933,33 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 <div id="sync-empty" class="text-center" style="padding: 40px 20px;">
                     <p class="text-muted">No spec changes detected</p>
                     <p class="info-text" style="margin-top: 8px;">Changes will appear here automatically when tracked OpenAPI specs are modified</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Coverage Tab -->
+        <div class="tab-content" id="coverage-tab">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📊</span>
+                    <span class="card-title">Test Coverage Dashboard</span>
+                </div>
+                <div class="form-group">
+                    <p class="info-text">Analyze your API test coverage with interactive visualizations and AI-powered insights.</p>
+                </div>
+                
+                <button class="primary-button" id="launch-coverage-btn" style="width: 100%; margin-top: 20px;">
+                    <span>🚀</span> Launch Coverage Dashboard
+                </button>
+                
+                <div class="info-text" style="margin-top: 16px;">
+                    <p><strong>Features:</strong></p>
+                    <ul style="margin-left: 20px; margin-top: 8px;">
+                        <li>📈 Interactive charts and visualizations</li>
+                        <li>🤖 AI-powered Copilot insights</li>
+                        <li>🎯 Priority endpoint recommendations</li>
+                        <li>📊 Method-level coverage breakdown</li>
+                    </ul>
                 </div>
             </div>
         </div>
