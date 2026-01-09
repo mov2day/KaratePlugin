@@ -71,7 +71,7 @@ export async function generateFromOpenAPI(context: vscode.ExtensionContext): Pro
                         const fs = await import('fs');
                         const fullSpecContent = fs.readFileSync(specPath, 'utf-8');
 
-                        finalContent = await CopilotService.enhanceKarateTest(
+                        finalContent = await CopilotService.enhanceKarateTestComprehensive(
                             featureContent,
                             context,
                             {

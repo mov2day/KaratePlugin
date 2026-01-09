@@ -9,6 +9,98 @@ export class PostmanToKarateConverter {
     /**
      * Convert a Postman request to a Karate scenario
      */
+    public async convertRequestAsync(
+        request: PostmanRequest,
+        scenarioName: string,
+        variables: Map<string, string> = new Map(),
+        preRequestScript?: string,
+        testScript?: string,
+        useCopilot: boolean = false
+    ): Promise<string> {
+        const lines: string[] = [];
+
+        // Scenario header
+        lines.push(`  Scenario: ${scenarioName}`);
+
+        // Add description if present
+        if (request.description) {
+            lines.push(`    # ${request.description}`);
+        }
+
+        // Convert pre-request script to Karate (if possible)
+        if (preRequestScript) {
+            const karatePreScript = useCopilot
+                ? await this.convertPreRequestScriptWithCopilot(preRequestScript)
+                : this.convertPreRequestScript(preRequestScript);
+            if (karatePreScript) {
+                lines.push(...karatePreScript.split('\\n').map(l => `    ${l}`));
+            }
+        }
+
+        // Parse URL
+        const url = typeof request.url === 'string' ? request.url : request.url.raw;
+        const urlParts = this.parseUrlForKarate(url, variables);
+
+        // Set base URL
+        lines.push(`    Given url ${urlParts.baseUrl}`);
+
+        // Set path
+        if (urlParts.path) {
+            lines.push(`    And path ${urlParts.path}`);
+        }
+
+        // Set query parameters
+        if (typeof request.url !== 'string' && request.url.query) {
+            for (const param of request.url.query) {
+                if (!param.disabled) {
+                    const value = this.replaceVariables(param.value, variables);
+                    lines.push(`    And param ${param.key} = ${this.formatValue(value)}`);
+                }
+            }
+        }
+
+        // Set headers
+        if (request.header) {
+            for (const header of request.header) {
+                if (!header.disabled) {
+                    const value = this.replaceVariables(header.value, variables);
+                    lines.push(`    And header ${header.key} = ${this.formatValue(value)}`);
+                }
+            }
+        }
+
+        // Set authentication
+        if (request.auth) {
+            const authLines = this.convertAuth(request.auth, variables);
+            lines.push(...authLines.map(l => `    ${l}`));
+        }
+
+        // Set request body
+        if (request.body) {
+            const bodyLines = this.convertBody(request.body, variables);
+            lines.push(...bodyLines.map(l => `    ${l}`));
+        }
+
+        // Execute request
+        lines.push(`    When method ${request.method.toUpperCase()}`);
+
+        // Convert test script to assertions
+        if (testScript) {
+            const assertions = useCopilot
+                ? await this.convertTestScriptWithCopilot(testScript, request, variables)
+                : this.convertTestScript(testScript, variables);
+            lines.push(...assertions.map(l => `    ${l}`));
+        } else {
+            // Default assertion
+            lines.push(`    Then status 200`);
+        }
+
+        return lines.join('\\n');
+    }
+
+    /**
+     * Convert a Postman request to a Karate scenario (synchronous version for backward compatibility)
+     */
     public convertRequest(
         request: PostmanRequest,
         scenarioName: string,
@@ -320,6 +412,121 @@ export class PostmanToKarateConverter {
         }
 
         return assertions;
+    }
+
+    /**
+     * Convert Postman test script to Karate assertions using Copilot
+     */
+    private async convertTestScriptWithCopilot(
+        script: string,
+        request: PostmanRequest,
+        variables: Map<string, string>
+    ): Promise<string[]> {
+        try {
+            const { CopilotService } = await import('./copilotService');
+
+            const prompt = `Convert this Postman test script to Karate DSL assertions.
+
+Postman Test Script:
+\`\`\`javascript
+${script}
+\`\`\`
+
+API Endpoint: ${request.method} ${request.url}
+
+Requirements:
+1. Convert ALL assertions (status, response time, headers, body)
+2. Use proper Karate match syntax for JSON validation
+3. Use JSONPath for nested field validation
+4. Include schema validation where applicable
+5. Convert pm.expect() to Karate match statements
+6. Handle array validations properly
+7. Add response time assertions if present
+8. Validate headers using 'match header'
+
+Return ONLY the Karate assertion lines (Then/And statements), one per line.`;
+
+            const models = await import('vscode').then(m => m.default.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4o' }));
+            if (models.length === 0) {
+                return this.convertTestScript(script, variables);
+            }
+
+            const model = models[0];
+            const vscode = await import('vscode');
+            const messages = [vscode.default.LanguageModelChatMessage.User(prompt)];
+            const response = await model.sendRequest(messages, {}, new vscode.default.CancellationTokenSource().token);
+
+            let result = '';
+            for await (const fragment of response.text) {
+                result += fragment;
+            }
+
+            // Parse the response into assertion lines
+            const assertions = result
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.startsWith('Then') || line.startsWith('And') || line.startsWith('*'))
+                .map(line => line.replace(/^\* /, ''));
+
+            return assertions.length > 0 ? assertions : this.convertTestScript(script, variables);
+
+        } catch (error) {
+            logger.warn('Copilot conversion failed, using basic conversion', error as Error);
+            return this.convertTestScript(script, variables);
+        }
+    }
+
+    /**
+     * Convert pre-request script to Karate using Copilot
+     */
+    private async convertPreRequestScriptWithCopilot(script: string): Promise<string | null> {
+        try {
+            const { CopilotService } = await import('./copilotService');
+
+            const prompt = `Convert this Postman pre-request script to Karate DSL.
+
+Postman Pre-Request Script:
+\`\`\`javascript
+${script}
+\`\`\`
+
+Requirements:
+1. Convert variable assignments to Karate 'def' statements
+2. Convert random data generation to Java interop (java.util.UUID, etc.)
+3. Convert date/time operations to Karate equivalents
+4. Convert API calls to Karate call statements
+5. Use proper Karate syntax for all operations
+
+Return ONLY the Karate code lines (def, call, etc.), one per line.`;
+
+            const models = await import('vscode').then(m => m.default.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4o' }));
+            if (models.length === 0) {
+                return this.convertPreRequestScript(script);
+            }
+
+            const model = models[0];
+            const vscode = await import('vscode');
+            const messages = [vscode.default.LanguageModelChatMessage.User(prompt)];
+            const response = await model.sendRequest(messages, {}, new vscode.default.CancellationTokenSource().token);
+
+            let result = '';
+            for await (const fragment of response.text) {
+                result += fragment;
+            }
+
+            // Parse the response
+            const lines = result
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.startsWith('*') || line.startsWith('def') || line.startsWith('call'))
+                .map(line => line.replace(/^\* /, ''));
+
+            return lines.length > 0 ? lines.join('\n') : this.convertPreRequestScript(script);
+
+        } catch (error) {
+            logger.warn('Copilot pre-request conversion failed, using basic conversion', error as Error);
+            return this.convertPreRequestScript(script);
+        }
     }
 
     /**

@@ -152,7 +152,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     const fullSpecContent = fs.readFileSync(filePath, 'utf-8');
                     const context = `OpenAPI spec: ${specFileName}, ${endpoints.length} endpoints`;
 
-                    featureContent = await CopilotService.enhanceKarateTest(
+                    featureContent = await CopilotService.enhanceKarateTestComprehensive(
                         featureContent,
                         context,
                         { type: 'openapi', openApiSpec: fullSpecContent }
@@ -243,7 +243,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
                     const context = `Confluence page: ${page.title}, ${scenarios.length} scenarios`;
 
-                    featureContent = await CopilotService.enhanceKarateTest(
+                    featureContent = await CopilotService.enhanceKarateTestComprehensive(
                         featureContent,
                         context,
                         { type: 'confluence', confluencePage: confluenceContent, requirements: testData.requirements }
@@ -342,7 +342,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
                     const context = `Combined: OpenAPI ${specFileName} + Confluence ${page.title}`;
 
-                    featureContent = await CopilotService.enhanceKarateTest(
+                    featureContent = await CopilotService.enhanceKarateTestComprehensive(
                         featureContent,
                         context,
                         {

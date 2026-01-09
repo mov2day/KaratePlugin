@@ -5,6 +5,45 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2026-01-10
+
+### 🚀 Major Enhancements
+
+#### Comprehensive Copilot Integration
+- **Enhanced AI Test Generation**: Added `enhanceKarateTestComprehensive()` with detailed prompts covering:
+  - Positive test cases (200, 201, 204 status codes)
+  - Negative test cases (400, 401, 403, 404 errors)
+  - Edge cases (empty, null, boundary values)
+  - Corner cases (special characters, long strings, timezone issues)
+  - Race conditions (concurrent requests, idempotency)
+  - Security tests (authentication, authorization, injection attacks)
+- **Karate DSL Best Practices**: AI now generates tests with proper variable usage, Scenario Outlines, comprehensive assertions, and professional formatting
+- **AI-Powered Postman Conversion**: Enhanced script conversion with Copilot for better accuracy
+
+#### Coverage Dashboard Improvements
+- **Fixed File Selection**: Resolved issue where OpenAPI specs and feature files couldn't be selected
+- **Accurate Coverage Analysis**: Fixed bug where dashboard showed 100% coverage even when tests were missing
+  - Now uses only selected feature files instead of auto-discovering all workspace files
+  - Coverage accurately reflects the selected test files
+- **Refresh Functionality**: Added "🔄 Refresh Analysis" button to re-analyze coverage after file modifications
+- **Progress Feedback**: Added visual progress notifications for AI test generation showing each step
+- **AI Generation Buttons**: Added "🤖 Generate with AI" buttons to:
+  - Uncovered endpoints in the endpoint list
+  - Priority endpoints in AI Insights section
+
+### 🐛 Bug Fixes
+- Fixed JavaScript syntax errors in coverage dashboard webview
+- Fixed variable scope issues preventing file paths from being stored
+- Fixed CSP violations by removing inline onclick handlers
+- Fixed message communication between extension and webview
+- Fixed coverage analyzer to use user-selected files instead of workspace auto-discovery
+
+### 🎨 UI/UX Improvements
+- Added comprehensive console logging for debugging
+- Improved error handling with try-catch blocks
+- Added event delegation for dynamically created buttons
+- Better visual feedback during AI operations
+
 ## [1.2.4] - 2026-01-05
 
 ### 🎉 Major Features

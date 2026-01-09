@@ -236,36 +236,34 @@ export class PostmanImportService {
     ): Promise<string> {
         const { CopilotService } = await import('./copilotService');
 
-        const prompt = `
-Enhance this Karate DSL test that was converted from a Postman collection.
+        // Build detailed context about the Postman collection
+        const requestDetails = requests.map(r => {
+            const req = r.request;
+            return `- ${req.method} ${typeof req.url === 'string' ? req.url : req.url.raw}`;
+        }).join('\n');
 
-Improvements needed:
-1. Better variable handling - ensure all Postman variables are properly converted
-2. Improve test script assertions - convert Postman test scripts to proper Karate assertions
-3. Add realistic test data where placeholders exist
-4. Improve pre-request script conversion
-5. Add better error handling scenarios
-6. Ensure authentication is properly configured
+        const context = `Converted from Postman Collection: ${collection.info.name}
 
-Original Postman Collection Info:
-- Name: ${collection.info.name}
-- Requests: ${requests.length}
+Original Endpoints:
+${requestDetails}
 
-Current Karate Test:
-${karateContent}
-
-Please return the enhanced Karate DSL test with:
-- All variables properly defined
-- Better assertions
-- Improved readability
-- Proper authentication setup
-`;
+This test was auto-converted from Postman. Please enhance it with:
+1. Comprehensive validations from any test scripts
+2. Proper variable definitions and realistic test data
+3. Better assertions based on the API responses
+4. Edge cases and error scenarios
+5. Proper authentication setup`;
 
         try {
-            const enhanced = await CopilotService.enhanceKarateTest(karateContent, prompt, {
-                type: 'openapi',
-                openApiSpec: JSON.stringify(collection)
-            });
+            // Use comprehensive enhancement
+            const enhanced = await CopilotService.enhanceKarateTestComprehensive(
+                karateContent,
+                context,
+                {
+                    type: 'openapi',
+                    openApiSpec: JSON.stringify(collection, null, 2)
+                }
+            );
 
             return enhanced || karateContent;
         } catch (error) {

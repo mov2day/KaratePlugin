@@ -136,7 +136,7 @@ export async function generateFromConfluence(context: vscode.ExtensionContext): 
                         // Prepare full Confluence context
                         const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
 
-                        featureContent = await CopilotService.enhanceKarateTest(
+                        featureContent = await CopilotService.enhanceKarateTestComprehensive(
                             featureContent,
                             context,
                             {

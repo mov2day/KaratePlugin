@@ -91,6 +91,63 @@ export class CoverageAnalyzer {
     }
 
     /**
+     * Analyze coverage for an OpenAPI spec with specific feature files
+     */
+    public async analyzeCoverageWithFiles(specPath: string, featureFiles: string[]): Promise<CoverageReport> {
+        try {
+            logger.info(`Analyzing coverage for ${specPath} with ${featureFiles.length} selected feature files`);
+
+            // Parse OpenAPI spec
+            const endpoints = await this.parser.parseSpec(specPath);
+
+            // Use the provided feature files instead of auto-discovering
+            logger.info(`Using selected feature files: ${featureFiles.join(', ')}`);
+
+            // Analyze each endpoint
+            const endpointCoverages: EndpointCoverage[] = [];
+            const methodBreakdown = new Map<string, { total: number; covered: number }>();
+
+            for (const endpoint of endpoints) {
+                const coverage = await this.analyzeEndpoint(endpoint, featureFiles);
+                endpointCoverages.push(coverage);
+
+                // Update method breakdown
+                const method = endpoint.method.toUpperCase();
+                if (!methodBreakdown.has(method)) {
+                    methodBreakdown.set(method, { total: 0, covered: 0 });
+                }
+                const stats = methodBreakdown.get(method)!;
+                stats.total++;
+                if (coverage.covered) {
+                    stats.covered++;
+                }
+            }
+
+            // Calculate overall coverage
+            const coveredCount = endpointCoverages.filter(e => e.covered).length;
+            const percentage = endpoints.length > 0 ? (coveredCount / endpoints.length) * 100 : 0;
+
+            const report: CoverageReport = {
+                specPath,
+                specName: path.basename(specPath),
+                totalEndpoints: endpoints.length,
+                coveredEndpoints: coveredCount,
+                percentage,
+                endpoints: endpointCoverages,
+                uncoveredEndpoints: endpointCoverages.filter(e => !e.covered),
+                methodBreakdown
+            };
+
+            logger.info(`Coverage analysis complete: ${percentage.toFixed(1)}% (${coveredCount}/${endpoints.length})`);
+            return report;
+
+        } catch (error) {
+            logger.error('Coverage analysis with selected files failed', error as Error);
+            throw error;
+        }
+    }
+
+    /**
      * Find all feature files in workspace
      */
     private async findFeatureFiles(workspaceRoot: string): Promise<string[]> {

@@ -137,7 +137,22 @@ export async function generateCombined(context: vscode.ExtensionContext): Promis
                 if (isAvailable) {
                     try {
                         const context = `Combined: OpenAPI ${specFileName} + Confluence ${page.title}, ${scenarios.length} scenarios`;
-                        featureContent = await CopilotService.enhanceKarateTest(featureContent, context);
+
+                        // Prepare full context
+                        const fs = await import('fs');
+                        const fullSpecContent = fs.readFileSync(specPath, 'utf-8');
+                        const pageContent = page.body.storage?.value || page.body.view?.value || '';
+
+                        featureContent = await CopilotService.enhanceKarateTestComprehensive(
+                            featureContent,
+                            context,
+                            {
+                                type: 'combined',
+                                openApiSpec: fullSpecContent,
+                                confluencePage: pageContent,
+                                requirements: testData.requirements
+                            }
+                        );
                         logger.info('Enhanced combined tests with Copilot');
                     } catch (error) {
                         logger.warn('Copilot enhancement failed, using original tests', error as Error);

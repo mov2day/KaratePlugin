@@ -49,30 +49,48 @@ export class CoverageDashboardProvider {
 
         // Handle messages from the webview
         panel.webview.onDidReceiveMessage(async (data) => {
+            logger.info(`Coverage dashboard received message: ${data.command}`);
+            console.log('Coverage dashboard message:', data);
+
             switch (data.command) {
                 case 'selectSpecs':
+                    logger.info('Handling selectSpecs');
                     await this.handleSelectSpecsForPanel(panel.webview);
                     break;
                 case 'selectFeatures':
+                    logger.info('Handling selectFeatures');
                     await this.handleSelectFeaturesForPanel(panel.webview);
                     break;
                 case 'analyzeCoverage':
+                    logger.info('Handling analyzeCoverage');
                     await this.handleAnalyzeCoverageForPanel(panel.webview, data.specPaths, data.featurePaths, data.useCopilot);
                     break;
                 case 'generateTest':
+                    logger.info('Handling generateTest');
                     await this.handleGenerateTest(data.endpoint);
                     break;
+                case 'generateTestWithAI':
+                    logger.info('Handling generateTestWithAI');
+                    await this.handleGenerateTestWithAI(data.endpoint);
+                    break;
                 case 'viewDetails':
+                    logger.info('Handling viewDetails');
                     await this.handleViewDetails(data.endpoint);
                     break;
                 case 'exportReport':
+                    logger.info('Handling exportReport');
                     await this.handleExportReport();
                     break;
+                default:
+                    logger.warn(`Unknown command: ${data.command}`);
             }
         });
     }
 
     private async handleSelectSpecsForPanel(webview: vscode.Webview) {
+        logger.info('handleSelectSpecsForPanel called');
+        console.log('Opening file picker for specs...');
+
         const fileUris = await vscode.window.showOpenDialog({
             canSelectMany: true,
             openLabel: 'Select OpenAPI Spec(s)',
@@ -81,15 +99,22 @@ export class CoverageDashboardProvider {
             }
         });
 
+        logger.info(`File picker result: ${fileUris ? fileUris.length + ' files' : 'cancelled'}`);
+
         if (fileUris && fileUris.length > 0) {
+            const paths = fileUris.map(f => f.fsPath);
+            logger.info(`Sending specsSelected message with paths: ${paths.join(', ')}`);
             webview.postMessage({
                 type: 'specsSelected',
-                paths: fileUris.map(f => f.fsPath)
+                paths: paths
             });
         }
     }
 
     private async handleSelectFeaturesForPanel(webview: vscode.Webview) {
+        logger.info('handleSelectFeaturesForPanel called');
+        console.log('Opening file picker for features...');
+
         const fileUris = await vscode.window.showOpenDialog({
             canSelectMany: true,
             openLabel: 'Select Feature File(s)',
@@ -98,10 +123,14 @@ export class CoverageDashboardProvider {
             }
         });
 
+        logger.info(`File picker result: ${fileUris ? fileUris.length + ' files' : 'cancelled'}`);
+
         if (fileUris && fileUris.length > 0) {
+            const paths = fileUris.map(f => f.fsPath);
+            logger.info(`Sending featuresSelected message with paths: ${paths.join(', ')}`);
             webview.postMessage({
                 type: 'featuresSelected',
-                paths: fileUris.map(f => f.fsPath),
+                paths: paths,
                 count: fileUris.length
             });
         }
@@ -179,6 +208,63 @@ export class CoverageDashboardProvider {
         } catch (error) {
             vscode.window.showErrorMessage(`Failed to generate test: ${(error as Error).message}`);
         }
+    }
+
+    private async handleGenerateTestWithAI(endpoint: any) {
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Generating AI-enhanced test for ${endpoint.method} ${endpoint.path}`,
+            cancellable: false
+        }, async (progress) => {
+            try {
+                progress.report({ increment: 10, message: 'Checking Copilot availability...' });
+
+                // Check if Copilot is available
+                const { CopilotService } = await import('../services/copilotService');
+                const isAvailable = await CopilotService.isCopilotAvailable();
+
+                if (!isAvailable) {
+                    vscode.window.showWarningMessage('GitHub Copilot is not available. Generating basic test instead.');
+                    await this.handleGenerateTest(endpoint);
+                    return;
+                }
+
+                progress.report({ increment: 20, message: 'Generating basic test structure...' });
+
+                // Generate basic test first
+                const { KarateGenerator } = await import('../services/karateGenerator');
+                const generator = new KarateGenerator();
+                const feature = generator.generateFromOpenAPI([endpoint], endpoint.path.replace(/\//g, '_'));
+                const basicTest = generator.featureToString(feature);
+
+                progress.report({ increment: 30, message: 'Enhancing with AI (this may take a moment)...' });
+
+                // Enhance with Copilot
+                const context = `Generate comprehensive tests for ${endpoint.method} ${endpoint.path}`;
+                const enhancedTest = await CopilotService.enhanceKarateTestComprehensive(
+                    basicTest,
+                    context,
+                    {
+                        type: 'openapi',
+                        openApiSpec: JSON.stringify(endpoint)
+                    }
+                );
+
+                progress.report({ increment: 40, message: 'Opening enhanced test...' });
+
+                // Show in editor
+                const doc = await vscode.workspace.openTextDocument({
+                    content: enhancedTest || basicTest,
+                    language: 'karate'
+                });
+                await vscode.window.showTextDocument(doc);
+
+                vscode.window.showInformationMessage(`✅ Generated AI-enhanced test for ${endpoint.method} ${endpoint.path}`);
+            } catch (error) {
+                logger.error('Failed to generate AI test', error as Error);
+                vscode.window.showErrorMessage(`Failed to generate AI test: ${(error as Error).message}`);
+            }
+        });
     }
 
     private async handleViewDetails(endpoint: any) {
@@ -486,6 +572,7 @@ export class CoverageDashboardProvider {
 
         <div class="control-row">
             <button class="primary-btn" id="analyze-coverage-btn">🚀 Analyze Coverage</button>
+            <button class="secondary-btn" id="refresh-coverage-btn" style="margin-left: 10px; display: none;">🔄 Refresh Analysis</button>
         </div>
     </div>
 
@@ -539,37 +626,83 @@ export class CoverageDashboardProvider {
 
     <script src="${chartJsUri}" nonce="${nonce}"></script>
     <script nonce="${nonce}">
-        const vscode = acquireVsCodeApi();
-        let coverageChart, methodChart;
-
-        // State variables
-        let selectedSpecPaths = [];
-        let selectedFeaturePaths = [];
-
         (function() {
-            function init() {
-                const specBtn = document.getElementById('select-specs-btn');
-                if (specBtn) {
-                    specBtn.addEventListener('click', function() {
-                        vscode.postMessage({ command: 'selectSpecs' });
-                    });
-                }
+            'use strict';
+            
+            console.log('=== Coverage Dashboard Script Starting ===');
+            
+            // Define variables at top level of IIFE for proper scope
+            let vscode;
+            let coverageChart, methodChart;
+            let selectedSpecPaths = [];
+            let selectedFeaturePaths = [];
+            
+            try {
+                vscode = acquireVsCodeApi();
+                console.log('VSCode API acquired successfully');
+                
+                function init() {
+                    console.log('Initializing coverage dashboard...');
+                    console.log('Document ready state:', document.readyState);
+                    
+                    try {
+                        // Spec button
+                        const specBtn = document.getElementById('select-specs-btn');
+                        console.log('Spec button found:', !!specBtn);
+                        if (specBtn) {
+                            specBtn.addEventListener('click', function() {
+                                console.log('Spec button clicked, sending message...');
+                                try {
+                                    vscode.postMessage({ command: 'selectSpecs' });
+                                    console.log('Message sent successfully');
+                                } catch (e) {
+                                    console.error('Error sending message:', e);
+                                }
+                            });
+                        }
 
-                const featBtn = document.getElementById('select-features-btn');
-                if (featBtn) {
-                    featBtn.addEventListener('click', function() {
-                        vscode.postMessage({ command: 'selectFeatures' });
-                    });
-                }
+                        // Feature button
+                        const featBtn = document.getElementById('select-features-btn');
+                        console.log('Feature button found:', !!featBtn);
+                        if (featBtn) {
+                            featBtn.addEventListener('click', function() {
+                                console.log('Feature button clicked, sending message...');
+                                try {
+                                    vscode.postMessage({ command: 'selectFeatures' });
+                                    console.log('Message sent successfully');
+                                } catch (e) {
+                                    console.error('Error sending message:', e);
+                                }
+                            });
+                        }
 
                 const analyzeBtn = document.getElementById('analyze-coverage-btn');
+                const refreshBtn = document.getElementById('refresh-coverage-btn');
+                
+                console.log('Analyze button found:', !!analyzeBtn);
+                console.log('Refresh button found:', !!refreshBtn);
+                
                 if (analyzeBtn) {
                     analyzeBtn.addEventListener('click', function() {
+                        console.log('Analyze button clicked');
+                        console.log('Current selectedSpecPaths:', selectedSpecPaths);
+                        console.log('Current selectedFeaturePaths:', selectedFeaturePaths);
+                        
                         if (selectedSpecPaths.length === 0) {
-                            alert('Please select at least one OpenAPI spec');
+                            console.warn('No OpenAPI specs selected');
                             return;
                         }
+                        if (selectedFeaturePaths.length === 0) {
+                            console.warn('No feature files selected');
+                            return;
+                        }
+                        
                         const useCopilot = document.getElementById('use-copilot').checked;
+                        console.log('Sending analyze coverage message...', {
+                            specPaths: selectedSpecPaths,
+                            featurePaths: selectedFeaturePaths,
+                            useCopilot: useCopilot
+                        });
                         vscode.postMessage({
                             command: 'analyzeCoverage',
                             specPaths: selectedSpecPaths,
@@ -578,42 +711,95 @@ export class CoverageDashboardProvider {
                         });
                     });
                 }
-            }
+                
+                if (refreshBtn) {
+                    refreshBtn.addEventListener('click', function() {
+                        console.log('Refresh button clicked');
+                        if (selectedSpecPaths.length === 0 || selectedFeaturePaths.length === 0) {
+                            console.warn('No files selected for refresh');
+                            return;
+                        }
+                        
+                        const useCopilot = document.getElementById('use-copilot').checked;
+                        console.log('Re-analyzing coverage with same files...');
+                        vscode.postMessage({
+                            command: 'analyzeCoverage',
+                            specPaths: selectedSpecPaths,
+                            featurePaths: selectedFeaturePaths,
+                            useCopilot: useCopilot
+                        });
+                    });
+                }
+                
+                console.log('Dashboard initialization complete');
+                    } catch (initError) {
+                        console.error('Error during initialization:', initError);
+                    }
+                }
 
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', init);
-            } else {
-                init();
-            }
-        })();
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', init);
+                } else {
+                    init();
+                }
 
-        // Listen for messages from extension
-        window.addEventListener('message', event => {
-            const message = event.data;
-            
-            switch (message.type) {
-                case 'coverageReport':
-                    renderReport(message.data);
-                    break;
-                case 'analysisStarted':
-                    showLoading();
-                    break;
-                case 'analysisError':
-                    showError(message.message);
-                    break;
-                case 'specsSelected':
-                    selectedSpecPaths = message.paths;
-                    const specDisplay = message.paths.length === 1 
-                        ? message.paths[0].split('/').pop() 
-                        : message.paths.length + ' specs selected';
-                    document.getElementById('spec-paths').value = specDisplay;
-                    break;
-                case 'featuresSelected':
-                    selectedFeaturePaths = message.paths;
-                    document.getElementById('feature-paths').value = message.count + ' feature files selected';
-                    break;
+                // Listen for messages from extension (MUST be inside IIFE to access same variables)
+                window.addEventListener('message', event => {
+                    const message = event.data;
+                    console.log('Received message from extension:', message.type);
+                    
+                    switch (message.type) {
+                        case 'coverageReport':
+                            renderReport(message.data);
+                            // Show refresh button after first analysis
+                            const refreshBtn = document.getElementById('refresh-coverage-btn');
+                            if (refreshBtn) {
+                                refreshBtn.style.display = 'inline-block';
+                            }
+                            break;
+                        case 'analysisStarted':
+                            showLoading();
+                            break;
+                        case 'analysisError':
+                            showError(message.message);
+                            break;
+                        case 'specsSelected':
+                            console.log('Specs selected, paths:', message.paths);
+                            selectedSpecPaths = message.paths;
+                            console.log('Updated selectedSpecPaths:', selectedSpecPaths);
+                            const specDisplay = message.paths.length === 1 
+                                ? message.paths[0].split('/').pop() 
+                                : message.paths.length + ' specs selected';
+                            document.getElementById('spec-paths').value = specDisplay;
+                            break;
+                        case 'featuresSelected':
+                            console.log('Features selected, paths:', message.paths);
+                            selectedFeaturePaths = message.paths;
+                            console.log('Updated selectedFeaturePaths:', selectedFeaturePaths);
+                            document.getElementById('feature-paths').value = message.count + ' feature files selected';
+                            break;
+                    }
+                });
+
+                // Event delegation for dynamically created priority AI buttons
+                document.addEventListener('click', function(e) {
+                    if (e.target && e.target.classList.contains('priority-ai-btn')) {
+                        const method = e.target.getAttribute('data-method');
+                        const path = e.target.getAttribute('data-path');
+                        const description = e.target.getAttribute('data-description');
+                        
+                        console.log('Priority AI button clicked:', { method, path, description });
+                vscode.postMessage({
+                            command: 'generateTestWithAI',
+                            endpoint: { method, path, description }
+                        });
+                    }
+                });
+                
+            } catch (error) {
+                console.error('=== CRITICAL ERROR ===', error);
             }
-        });
+        // Helper functions (inside IIFE to access coverageChart, methodChart, vscode)
 
         function renderReport(data) {
             // Update stats
@@ -656,6 +842,13 @@ export class CoverageDashboardProvider {
                     btn.textContent = 'Generate Test';
                     btn.onclick = function() { vscode.postMessage({ command: 'generateTest', endpoint: ep }); };
                     actions.appendChild(btn);
+                    
+                    const aiBtn = document.createElement('button');
+                    aiBtn.className = 'btn';
+                    aiBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                    aiBtn.textContent = '🤖 Generate with AI';
+                    aiBtn.onclick = function() { vscode.postMessage({ command: 'generateTestWithAI', endpoint: ep }); };
+                    actions.appendChild(aiBtn);
                 }
                 
                 const detBtn = document.createElement('button');
@@ -786,7 +979,13 @@ export class CoverageDashboardProvider {
             
             if (insights.priorityEndpoints && Array.isArray(insights.priorityEndpoints)) {
                 insights.priorityEndpoints.slice(0, 5).forEach(function(ep) {
-                    html += '<li><strong>' + ep.method + ' ' + ep.path + '</strong><br><em>' + ep.reason + '</em></li>';
+                    html += '<li style="margin-bottom: 10px;">' +
+                            '<strong>' + ep.method + ' ' + ep.path + '</strong><br>' +
+                            '<em>' + ep.reason + '</em><br>' +
+                            '<button class="btn priority-ai-btn" style="margin-top: 5px; font-size: 10px; padding: 4px 8px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);" ' +
+                            'data-method="' + ep.method + '" data-path="' + ep.path + '" data-description="' + (ep.reason || '') + '">' +
+                            '🤖 Generate with AI</button>' +
+                            '</li>';
                 });
             }
             html += '</ul></div>';
@@ -817,6 +1016,8 @@ export class CoverageDashboardProvider {
             const list = document.getElementById('endpoint-list');
             if (list) list.innerHTML = '<div class="loading" style="color: #f44336;">Error: ' + message + '</div>';
         }
+        
+        })(); // End of IIFE
     </script>
 </body>
 </html>`;

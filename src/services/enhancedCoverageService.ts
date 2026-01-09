@@ -33,12 +33,13 @@ export class EnhancedCoverageService {
         useCopilot: boolean
     ): Promise<EnhancedCoverageReport> {
         logger.info(`Analyzing ${specPaths.length} spec(s) with ${featureFiles.length} feature file(s)`);
+        logger.info(`Selected feature files: ${featureFiles.join(', ')}`);
 
-        // Analyze each spec
+        // Analyze each spec with the selected feature files
         const reports: CoverageReport[] = [];
         for (const specPath of specPaths) {
-            const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath || '';
-            const report = await this.analyzer.analyzeCoverage(specPath, workspaceRoot);
+            // Use the selected feature files instead of auto-discovering
+            const report = await this.analyzer.analyzeCoverageWithFiles(specPath, featureFiles);
             reports.push(report);
         }
 

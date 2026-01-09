@@ -113,6 +113,166 @@ Return ONLY the improved feature file content, no explanations.`
     }
 
     /**
+     * Enhance Karate test with comprehensive Copilot suggestions
+     * Includes edge cases, corner cases, race conditions, and proper formatting
+     */
+    static async enhanceKarateTestComprehensive(
+        featureContent: string,
+        context: string,
+        fullContext?: CopilotFullContext
+    ): Promise<string> {
+        try {
+            const models = await vscode.lm.selectChatModels(this.COPILOT_MODEL_SELECTOR);
+
+            if (models.length === 0) {
+                throw new Error('GitHub Copilot is not available. Please ensure you have an active Copilot subscription.');
+            }
+
+            const model = models[0];
+
+            // Build enhanced context with full source data
+            let contextSection = `Context: ${context}`;
+
+            if (fullContext) {
+                if (fullContext.openApiSpec) {
+                    contextSection += `\n\nFull OpenAPI Specification:\n\`\`\`yaml\n${fullContext.openApiSpec}\n\`\`\``;
+                }
+
+                if (fullContext.confluencePage) {
+                    const cleanContent = fullContext.confluencePage.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                    contextSection += `\n\nConfluence Page Content:\n${cleanContent.substring(0, 5000)}`;
+                }
+
+                if (fullContext.requirements && fullContext.requirements.length > 0) {
+                    contextSection += `\n\nExtracted Requirements:\n${fullContext.requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}`;
+                }
+            }
+
+            // Create comprehensive prompt
+            const messages = [
+                vscode.LanguageModelChatMessage.User(
+                    `You are an expert in Karate DSL test framework and API testing best practices.
+
+${contextSection}
+
+Current Feature File:
+\`\`\`gherkin
+${featureContent}
+\`\`\`
+
+Please enhance this Karate test with COMPREHENSIVE coverage:
+
+## TEST COVERAGE REQUIREMENTS:
+
+### 1. Positive Test Cases
+- Success scenarios (200, 201, 204 responses)
+- Valid data with all required fields
+- Optional fields included and excluded
+- Successful data creation, retrieval, update, deletion
+
+### 2. Negative Test Cases
+- Client errors: 400 (bad request), 401 (unauthorized), 403 (forbidden), 404 (not found)
+- Missing required fields
+- Invalid data types
+- Invalid field values
+- Unauthorized access attempts
+
+### 3. Edge Cases
+- Empty strings and arrays
+- Null values where applicable
+- Minimum and maximum boundary values
+- Zero values for numeric fields
+- Empty request bodies
+- Very large valid values (near limits)
+
+### 4. Corner Cases
+- Special characters in strings (quotes, backslashes, unicode)
+- Very long strings (test field length limits)
+- Unusual but valid data combinations
+- Timezone edge cases for dates
+- Decimal precision for numbers
+- Case sensitivity tests
+
+### 5. Race Conditions & Concurrency
+- Concurrent requests to same resource
+- Create-then-delete scenarios
+- Update conflicts
+- Idempotency tests for POST/PUT
+
+### 6. Security Tests
+- Authentication required tests
+- Authorization/permission tests
+- SQL injection attempts (if applicable)
+- XSS attempts (if applicable)
+- Invalid tokens
+
+## KARATE DSL BEST PRACTICES:
+
+### Variable Usage
+- Define reusable variables in Background section using 'def'
+- Use meaningful variable names (not foo, bar, test)
+- Generate realistic test data (real names, emails, UUIDs)
+- Use Java interop for dynamic data: java.util.UUID.randomUUID()
+
+### Scenario Outlines
+- Use Scenario Outline for data-driven tests with multiple similar cases
+- Create Examples table with descriptive column names
+- Group related test cases in same outline
+
+### Assertions & Validation
+- Use 'match ==' for exact schema validation
+- Use JSONPath for nested field validation
+- Validate response headers (Content-Type, etc.)
+- Check response time where relevant
+- Validate array lengths and structure
+
+### Code Quality
+- Proper indentation (2 spaces per level)
+- Meaningful scenario names describing what is tested
+- Add comments for complex logic or business rules
+- Organize scenarios logically (positive → negative → edge)
+- Use descriptive variable names
+
+### Formatting Standards
+- Feature: [Feature Name]
+- Background: (shared setup)
+- Scenario: [Clear description]
+- Scenario Outline: [Description with parameters]
+- Proper spacing between scenarios
+- Consistent quote style (prefer single quotes)
+
+## OUTPUT REQUIREMENTS:
+- Return ONLY the enhanced feature file content
+- Include comprehensive test scenarios covering all categories above
+- Use Scenario Outlines where multiple similar tests exist
+- Add realistic test data
+- Include detailed match assertions based on the API spec
+- Ensure proper Karate DSL syntax and formatting
+- NO explanations or markdown - just the feature file content`
+                )
+            ];
+
+            // Send request to Copilot
+            const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+
+            let enhancedContent = '';
+            for await (const fragment of response.text) {
+                enhancedContent += fragment;
+            }
+
+            // Clean up the response
+            enhancedContent = this.cleanCopilotResponse(enhancedContent);
+
+            logger.info('Successfully enhanced test with comprehensive Copilot analysis');
+            return enhancedContent;
+
+        } catch (error) {
+            logger.error('Failed to enhance test with comprehensive Copilot', error as Error);
+            throw error;
+        }
+    }
+
+    /**
      * Generate additional test scenarios with Copilot
      */
     static async generateAdditionalScenarios(

@@ -8,24 +8,33 @@ Generate comprehensive API tests from OpenAPI specifications, Confluence documen
 **Keywords**: Karate API testing, OpenAPI test generation, API automation,
 Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing, Postman to Karate, Postman to Karate converter, Postman migration to Karate,postman
 
-[![Version](https://img.shields.io/badge/version-1.2.3-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.2.5-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
-![Hero Animation Placeholder - Suggested: GIF showing right-click generation](https://raw.githubusercontent.com/mov2day/KaratePlugin/main/resources/hero.gif)
+
+### Why Karate API Test Generator?
+Unlike generic API test generators, this extension is **built specifically for Karate DSL**
+and supports **automatic test maintenance when OpenAPI specs evolve**.
+Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
 
 ---
 
-## 🆕 What's New in v1.2.4
+## 🆕 What's New in v1.2.5
 
-### 🚀 Next-Gen Interactive Coverage Dashboard
-Experience the future of API coverage analysis. The all-new, full-screen dashboard provides a command center for your Karate test suite.
+### 🤖 Comprehensive AI-Powered Test Generation
+The extension now generates **production-ready** Karate tests with comprehensive coverage:
+- ✅ **Positive & Negative Cases**: Success scenarios (200, 201, 204) and error handling (400, 401, 403, 404)
+- ✅ **Edge & Corner Cases**: Empty values, null handling, boundary conditions, special characters
+- ✅ **Race Conditions**: Concurrent requests, idempotency, update conflicts
+- ✅ **Security Tests**: Authentication, authorization, SQL injection, XSS prevention
+- ✅ **Best Practices**: Proper variables, Scenario Outlines, schema validation, professional formatting
 
-![Interactive Coverage Dashboard](media/coverage-dashboard.png)
-
-*   **Ultimate Control**: Manually pick your OpenAPI specs and feature directories with ease.
-*   **AI-Powered Precision**: Toggle Copilot insights to get deep quality assessments and prioritized recommendations.
-*   **Actionable Data**: Don't just see the gaps—fix them. Generate missing tests directly from the dashboard.
-*   **Visual Excellence**: Modern, theme-aware charts powered by Chart.js for a premium developer experience.
+### 📊 Coverage Dashboard - Now Fully Functional!
+- **Fixed File Selection**: Browse and select OpenAPI specs and feature files (previously broken)
+- **Accurate Coverage**: Shows real coverage based on YOUR selected files (was showing 100% incorrectly)
+- **Refresh Analysis**: New 🔄 button to re-analyze after modifying tests
+- **AI Generation**: Click "🤖 Generate with AI" on any uncovered endpoint for instant comprehensive tests
+- **Progress Feedback**: Visual notifications show AI generation progress
 
 **How to Launch:**
 - Activity Bar → **Test Generator Panel** → Click **🚀 Launch Coverage Dashboard**
