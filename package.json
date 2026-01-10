@@ -4,6 +4,7 @@
   "description": "Professional Karate Test Generator & Maintenance with AI - Transform OpenAPI, Postman, and Confluence into automated tests with GitHub Copilot",
   "version": "1.2.5",
   "publisher": "MuthuKumarKoodalingam",
+  "license": "MIT",
   "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.85.0"
