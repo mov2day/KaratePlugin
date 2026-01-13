@@ -12,18 +12,54 @@ export interface ConfluencePage {
 
 export class ConfluenceClient {
     private axiosInstance: AxiosInstance;
+    private baseUrl: string;
+    private isCloud: boolean;
 
     constructor(baseUrl: string, email: string, apiToken: string) {
+        // Normalize base URL
+        this.baseUrl = this.normalizeBaseUrl(baseUrl);
+        this.isCloud = this.detectConfluenceType(this.baseUrl);
+
         const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
 
         this.axiosInstance = axios.create({
-            baseURL: baseUrl,
+            baseURL: this.baseUrl,
             headers: {
                 'Authorization': `Basic ${auth}`,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
-            }
+            },
+            timeout: 30000 // 30 second timeout
         });
+
+        logger.info(`Confluence client initialized: ${this.isCloud ? 'Cloud' : 'Data Center/Server'} at ${this.baseUrl}`);
+    }
+
+    /**
+     * Normalize base URL to ensure consistent format
+     */
+    private normalizeBaseUrl(url: string): string {
+        // Remove trailing slashes
+        let normalized = url.trim().replace(/\/+$/, '');
+
+        // Ensure https:// prefix
+        if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+            normalized = 'https://' + normalized;
+        }
+
+        // For cloud, ensure /wiki is present
+        if (normalized.includes('.atlassian.net') && !normalized.endsWith('/wiki')) {
+            normalized += '/wiki';
+        }
+
+        return normalized;
+    }
+
+    /**
+     * Detect if this is Atlassian Cloud or Data Center/Server
+     */
+    private detectConfluenceType(url: string): boolean {
+        return url.includes('.atlassian.net');
     }
 
     /**
@@ -37,7 +73,7 @@ export class ConfluenceClient {
                 `/rest/api/content/${pageId}`,
                 {
                     params: {
-                        expand: 'body.storage,body.view'
+                        expand: 'body.storage,body.view,body.atlas_doc_format'
                     }
                 }
             );
@@ -46,7 +82,24 @@ export class ConfluenceClient {
             return response.data;
         } catch (error: any) {
             logger.error(`Failed to fetch Confluence page: ${pageId}`, error);
-            throw new Error(`Failed to fetch Confluence page: ${error.message}`);
+
+            // Provide specific error messages
+            if (error.response) {
+                const status = error.response.status;
+                if (status === 401 || status === 403) {
+                    throw new Error(`Authentication failed. Please check your Confluence email and API token in settings. (Status: ${status})`);
+                } else if (status === 404) {
+                    throw new Error(`Page ${pageId} not found. Please verify the page ID or URL.`);
+                } else {
+                    throw new Error(`Failed to fetch Confluence page (Status ${status}): ${error.response.data?.message || error.message}`);
+                }
+            } else if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+                throw new Error(`Cannot connect to Confluence at ${this.baseUrl}. Please check the base URL in settings.`);
+            } else if (error.code === 'ETIMEDOUT') {
+                throw new Error(`Connection to Confluence timed out. Please check your network connection.`);
+            } else {
+                throw new Error(`Failed to fetch Confluence page: ${error.message}`);
+            }
         }
     }
 

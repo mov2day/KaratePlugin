@@ -427,6 +427,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         if (config.testTemplate) {
             await vsConfig.update('testTemplate', config.testTemplate, vscode.ConfigurationTarget.Global);
         }
+        if (config.confluenceBaseUrl !== undefined) {
+            await vsConfig.update('confluence.baseUrl', config.confluenceBaseUrl, vscode.ConfigurationTarget.Global);
+        }
+        if (config.confluenceEmail !== undefined) {
+            await vsConfig.update('confluence.email', config.confluenceEmail, vscode.ConfigurationTarget.Global);
+        }
 
         this.sendMessage({ type: 'configSaved' });
     }
@@ -845,8 +851,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         <div class="tab-content" id="settings-tab">
             <div class="card">
                 <div class="card-header">
-                    <span class="card-icon">📁</span>
-                    <span class="card-title">Output Settings</span>
+                    <span class="card-icon">⚙️</span>
+                    <span class="card-title">General Settings</span>
                 </div>
                 <div class="form-group">
                     <label>Output Path</label>
@@ -861,6 +867,13 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                         <option value="minimal">Minimal</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="use-copilot-checkbox">
+                        <span>🤖 Enable GitHub Copilot Enhancement</span>
+                    </label>
+                    <p class="info-text">Use AI to enhance generated tests (requires GitHub Copilot subscription)</p>
+                </div>
             </div>
 
             <div class="card">
@@ -871,10 +884,21 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 <div class="form-group">
                     <label>Base URL</label>
                     <input type="text" id="confluence-base-url" placeholder="https://company.atlassian.net/wiki">
+                    <p class="info-text">
+                        <strong>Cloud:</strong> https://yourcompany.atlassian.net/wiki<br>
+                        <strong>Server/Data Center:</strong> https://confluence.yourcompany.com
+                    </p>
                 </div>
                 <div class="form-group">
                     <label>Email</label>
                     <input type="text" id="confluence-email" placeholder="email@company.com">
+                    <p class="info-text">Your Confluence account email</p>
+                </div>
+                <div class="form-group">
+                    <p class="info-text">
+                        ℹ️ API Token will be requested when first connecting. 
+                        Generate one at: <a href="https://id.atlassian.com/manage-profile/security/api-tokens">id.atlassian.com</a>
+                    </p>
                 </div>
             </div>
 

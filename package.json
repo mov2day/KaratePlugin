@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
   "description": "Professional Karate Test Generator & Maintenance with AI - Transform OpenAPI, Postman, and Confluence into automated tests with GitHub Copilot",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -99,6 +99,14 @@
       {
         "command": "karate-dsl.showCoverageDashboard",
         "title": "Karate: Show Test Coverage Dashboard"
+      },
+      {
+        "command": "karate-dsl.showCopilotActivity",
+        "title": "Karate: Show Copilot Activity Log"
+      },
+      {
+        "command": "karate-dsl.clearCopilotActivity",
+        "title": "Karate: Clear Copilot Activity Log"
       },
       {
         "command": "karate-dsl.importPostmanCollection",
@@ -201,6 +209,21 @@
           "type": "boolean",
           "default": false,
           "description": "Use GitHub Copilot to enhance generated tests (requires GitHub Copilot subscription)"
+        },
+        "karate.copilot.logging.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable transparent logging of all Copilot interactions (prompts and responses)"
+        },
+        "karate.copilot.logging.redactSensitiveData": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically redact sensitive data (API keys, tokens, passwords) from Copilot activity logs"
+        },
+        "karate.copilot.logging.showTokenUsage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show token usage statistics for Copilot requests in the activity log"
         }
       }
     }

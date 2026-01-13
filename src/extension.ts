@@ -11,6 +11,7 @@ import { SpecHashManager } from './services/specHashManager';
 import { SpecDiffAnalyzer } from './services/specDiffAnalyzer';
 import { TestImpactAnalyzer } from './services/testImpactAnalyzer';
 import { logger } from './utils/logger';
+import { CopilotLogger } from './utils/copilotLogger';
 
 // Notification tracking to prevent spam
 const shownNotifications = new Map<string, number>(); // specPath -> timestamp
@@ -19,6 +20,9 @@ const NOTIFICATION_COOLDOWN_MS = 30000; // 30 seconds cooldown
 
 export function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
+
+    // Initialize Copilot transparency logger
+    CopilotLogger.initialize(context);
 
     // Register webview provider
     const webviewProvider = new KarateWebviewProvider(context.extensionUri, context);
@@ -53,6 +57,16 @@ export function activate(context: vscode.ExtensionContext) {
     const confluenceCommand = vscode.commands.registerCommand(
         'karate-dsl.generateFromConfluence',
         () => generateFromConfluence(context)
+    );
+
+    const showCopilotActivityCommand = vscode.commands.registerCommand(
+        'karate-dsl.showCopilotActivity',
+        () => CopilotLogger.show()
+    );
+
+    const clearCopilotActivityCommand = vscode.commands.registerCommand(
+        'karate-dsl.clearCopilotActivity',
+        () => CopilotLogger.clear()
     );
 
     const combinedCommand = vscode.commands.registerCommand(

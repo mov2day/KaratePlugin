@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { logger } from '../utils/logger';
+import { CopilotLogger } from '../utils/copilotLogger';
 
 export interface CopilotFullContext {
     type: 'openapi' | 'confluence' | 'combined';
@@ -9,21 +10,131 @@ export interface CopilotFullContext {
 }
 
 export class CopilotService {
-    private static readonly COPILOT_MODEL_SELECTOR: vscode.LanguageModelChatSelector = {
-        vendor: 'copilot',
-        family: 'gpt-4o'
-    };
+    private static availableModels: string[] | null = null;
+    private static lastModelCheck: number = 0;
+    private static readonly MODEL_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+    /**
+     * Get all available Copilot models for the user
+     */
+    static async getAvailableModels(): Promise<string[]> {
+        // Use cached result if recent
+        const now = Date.now();
+        if (this.availableModels && (now - this.lastModelCheck) < this.MODEL_CACHE_DURATION) {
+            return this.availableModels;
+        }
+
+        try {
+            // Query all Copilot models without family filter
+            const allModels = await vscode.lm.selectChatModels({
+                vendor: 'copilot'
+            });
+
+            // Extract unique model families
+            const families = allModels
+                .map(model => model.family)
+                .filter((family, index, self) => self.indexOf(family) === index);
+
+            this.availableModels = families.length > 0 ? families : ['gpt-4o']; // Fallback
+            this.lastModelCheck = now;
+
+            logger.info(`Available Copilot models: ${this.availableModels.join(', ')}`);
+            return this.availableModels;
+        } catch (error) {
+            logger.warn('Failed to query available Copilot models', error as Error);
+            // Return common defaults as fallback
+            return ['gpt-4o', 'gpt-4', 'gpt-3.5-turbo'];
+        }
+    }
+
+    /**
+     * Get preferred model with intelligent fallback
+     */
+    static async getPreferredModel(): Promise<string> {
+        const { ConfigManager } = require('../utils/configManager');
+        const configured = ConfigManager.getCopilotModel();
+        const available = await this.getAvailableModels();
+
+        // If configured model is available, use it
+        if (available.includes(configured)) {
+            return configured;
+        }
+
+        // Fallback priority: gpt-4o > gpt-4 > gpt-3.5-turbo > first available
+        const fallbackPriority = ['gpt-4o', 'gpt-4', 'gpt-3.5-turbo'];
+        for (const model of fallbackPriority) {
+            if (available.includes(model)) {
+                logger.warn(`Configured model '${configured}' not available, using '${model}' instead`);
+                vscode.window.showWarningMessage(
+                    `Copilot model '${configured}' is not available. Using '${model}' instead. Check your GitHub Copilot subscription.`,
+                    'Open Settings'
+                ).then(selection => {
+                    if (selection === 'Open Settings') {
+                        vscode.commands.executeCommand('workbench.action.openSettings', 'karateDsl.copilot.model');
+                    }
+                });
+                return model;
+            }
+        }
+
+        // Use first available as last resort
+        const fallback = available[0];
+        logger.warn(`Using fallback model: ${fallback}`);
+        return fallback;
+    }
+
+    /**
+     * Get chat model selector based on user configuration with fallback
+     */
+    private static async getChatModelSelector(): Promise<vscode.LanguageModelChatSelector> {
+        const preferredModel = await this.getPreferredModel();
+
+        return {
+            vendor: 'copilot',
+            family: preferredModel
+        };
+    }
 
     /**
      * Check if Copilot is available
      */
     static async isCopilotAvailable(): Promise<boolean> {
         try {
-            const models = await vscode.lm.selectChatModels(this.COPILOT_MODEL_SELECTOR);
+            const selector = await this.getChatModelSelector();
+            const models = await vscode.lm.selectChatModels(selector);
             return models.length > 0;
         } catch (error) {
             logger.warn('Copilot is not available');
             return false;
+        }
+    }
+
+    /**
+     * Extract plain text from Confluence page
+     */
+    private static getPlainTextFromConfluence(confluencePage: string): string {
+        // Confluence API might return different formats
+        // Try to parse if it's JSON with body formats
+        try {
+            const pageData = JSON.parse(confluencePage);
+            // Try atlas_doc_format first (plain text), then view, then storage
+            return pageData.body?.atlas_doc_format?.value ||
+                pageData.body?.view?.value?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ||
+                pageData.body?.storage?.value?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ||
+                confluencePage;
+        } catch {
+            // If not JSON, assume it's already HTML/text content
+            // Strip HTML tags and clean up
+            return confluencePage
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/&nbsp;/g, ' ')
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'")
+                .replace(/\s+/g, ' ')
+                .trim();
         }
     }
 
@@ -39,7 +150,8 @@ export class CopilotService {
         fullContext?: CopilotFullContext
     ): Promise<string> {
         try {
-            const models = await vscode.lm.selectChatModels(this.COPILOT_MODEL_SELECTOR);
+            const selector = await this.getChatModelSelector();
+            const models = await vscode.lm.selectChatModels(selector);
 
             if (models.length === 0) {
                 throw new Error('GitHub Copilot is not available. Please ensure you have an active Copilot subscription.');
@@ -56,9 +168,8 @@ export class CopilotService {
                 }
 
                 if (fullContext.confluencePage) {
-                    // Strip HTML tags for cleaner context
-                    const cleanContent = fullContext.confluencePage.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-                    contextSection += `\n\nConfluence Page Content:\n${cleanContent.substring(0, 5000)}`; // Limit to avoid token limits
+                    const plainText = this.getPlainTextFromConfluence(fullContext.confluencePage);
+                    contextSection += `\n\nConfluence Page Content:\n${plainText}`;
                 }
 
                 if (fullContext.requirements && fullContext.requirements.length > 0) {
@@ -93,6 +204,14 @@ Return ONLY the improved feature file content, no explanations.`
             ];
 
             // Send request to Copilot
+            const promptText = messages[0].content.toString();
+            CopilotLogger.logRequest(
+                'Enhance Karate Test (Standard)',
+                context,
+                promptText
+            );
+
+            const startTime = Date.now();
             const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
 
             let enhancedContent = '';
@@ -100,13 +219,38 @@ Return ONLY the improved feature file content, no explanations.`
                 enhancedContent += fragment;
             }
 
+            const duration = Date.now() - startTime;
+
+            // Clean up
+            enhancedContent = this.cleanCopilotResponse(enhancedContent);
+
+            CopilotLogger.logResponse(
+                'Enhance Karate Test (Standard)',
+                enhancedContent,
+                duration
+            );
+
             // Clean up the response (remove markdown code blocks if present)
             enhancedContent = this.cleanCopilotResponse(enhancedContent);
 
             logger.info('Successfully enhanced test with Copilot' + (fullContext ? ' using full context' : ''));
             return enhancedContent;
 
-        } catch (error) {
+        } catch (error: any) {
+            // Check for quota/rate limit errors
+            if (error.message?.includes('quota') || error.message?.includes('rate limit') || error.message?.includes('exhausted')) {
+                logger.warn('Copilot quota exhausted, returning original tests');
+                vscode.window.showWarningMessage(
+                    'Copilot quota exhausted. Tests generated without AI enhancement. Try GPT-3.5 Turbo or wait for quota reset.',
+                    'Open Settings'
+                ).then(selection => {
+                    if (selection === 'Open Settings') {
+                        vscode.commands.executeCommand('workbench.action.openSettings', 'karateDsl.copilot.model');
+                    }
+                });
+                return featureContent;
+            }
+
             logger.error('Failed to enhance test with Copilot', error as Error);
             throw error;
         }
@@ -122,7 +266,8 @@ Return ONLY the improved feature file content, no explanations.`
         fullContext?: CopilotFullContext
     ): Promise<string> {
         try {
-            const models = await vscode.lm.selectChatModels(this.COPILOT_MODEL_SELECTOR);
+            const selector = await this.getChatModelSelector();
+            const models = await vscode.lm.selectChatModels(selector);
 
             if (models.length === 0) {
                 throw new Error('GitHub Copilot is not available. Please ensure you have an active Copilot subscription.');
@@ -139,8 +284,8 @@ Return ONLY the improved feature file content, no explanations.`
                 }
 
                 if (fullContext.confluencePage) {
-                    const cleanContent = fullContext.confluencePage.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-                    contextSection += `\n\nConfluence Page Content:\n${cleanContent.substring(0, 5000)}`;
+                    const plainText = this.getPlainTextFromConfluence(fullContext.confluencePage);
+                    contextSection += `\n\nConfluence Page Content:\n${plainText}`;
                 }
 
                 if (fullContext.requirements && fullContext.requirements.length > 0) {
@@ -252,6 +397,16 @@ Please enhance this Karate test with COMPREHENSIVE coverage:
                 )
             ];
 
+            // Log the request for transparency
+            const promptText = messages[0].content.toString();
+            CopilotLogger.logRequest(
+                'Enhance Karate Test (Comprehensive)',
+                context,
+                promptText
+            );
+
+            const startTime = Date.now();
+
             // Send request to Copilot
             const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
 
@@ -263,10 +418,33 @@ Please enhance this Karate test with COMPREHENSIVE coverage:
             // Clean up the response
             enhancedContent = this.cleanCopilotResponse(enhancedContent);
 
+            const duration = Date.now() - startTime;
+
+            // Log the response for transparency
+            CopilotLogger.logResponse(
+                'Enhance Karate Test (Comprehensive)',
+                enhancedContent,
+                duration
+            );
+
             logger.info('Successfully enhanced test with comprehensive Copilot analysis');
             return enhancedContent;
 
-        } catch (error) {
+        } catch (error: any) {
+            // Check for quota/rate limit errors
+            if (error.message?.includes('quota') || error.message?.includes('rate limit') || error.message?.includes('exhausted')) {
+                logger.warn('Copilot quota exhausted, returning original tests');
+                vscode.window.showWarningMessage(
+                    'Copilot quota exhausted. Tests generated without AI enhancement. Try GPT-3.5 Turbo or wait for quota reset.',
+                    'Open Settings'
+                ).then(selection => {
+                    if (selection === 'Open Settings') {
+                        vscode.commands.executeCommand('workbench.action.openSettings', 'karateDsl.copilot.model');
+                    }
+                });
+                return featureContent;
+            }
+
             logger.error('Failed to enhance test with comprehensive Copilot', error as Error);
             throw error;
         }
@@ -281,7 +459,8 @@ Please enhance this Karate test with COMPREHENSIVE coverage:
         requirements?: string[]
     ): Promise<string[]> {
         try {
-            const models = await vscode.lm.selectChatModels(this.COPILOT_MODEL_SELECTOR);
+            const selector = await this.getChatModelSelector();
+            const models = await vscode.lm.selectChatModels(selector);
 
             if (models.length === 0) {
                 throw new Error('GitHub Copilot is not available');
@@ -315,12 +494,30 @@ Return ONLY the Scenario blocks (not the full feature file), one per line, in Ka
                 )
             ];
 
+            // Log the request for transparency
+            const promptText = messages[0].content.toString();
+            CopilotLogger.logRequest(
+                'Generate Additional Scenarios',
+                `Endpoint: ${apiEndpoint}`,
+                promptText
+            );
+
+            const startTime = Date.now();
             const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
 
             let scenariosText = '';
             for await (const fragment of response.text) {
                 scenariosText += fragment;
             }
+
+            const duration = Date.now() - startTime;
+
+            // Log the response for transparency
+            CopilotLogger.logResponse(
+                'Generate Additional Scenarios',
+                scenariosText,
+                duration
+            );
 
             // Parse scenarios
             const scenarios = this.extractScenarios(scenariosText);
@@ -339,7 +536,8 @@ Return ONLY the Scenario blocks (not the full feature file), one per line, in Ka
      */
     static async getSuggestions(featureContent: string): Promise<string[]> {
         try {
-            const models = await vscode.lm.selectChatModels(this.COPILOT_MODEL_SELECTOR);
+            const selector = await this.getChatModelSelector();
+            const models = await vscode.lm.selectChatModels(selector);
 
             if (models.length === 0) {
                 return [];

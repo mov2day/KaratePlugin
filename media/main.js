@@ -183,6 +183,7 @@
             command: 'saveConfig',
             config: {
                 outputPath: document.getElementById('output-path').value,
+                useCopilot: document.getElementById('use-copilot-checkbox')?.checked || false,
                 testTemplate: document.getElementById('test-template').value,
                 confluenceBaseUrl: document.getElementById('confluence-base-url').value,
                 confluenceEmail: document.getElementById('confluence-email').value
@@ -419,6 +420,10 @@
     function populateConfig(config) {
         document.getElementById('output-path').value = config.outputPath || '';
         document.getElementById('test-template').value = config.testTemplate || 'standard';
+        const useCopilotCheckbox = document.getElementById('use-copilot-checkbox');
+        if (useCopilotCheckbox) {
+            useCopilotCheckbox.checked = config.useCopilot || false;
+        }
         document.getElementById('confluence-base-url').value = config.confluenceBaseUrl || '';
         document.getElementById('confluence-email').value = config.confluenceEmail || '';
     }

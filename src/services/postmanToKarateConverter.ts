@@ -382,11 +382,57 @@ export class PostmanToKarateConverter {
                 }
             }
 
-            // JSON body assertions
-            else if (trimmed.includes('pm.expect(') && trimmed.includes('jsonData')) {
+            // Extract response value and save to variable
+            // Pattern: pm.environment.set("token", pm.response.json().access_token)
+            else if ((trimmed.includes('pm.environment.set') || trimmed.includes('pm.variables.set') || trimmed.includes('pm.globals.set')) &&
+                (trimmed.includes('pm.response.json()') || trimmed.includes('jsonData'))) {
+
+                // Try to extract variable name and JSON path
+                const varMatch = trimmed.match(/\.set\(['"]([^'"]+)['"]\s*,\s*(?:pm\.response\.json\(\)|jsonData)\.([^)]+)\)/);
+                if (varMatch) {
+                    const varName = varMatch[1];
+                    const jsonPath = varMatch[2].replace(/\[['"]([^'"]+)['"]\]/g, '.$1'); // Convert array notation
+                    assertions.push(`* def ${varName} = response.${jsonPath}`);
+                } else {
+                    // Fallback: more complex extraction
+                    const simpleVarMatch = trimmed.match(/\.set\(['"]([^'"]+)['"]/);
+                    if (simpleVarMatch) {
+                        assertions.push(`# TODO: Extract ${simpleVarMatch[1]} from response`);
+                        assertions.push(`# Original: ${trimmed}`);
+                    }
+                }
+            }
+
+            // Simple variable assignment from response
+            // Pattern: var token = pm.response.json().token
+            else if (trimmed.match(/(?:var|let|const)\s+(\w+)\s*=\s*(?:pm\.response\.json\(\)|jsonData)\.(\w+)/)) {
+                const match = trimmed.match(/(?:var|let|const)\s+(\w+)\s*=\s*(?:pm\.response\.json\(\)|jsonData)\.(\w+)/);
+                if (match) {
+                    assertions.push(`* def ${match[1]} = response.${match[2]}`);
+                }
+            }
+
+            // JSON body assertions - specific field checks
+            else if (trimmed.includes('pm.expect(') && (trimmed.includes('jsonData') || trimmed.includes('pm.response.json()'))) {
                 const converted = this.convertJsonAssertion(trimmed);
                 if (converted) {
                     assertions.push(converted);
+                }
+            }
+
+            // Array length assertions
+            else if (trimmed.includes('.to.have.lengthOf')) {
+                const lengthMatch = trimmed.match(/jsonData\.(\w+).*lengthOf\((\d+)\)/);
+                if (lengthMatch) {
+                    assertions.push(`And match response.${lengthMatch[1]} == '#[${lengthMatch[2]}]'`);
+                }
+            }
+
+            // Property existence checks
+            else if (trimmed.includes('.to.have.property')) {
+                const propMatch = trimmed.match(/\.to\.have\.property\(['"]([^'"]+)['"]\)/);
+                if (propMatch) {
+                    assertions.push(`And match response.${propMatch[1]} == '#present'`);
                 }
             }
 
@@ -402,13 +448,22 @@ export class PostmanToKarateConverter {
             else if (trimmed.includes('pm.response.to.be.json')) {
                 assertions.push(`And match header Content-Type contains 'json'`);
             }
+
+            // Response body contains
+            else if (trimmed.includes('pm.response.text()') && trimmed.includes('include')) {
+                const match = trimmed.match(/include\(['"]([^'"]+)['"]\)/);
+                if (match) {
+                    assertions.push(`And match response contains '${match[1]}'`);
+                }
+            }
         }
 
-        // If no assertions were converted, add default
+        // If no assertions were converted, add default with original script
         if (assertions.length === 0) {
             assertions.push(`Then status 200`);
-            assertions.push(`# Original test script:`);
+            assertions.push(`# Original Postman test script (not automatically converted):`);
             assertions.push(...script.split('\n').map(l => `# ${l}`));
+            assertions.push(`# Tip: Enable Copilot for better script conversion`);
         }
 
         return assertions;
@@ -425,6 +480,13 @@ export class PostmanToKarateConverter {
         try {
             const { CopilotService } = await import('./copilotService');
 
+            // Check if Copilot is available
+            const isAvailable = await CopilotService.isCopilotAvailable();
+            if (!isAvailable) {
+                logger.info('Copilot not available, using manual conversion');
+                return this.convertTestScript(script, variables);
+            }
+
             const prompt = `Convert this Postman test script to Karate DSL assertions.
 
 Postman Test Script:
@@ -434,27 +496,58 @@ ${script}
 
 API Endpoint: ${request.method} ${request.url}
 
-Requirements:
-1. Convert ALL assertions (status, response time, headers, body)
-2. Use proper Karate match syntax for JSON validation
-3. Use JSONPath for nested field validation
-4. Include schema validation where applicable
-5. Convert pm.expect() to Karate match statements
-6. Handle array validations properly
-7. Add response time assertions if present
-8. Validate headers using 'match header'
+CRITICAL Requirements:
+1. **Extract and save response values to variables**:
+   - Convert pm.environment.set("token", pm.response.json().access_token) → * def token = response.access_token
+   - Convert pm.variables.set() and pm.globals.set() similarly
+   - Support nested JSON paths: response.data.user.id
 
-Return ONLY the Karate assertion lines (Then/And statements), one per line.`;
+2. **Status code assertions**:
+   - pm.response.to.have.status(200) → Then status 200
 
-            const models = await import('vscode').then(m => m.default.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4o' }));
+3. **Response time**:
+   - pm.expect(pm.response.responseTime).to.be.below(500) → And assert responseTime < 500
+
+4. **JSON body assertions**:
+   - pm.expect(jsonData.name).to.eql("John") → And match response.name == 'John'
+   - Use JSONPath for nested: response.data.items[0].id
+   - Array validations: And match response.items == '#[5]' (length 5)
+   - Property existence: And match response.token == '#present'
+   - Type checks: And match response.id == '#number'
+
+5. **Header assertions**:
+   - pm.response.to.have.header("Content-Type") → And match header Content-Type == '#present'
+
+6. **Complex matchers**:
+   - Use '#string', '#number', '#boolean', '#array', '#object' for type validation
+   - Use '#notnull' for non-null checks
+   - Use '#regex' for pattern matching
+
+7. **Array operations**:
+   - Array length: to.have.lengthOf(5) → And match response.items == '#[5]'
+   - Array contains: And match response.items contains {...}
+
+Return ONLY Karate assertion lines (Then/And/* def statements), one per line. 
+NO explanations, NO code blocks, just the Karate statements.`;
+
+            // Use centralized Copilot service
+            const messages = [
+                (await import('vscode')).default.LanguageModelChatMessage.User(prompt)
+            ];
+
+            const selector = await CopilotService['getChatModelSelector']();
+            const models = await (await import('vscode')).default.lm.selectChatModels(selector);
+
             if (models.length === 0) {
                 return this.convertTestScript(script, variables);
             }
 
             const model = models[0];
-            const vscode = await import('vscode');
-            const messages = [vscode.default.LanguageModelChatMessage.User(prompt)];
-            const response = await model.sendRequest(messages, {}, new vscode.default.CancellationTokenSource().token);
+            const response = await model.sendRequest(
+                messages,
+                {},
+                new (await import('vscode')).default.CancellationTokenSource().token
+            );
 
             let result = '';
             for await (const fragment of response.text) {
@@ -465,13 +558,24 @@ Return ONLY the Karate assertion lines (Then/And statements), one per line.`;
             const assertions = result
                 .split('\n')
                 .map(line => line.trim())
-                .filter(line => line.startsWith('Then') || line.startsWith('And') || line.startsWith('*'))
-                .map(line => line.replace(/^\* /, ''));
+                .filter(line => {
+                    // Accept Karate statements
+                    return line.startsWith('Then') ||
+                        line.startsWith('And') ||
+                        line.startsWith('* def') ||
+                        line.startsWith('* match') ||
+                        line.startsWith('* assert');
+                })
+                .map(line => line.replace(/^```.*$/, '').trim())
+                .filter(line => line.length > 0);
 
+            logger.info(`Copilot converted ${assertions.length} assertions from test script`);
+
+            // If Copilot didn't produce good results, fall back to manual
             return assertions.length > 0 ? assertions : this.convertTestScript(script, variables);
 
         } catch (error) {
-            logger.warn('Copilot conversion failed, using basic conversion', error as Error);
+            logger.warn('Copilot test script conversion failed, using manual conversion', error as Error);
             return this.convertTestScript(script, variables);
         }
     }
@@ -483,6 +587,13 @@ Return ONLY the Karate assertion lines (Then/And statements), one per line.`;
         try {
             const { CopilotService } = await import('./copilotService');
 
+            // Check if Copilot is available
+            const isAvailable = await CopilotService.isCopilotAvailable();
+            if (!isAvailable) {
+                logger.info('Copilot not available, using manual conversion');
+                return this.convertPreRequestScript(script);
+            }
+
             const prompt = `Convert this Postman pre-request script to Karate DSL.
 
 Postman Pre-Request Script:
@@ -490,24 +601,51 @@ Postman Pre-Request Script:
 ${script}
 \`\`\`
 
-Requirements:
-1. Convert variable assignments to Karate 'def' statements
-2. Convert random data generation to Java interop (java.util.UUID, etc.)
-3. Convert date/time operations to Karate equivalents
-4. Convert API calls to Karate call statements
-5. Use proper Karate syntax for all operations
+CRITICAL Requirements:
+1. **Variable assignments**:
+   - pm.environment.set("token", "abc123") → * def token = 'abc123'
+   - pm.variables.set() and pm.globals.set() similarly
+   - Support complex values and expressions
 
-Return ONLY the Karate code lines (def, call, etc.), one per line.`;
+2. **Dynamic data generation**:
+   - Date.now() or new Date() → * def timestamp = new java.util.Date().getTime()
+   - Math.random() → * def randomNum = Math.random()
+   - UUID/GUID → * def id = java.util.UUID.randomUUID()
+   - $randomInt → * def randomInt = Math.floor(Math.random() * 1000)
+   - $timestamp → * def timestamp = new java.util.Date().getTime()
 
-            const models = await import('vscode').then(m => m.default.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4o' }));
+3. **Variable declarations**:
+   - var/let/const x = value → * def x = value
+   - Preserve the value type and structure
+
+4. **API calls**:
+   - pm.sendRequest() → Add TODO comment for manual conversion
+
+5. **String operations**:
+   - String concatenation and manipulation in Karate syntax
+   - Use Java interop where needed
+
+Return ONLY Karate code lines (* def, * call, etc.), one per line.
+NO explanations, NO code blocks, just the Karate statements.`;
+
+            // Use centralized Copilot service
+            const messages = [
+                (await import('vscode')).default.LanguageModelChatMessage.User(prompt)
+            ];
+
+            const selector = await CopilotService['getChatModelSelector']();
+            const models = await (await import('vscode')).default.lm.selectChatModels(selector);
+
             if (models.length === 0) {
                 return this.convertPreRequestScript(script);
             }
 
             const model = models[0];
-            const vscode = await import('vscode');
-            const messages = [vscode.default.LanguageModelChatMessage.User(prompt)];
-            const response = await model.sendRequest(messages, {}, new vscode.default.CancellationTokenSource().token);
+            const response = await model.sendRequest(
+                messages,
+                {},
+                new (await import('vscode')).default.CancellationTokenSource().token
+            );
 
             let result = '';
             for await (const fragment of response.text) {
@@ -518,13 +656,21 @@ Return ONLY the Karate code lines (def, call, etc.), one per line.`;
             const lines = result
                 .split('\n')
                 .map(line => line.trim())
-                .filter(line => line.startsWith('*') || line.startsWith('def') || line.startsWith('call'))
-                .map(line => line.replace(/^\* /, ''));
+                .filter(line => {
+                    return line.startsWith('* def') ||
+                        line.startsWith('* call') ||
+                        line.startsWith('# TODO') ||
+                        line.startsWith('#');
+                })
+                .map(line => line.replace(/^```.*$/, '').trim())
+                .filter(line => line.length > 0);
+
+            logger.info(`Copilot converted ${lines.length} lines from pre-request script`);
 
             return lines.length > 0 ? lines.join('\n') : this.convertPreRequestScript(script);
 
         } catch (error) {
-            logger.warn('Copilot pre-request conversion failed, using basic conversion', error as Error);
+            logger.warn('Copilot pre-request conversion failed, using manual conversion', error as Error);
             return this.convertPreRequestScript(script);
         }
     }
@@ -561,17 +707,70 @@ Return ONLY the Karate code lines (def, call, etc.), one per line.`;
             const trimmed = line.trim();
 
             // Set variable: pm.environment.set("key", "value")
-            if (trimmed.includes('pm.environment.set') || trimmed.includes('pm.variables.set')) {
-                const match = trimmed.match(/set\(['"]([^'"]+)['"],\s*['"]?([^'"]+)['"]?\)/);
+            if (trimmed.includes('pm.environment.set') || trimmed.includes('pm.variables.set') || trimmed.includes('pm.globals.set')) {
+                // Try to extract key and value
+                const match = trimmed.match(/\.set\(['"]([^'"]+)['"]\s*,\s*(.+)\)/);
                 if (match) {
-                    karateLines.push(`* def ${match[1]} = '${match[2]}'`);
+                    const key = match[1];
+                    let value = match[2].trim();
+
+                    // Remove trailing semicolon and quotes
+                    value = value.replace(/;$/, '').replace(/^['"](.+)['"]$/, "'$1'");
+
+                    // Check if it's a complex expression
+                    if (value.includes('Date.now()') || value.includes('new Date()')) {
+                        karateLines.push(`* def ${key} = new java.util.Date().getTime()`);
+                    } else if (value.includes('Math.random()')) {
+                        karateLines.push(`* def ${key} = Math.random()`);
+                    } else if (value.startsWith("'") || value.startsWith('"')) {
+                        karateLines.push(`* def ${key} = ${value}`);
+                    } else {
+                        // Complex expression - keep as-is with note
+                        karateLines.push(`* def ${key} = ${value}`);
+                    }
                 }
             }
 
-            // Generate random data
-            else if (trimmed.includes('$randomInt') || trimmed.includes('$guid')) {
+            // Variable assignment: var/let/const x = value
+            else if (trimmed.match(/^(?:var|let|const)\s+(\w+)\s*=\s*(.+)/)) {
+                const match = trimmed.match(/^(?:var|let|const)\s+(\w+)\s*=\s*(.+)/);
+                if (match) {
+                    const key = match[1];
+                    let value = match[2].replace(/;$/, '');
+
+                    if (value.includes('Date.now()')) {
+                        karateLines.push(`* def ${key} = new java.util.Date().getTime()`);
+                    } else if (value.includes('Math.random()')) {
+                        karateLines.push(`* def ${key} = Math.random()`);
+                    } else {
+                        karateLines.push(`* def ${key} = ${value}`);
+                    }
+                }
+            }
+
+            // Generate random data - $randomInt, $guid, etc.
+            else if (trimmed.includes('$randomInt') || trimmed.includes('{{$randomInt}}')) {
+                karateLines.push(`* def randomInt = Math.floor(Math.random() * 1000)`);
+            }
+            else if (trimmed.includes('$guid') || trimmed.includes('{{$guid}}') || trimmed.includes('UUID')) {
                 karateLines.push(`* def randomId = java.util.UUID.randomUUID()`);
             }
+            else if (trimmed.includes('$timestamp') || trimmed.includes('{{$timestamp}}')) {
+                karateLines.push(`* def timestamp = new java.util.Date().getTime()`);
+            }
+
+            // API calls in pre-request
+            else if (trimmed.includes('pm.sendRequest')) {
+                karateLines.push(`# TODO: Convert pm.sendRequest to Karate 'call' statement`);
+                karateLines.push(`# Original: ${trimmed}`);
+            }
+        }
+
+        if (karateLines.length === 0 && script.trim().length > 0) {
+            // Script exists but wasn't converted - preserve it as comments
+            karateLines.push(`# Original pre-request script (not automatically converted):`);
+            karateLines.push(...script.split('\n').map(l => `# ${l}`));
+            karateLines.push(`# Tip: Enable Copilot for better script conversion`);
         }
 
         return karateLines.length > 0 ? karateLines.join('\n') : null;

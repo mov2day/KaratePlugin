@@ -8,7 +8,7 @@ Generate comprehensive API tests from OpenAPI specifications, Confluence documen
 **Keywords**: Karate API testing, OpenAPI test generation, API automation,
 Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing, Postman to Karate, Postman to Karate converter, Postman migration to Karate,postman
 
-[![Version](https://img.shields.io/badge/version-1.2.5-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.2.6-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
 
@@ -19,26 +19,30 @@ Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
 
 ---
 
-## 🆕 What's New in v1.2.5
+## 🆕 What's New in v1.2.6
 
-### 🤖 Comprehensive AI-Powered Test Generation
-The extension now generates **production-ready** Karate tests with comprehensive coverage:
-- ✅ **Positive & Negative Cases**: Success scenarios (200, 201, 204) and error handling (400, 401, 403, 404)
-- ✅ **Edge & Corner Cases**: Empty values, null handling, boundary conditions, special characters
-- ✅ **Race Conditions**: Concurrent requests, idempotency, update conflicts
-- ✅ **Security Tests**: Authentication, authorization, SQL injection, XSS prevention
-- ✅ **Best Practices**: Proper variables, Scenario Outlines, schema validation, professional formatting
+### 🤖 Intelligent Copilot Model Management
+- **Automatic Model Discovery**: Extension dynamically detects available Copilot models from your subscription
+- **Smart Fallback**: Automatically uses best available model if preferred model unavailable
+- **Quota Handling**: Graceful degradation when quota exhausted - returns tests without AI enhancement instead of failing
 
-### 📊 Coverage Dashboard - Now Fully Functional!
-- **Fixed File Selection**: Browse and select OpenAPI specs and feature files (previously broken)
-- **Accurate Coverage**: Shows real coverage based on YOUR selected files (was showing 100% incorrectly)
-- **Refresh Analysis**: New 🔄 button to re-analyze after modifying tests
-- **AI Generation**: Click "🤖 Generate with AI" on any uncovered endpoint for instant comprehensive tests
-- **Progress Feedback**: Visual notifications show AI generation progress
+### 📄 Enhanced Confluence Integration
+- **Plain Text Content**: Now fetches clean plain text from Confluence API (no HTML cleanup needed)
+- **Better Error Messages**: Clear guidance for authentication, connectivity, and configuration issues
+- **Fixed Settings**: Confluence base URL and email now persist correctly after reload
 
-**How to Launch:**
-- Activity Bar → **Test Generator Panel** → Click **🚀 Launch Coverage Dashboard**
-- Or use Command Palette: **"Karate: Show Test Coverage Dashboard"**
+### 🔄 Improved Postman Conversion
+The extension now properly converts complex Postman scripts that were previously ignored:
+
+**Test Scripts - New Conversions:**
+- ✅ **Response Value Extraction**: `pm.environment.set("token", pm.response.json().access_token)` → `* def token = response.access_token`
+- ✅ **Array Validations**: `pm.expect(jsonData.items).to.have.lengthOf(5)` → `And match response.items == '#[5]'`
+- ✅ **Property Checks**: Existence checks, type validations, nested JSON paths
+
+**Pre-Request Scripts - New Conversions:**
+- ✅ **Timestamps**: `Date.now()` → `* def timestamp = new java.util.Date().getTime()`
+- ✅ **Random Data**: Handles `$randomInt`, `$guid`, `Math.random()`, UUIDs
+- ✅ **Variable Assignments**: All `var`/`let`/`const` declarations now convert properly
 
 ---
 
@@ -245,6 +249,21 @@ AI Action: Adds two test scenarios:
   - Test with includeOwner=true
   - Test with includeOwner=false
 ```
+
+### 🛡️ Copilot Transparency & Privacy
+
+We believe in full transparency when AI is involved. The extension includes a dedicated **Copilot Activity Log** so you always know what's happening.
+
+**Features:**
+- 📊 **Activity Log**: View every prompt sent to Copilot and the response received (`Cmd+Shift+P` -> "Karate: Show Copilot Activity Log")
+- 🔒 **Privacy First**: Sensitive data (API keys, tokens, passwords) is automatically redacted from logs
+- ⏱️ **Performance Metrics**: See how long each AI request takes
+- 🔍 **Full Visibility**: Verify exactly what context is being shared with the AI
+
+**Configuration:**
+- `karate.copilot.logging.enabled`: Toggle logging on/off
+- `karate.copilot.logging.redactSensitiveData`: Enable/disable automatic redaction
+- `karate.copilot.logging.showTokenUsage`: Display token consumption stats
 
 ### Smart Notification System
 

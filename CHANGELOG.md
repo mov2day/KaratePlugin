@@ -1,11 +1,43 @@
-# Changelog
+# Change Log
 
-All notable changes to the Karate Test Generator extension will be documented in this file.
+All notable changes to the "Karate Test Generator" extension will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.5] - 2026-01-10
+## [1.2.6] - 2026-01-13
+
+### Added
+- **Dynamic Copilot Model Selection**: Extension now automatically discovers available Copilot models and intelligently falls back when configured model is unavailable
+- **Plain Text Confluence Content**: Confluence API now fetches plain text format (atlas_doc_format) eliminating HTML cleanup issues
+- **Enhanced Postman Script Conversion**: Dramatically improved conversion accuracy for both test and pre-request scripts
+  - Response value extraction: `pm.environment.set("token", pm.response.json().token)` now properly converts to `* def token = response.token`
+  - Array validations, property existence checks, and variable assignments
+  - Timestamp generation, random data, and complex expressions in pre-request scripts
+  - 8 new test script patterns and 6 new pre-request patterns added
+
+### Improved
+- **Copilot Integration**: All Copilot features now use centralized service with dynamic model discovery and 5-minute caching
+- **Quota Handling**: Graceful degradation when Copilot quota is exhausted - returns original tests with helpful user notifications
+- **Model Fallback**: Automatic priority-based fallback (gpt-4o → gpt-4 → gpt-3.5-turbo) with user notifications
+- **Postman Copilot Conversion**: Enhanced prompts with detailed examples for better script-to-Karate conversion accuracy
+- **Confluence Integration**: Improved error messages for authentication, connectivity, and configuration issues
+- **Settings Persistence**: Fixed Confluence base URL and email configuration saving
+
+### Fixed
+- Confluence settings not persisting after reload
+- HTML entities in Confluence content causing readability issues
+- Postman scripts only generating status code validations
+- Hardcoded Copilot model causing failures for users without specific model access
+- Missing response value extraction in Postman test scripts
+
+### Technical
+- Removed manual Copilot model selection from UI (now automatic)
+- Added model availability caching (5 minutes) for performance
+- Enhanced error handling for quota exhaustion and unavailable models
+- Improved Confluence client with base URL normalization and type detection
+
+## [1.2.5] - 2025-12-28
 
 ### 🚀 Major Enhancements
 

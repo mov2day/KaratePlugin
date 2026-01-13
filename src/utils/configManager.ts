@@ -9,7 +9,7 @@ export class ConfigManager {
         const baseUrl = config.get<string>('confluence.baseUrl', '');
 
         if (!baseUrl) {
-            throw new Error('Confluence base URL is not configured. Please set it in settings.');
+            throw new Error('Confluence base URL is not configured. Please configure it in Settings tab.');
         }
 
         return baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
@@ -23,7 +23,7 @@ export class ConfigManager {
         const email = config.get<string>('confluence.email', '');
 
         if (!email) {
-            throw new Error('Confluence email is not configured. Please set it in settings.');
+            throw new Error('Confluence email is not configured. Please configure it in Settings tab.');
         }
 
         return email;
@@ -56,6 +56,37 @@ export class ConfigManager {
     }
 
     /**
+     * Clear stored Confluence API token
+     */
+    static async clearConfluenceApiToken(context: vscode.ExtensionContext): Promise<void> {
+        await context.secrets.delete('confluence.apiToken');
+    }
+
+    /**
+     * Validate Confluence configuration
+     */
+    static validateConfluenceConfig(): { isValid: boolean; missingFields: string[] } {
+        const missingFields: string[] = [];
+
+        try {
+            this.getConfluenceBaseUrl();
+        } catch {
+            missingFields.push('Base URL');
+        }
+
+        try {
+            this.getConfluenceEmail();
+        } catch {
+            missingFields.push('Email');
+        }
+
+        return {
+            isValid: missingFields.length === 0,
+            missingFields
+        };
+    }
+
+    /**
      * Get test template style
      */
     static getTestTemplate(): 'standard' | 'detailed' | 'minimal' {
@@ -77,5 +108,13 @@ export class ConfigManager {
     static useCopilot(): boolean {
         const config = vscode.workspace.getConfiguration('karateDsl');
         return config.get<boolean>('useCopilot', false);
+    }
+
+    /**
+     * Get preferred Copilot model (uses dynamic discovery at runtime)
+     */
+    static getCopilotModel(): string {
+        // Return default - actual model determined dynamically at runtime
+        return 'gpt-4o';
     }
 }
