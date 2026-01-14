@@ -19,18 +19,6 @@ Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
 
 ---
 
-## 🆕 What's New in v1.2.7
-
-### 🚀 Multi-Turn Copilot Enhancement
-- **No Token Limits**: Handles OpenAPI specs, Confluence docs, and Postman collections of ANY size
-- **Full Context Awareness**: Copilot sees 100% of your documentation (not just summaries)
-- **Intelligent Chunking**: Automatically breaks large content into manageable pieces
-- **All Modes Supported**: OpenAPI, Confluence, Combined, and Postman fully enhanced
-
-### 📊 Comprehensive Test Generation
-- **Production-Ready Tests**: 7-category enhancement for immediate use
-- **Smart Prompts**: Structured requirements for edge cases, security, performance
-- **Content Policy Safe**: Updated terminology for reliable Copilot responses
 
 ## ⚡️ The Karate Generator Advantage
 

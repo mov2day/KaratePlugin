@@ -154,7 +154,7 @@ export class CopilotService {
 
         if (content.length > chunkSize) {
             // Multi-turn conversation for large content
-            logger.info(`Large content detected - using multi-turn conversation (content: ${content.length}, openapi: ${openApiContent.length}, confluence: ${confluenceContent.length}, postman: ${postmanContent.length} chars)`);
+            logger.info(`Large content detected - using multi-turn conversation (content: ${content.length}, openapi: ${openApiContent.length}, confluence: ${confluenceContent.length} chars)`);
 
             // Initial context message
             messages.push(
@@ -190,13 +190,6 @@ export class CopilotService {
             if (confluenceContent.length > 0) {
                 fullMessage += `Confluence Documentation:\n${confluenceContent}\n\n`;
             }
-            if (postmanContent.length > 0) {
-                fullMessage += `Postman Collection:
-\${postmanContent}
-
-`;
-            }
-
 
             fullMessage += `${content}\n\n${instructionPrompt}`;
 
@@ -341,7 +334,7 @@ COMPREHENSIVE REQUIREMENTS:
    - Authentication validation
    - Authorization boundary testing
    - Input validation tests
-   - Input sanitization and output encoding validation
+   - SQL injection/XSS prevention checks
    - Performance assertions for critical endpoints
 
 OUTPUT FORMAT:
@@ -493,8 +486,8 @@ ULTRA-COMPREHENSIVE REQUIREMENTS (15 Categories):
 8. **Security Testing**:
    - Authentication: Valid, invalid, missing, expired tokens
    - Authorization: Role-based access control scenarios
-   - Input validation: Database parameters properly sanitized
-   - Output encoding: HTML/JavaScript content properly escaped
+   - Input validation: SQL injection attempts (expect safe handling)
+   - XSS prevention: Script tags in input (expect encoding)
    - CSRF token validation if applicable
    - Sensitive data: Passwords not in responses, proper masking
    - Security headers: X-Content-Type-Options, X-Frame-Options, CSP

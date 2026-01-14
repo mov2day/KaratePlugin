@@ -260,8 +260,8 @@ This test was auto-converted from Postman. Please enhance it with:
                 karateContent,
                 context,
                 {
-                    type: 'openapi',
-                    openApiSpec: JSON.stringify(collection, null, 2)
+                    type: 'postman',
+                    postmanCollection: JSON.stringify(collection, null, 2)
                 }
             );
 

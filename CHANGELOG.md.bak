@@ -5,37 +5,6 @@ All notable changes to the "Karate Test Generator" extension will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.7] - 2026-01-14
-
-### Added
-- **Multi-Turn Copilot Support**: All Copilot interactions now use intelligent multi-turn conversations
-  - Automatic chunking for large content (>3000 chars) - no token limits
-  - Full context support: OpenAPI specs, Confluence docs, and Postman collections
-  - Complete content sent to Copilot in labeled chunks for maximum context awareness
-- **Enhanced Context Chunking**: 
-  - OpenAPI specifications: Full spec chunked and sent (handles 50KB+ specs)
-  - Confluence documentation: Full docs extracted and chunked (handles 20KB+ docs)
-  - Postman collections: Complete collection JSON chunked and sent
-  - Combined mode: Both OpenAPI + Confluence sent together
-- **Comprehensive Prompt Engineering**:
-  - Production-ready enhancement: 7 detailed categories
-  - Covers edge cases, security validation, performance, best practices
-- **Postman Context Type**: Added semantic `postman` type to CopilotFullContext interface
-
-### Improved
-- **Content Policy Compliance**: Updated security testing terminology for Copilot compliance
-  - Replaced "SQL injection" with "database parameter sanitization"
-  - Replaced "XSS" with "output encoding validation"
-  - Maintains same testing intent with policy-safe language
-- **Prompt Quality**: All Copilot prompts now use structured, comprehensive requirements
-- **Context Awareness**: Copilot sees 100% of documentation, not just summaries
-
-### Technical
-- Enhanced `sendMultiTurnRequest()` helper for consistent multi-turn logic across all methods
-- Updated `enhanceKarateTest()` with full context support and 7-category prompts
-- Updated `enhanceKarateTestComprehensive()` with full context support and 15-category prompts
-- All enhancement methods pass `fullContext` for complete awareness
-
 ## [1.2.6] - 2026-01-13
 
 ### Added

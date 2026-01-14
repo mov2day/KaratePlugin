@@ -605,7 +605,7 @@ COMPREHENSIVE CONVERSION REQUIREMENTS:
 
 12. **Wild Scenarios & Security**:
     - Database security: Validate proper query parameterization
-    - Script encoding: HTML/JavaScript content properly escaped
+    - XSS prevention: Validate HTML encoding
     - Authentication: Verify token format And match response.token == '#regex [A-Za-z0-9-_]+\\.[A-Za-z0-9-_]+\\.[A-Za-z0-9-_]+'
     - Rate limiting: Check for 429 status on repeated calls
     - CSRF tokens: Extract and validate
