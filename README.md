@@ -8,7 +8,7 @@ Generate comprehensive API tests from OpenAPI specifications, Confluence documen
 **Keywords**: Karate API testing, OpenAPI test generation, API automation,
 Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing, Postman to Karate, Postman to Karate converter, Postman migration to Karate,postman
 
-[![Version](https://img.shields.io/badge/version-1.2.7-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.2.8-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
 
@@ -19,7 +19,7 @@ Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
 
 ---
 
-## 🆕 What's New in v1.2.7
+## 🆕 What's New in v1.2.8
 
 ### 🚀 Multi-Turn Copilot Enhancement
 - **No Token Limits**: Handles OpenAPI specs, Confluence docs, and Postman collections of ANY size
