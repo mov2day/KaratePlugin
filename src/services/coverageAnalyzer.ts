@@ -224,7 +224,7 @@ Focus on:
 - Client errors (400, 401, 403, 404)
 - Server errors (500, 503)
 - Edge cases (empty data, invalid input, boundary conditions)
-- Security tests (authentication, authorization)
+- Auth tests (authentication, authorization)
 `;
 
         try {

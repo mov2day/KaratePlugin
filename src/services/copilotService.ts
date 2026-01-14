@@ -305,7 +305,7 @@ COMPREHENSIVE REQUIREMENTS:
 2. **Core Validations** (CRITICAL):
    - Status codes: Success (200, 201, 204) AND errors (400, 401, 403, 404, 500)
    - Complete response schema validation
-   - Header validation (Content-Type, security headers)
+   - Header validation (Content-Type, response headers)
    - Response time assertions: And assert responseTime < reasonable_ms
 
 3. **Data Quality Assertions**:
@@ -328,7 +328,7 @@ COMPREHENSIVE REQUIREMENTS:
    - Meaningful comments for complex logic
    - Scenario Outlines for data-driven tests
    - Reusable function calls where appropriate
-   -Tags for categorization (@smoke, @regression, @security)
+   -Tags for categorization (@smoke, @regression, @validation)
 
 6. **Real-World Quality**:
    - Realistic test data (not foo/bar)
@@ -337,7 +337,7 @@ COMPREHENSIVE REQUIREMENTS:
    - Idempotency checks for POST/PUT
    - Concurrent request handling awareness
 
-7. **Security & Performance**:
+7. **Authentication & Performance**:
    - Authentication validation
    - Authorization boundary testing
    - Input validation tests
@@ -438,7 +438,7 @@ ULTRA-COMPREHENSIVE REQUIREMENTS (15 Categories):
 1. **Test Architecture & Organization**:
    - Use Background for authentication and common setup
    - Group related scenarios logically
-   - Use tags: @smoke, @regression, @security, @performance, @integration
+   - Use tags: @smoke, @regression, @validation, @performance, @integration
    - Scenario Outlines for data-driven testing
    - Reusable functions in separate feature files
 
@@ -490,14 +490,14 @@ ULTRA-COMPREHENSIVE REQUIREMENTS (15 Categories):
    - Invalid enum values
    - Constraint violations: duplicate keys, foreign key errors
 
-8. **Security Testing**:
+8. **Authentication & Authorization**:
    - Authentication: Valid, invalid, missing, expired tokens
    - Authorization: Role-based access control scenarios
    - Input validation: Database parameters properly sanitized
    - Output encoding: HTML/JavaScript content properly escaped
    - CSRF token validation if applicable
    - Sensitive data: Passwords not in responses, proper masking
-   - Security headers: X-Content-Type-Options, X-Frame-Options, CSP
+   - Response headers validation: X-Content-Type-Options, X-Frame-Options, CSP
 
 9. **Performance & Reliability**:
    - Response time: And assert responseTime < 500 (adjust per endpoint)
@@ -641,7 +641,7 @@ ${existingFeature}
 Generate 3-5 additional test scenarios that cover:
 - Edge cases (empty values, null, invalid data)
 - Error handling (404, 400, 500 responses)
-- Security scenarios (authentication, authorization)
+- Auth scenarios (authentication, authorization)
 - Performance considerations
 - Data validation
 

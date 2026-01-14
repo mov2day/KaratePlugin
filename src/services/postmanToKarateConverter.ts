@@ -560,7 +560,7 @@ COMPREHENSIVE CONVERSION REQUIREMENTS:
    - Existence: And match header Content-Type == '#present'
    - Exact value: And match header Content-Type == 'application/json'
    - Contains: And match header Content-Type contains 'json'
-   - Security headers: And match header X-Frame-Options == 'DENY'
+   - Response headers: And match header X-Frame-Options == 'DENY'
    - CORS: And match header Access-Control-Allow-Origin == '*'
 
 6. **Schema Validation** (Structure):
@@ -603,13 +603,6 @@ COMPREHENSIVE CONVERSION REQUIREMENTS:
     - Extract reusable values to variables
     - Add scenario outlines for similar tests with different data
 
-12. **Wild Scenarios & Security**:
-    - Database security: Validate proper query parameterization
-    - Script encoding: HTML/JavaScript content properly escaped
-    - Authentication: Verify token format And match response.token == '#regex [A-Za-z0-9-_]+\\.[A-Za-z0-9-_]+\\.[A-Za-z0-9-_]+'
-    - Rate limiting: Check for 429 status on repeated calls
-    - CSRF tokens: Extract and validate
-
 CRITICAL OUTPUT FORMAT:
 - Return ONLY Karate assertion lines
 - Use Then for first assertion, And for subsequent
@@ -641,13 +634,12 @@ COMPREHENSIVE CONVERSION REQUIREMENTS:
 2. **Status Codes** - Validate all HTTP status scenarios (2xx success, 4xx client errors, 5xx server errors)
 3. **Response Time** - Convert performance assertions
 4. **JSON Validations** - Use #number, #string, #boolean, #array, #object, #present, #null, #notnull, #regex for type checking
-5. **Headers** - Validate all response headers including security headers
+5. **Headers** - Validate all response headers including response headers
 6. **Schema Validation** - Match complete response structure
 7. **Edge Cases** - Handle empty responses, null values, empty arrays, special characters
 8. **Arrays** - Use #[N] for length, #[_ N] for max, each for iteration
 9. **Error Scenarios** - Validate error responses and messages
-10. **Security** - Check authentication tokens, validate patterns
-11. **Best Practices** - Use proper Karate syntax with #(varName) for variables, add meaningful comments
+10. **Best Practices** - Use proper Karate syntax with #(varName) for variables, add meaningful comments
 12. **Wild Scenarios** - Handle unusual data, boundary values, malformed inputs
 
 OUTPUT FORMAT:
