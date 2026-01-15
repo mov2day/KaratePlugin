@@ -120,89 +120,78 @@ export class CopilotService {
         content: string,
         instructionPrompt: string,
         fullContext?: CopilotFullContext,
-        chunkSize: number = 3000
+        chunkSize: number = 3000,
+        isRetry: boolean = false,
+        token?: vscode.CancellationToken
     ): Promise<string> {
         const messages: vscode.LanguageModelChatMessage[] = [];
-
-        let needsMultiTurn = content.length > chunkSize;
 
         // Check if context also needs chunking
         let openApiContent = '';
         let confluenceContent = '';
-
         let postmanContent = '';
+
         if (fullContext) {
             if (fullContext.openApiSpec) {
                 openApiContent = fullContext.openApiSpec;
-                if (openApiContent.length > chunkSize) {
-                    needsMultiTurn = true;
-                }
             }
             if (fullContext.confluencePage) {
                 confluenceContent = this.getPlainTextFromConfluence(fullContext.confluencePage);
-                if (confluenceContent.length > chunkSize) {
-                    needsMultiTurn = true;
-                }
             }
             if (fullContext.postmanCollection) {
                 postmanContent = fullContext.postmanCollection;
-                if (postmanContent.length > chunkSize) {
-                    needsMultiTurn = true;
-                }
             }
         }
 
-        if (content.length > chunkSize) {
-            // Multi-turn conversation for large content
-            logger.info(`Large content detected - using multi-turn conversation (content: ${content.length}, openapi: ${openApiContent.length}, confluence: ${confluenceContent.length}, postman: ${postmanContent.length} chars)`);
+        const totalLength = content.length + openApiContent.length + confluenceContent.length + postmanContent.length;
 
-            // Initial context message
+        if (totalLength > chunkSize) {
+            // Multi-turn conversation for large content
+            logger.info(`Large content detected - using multi-turn conversation (Total: ${totalLength} chars)`);
+
             messages.push(
                 vscode.LanguageModelChatMessage.User(
-                    'I will send you content in multiple parts. Please wait for all parts before responding.'
+                    'I will send you the context and content in multiple parts. Please wait for all parts before responding.'
                 )
             );
 
-            // Send content in chunks
-            const numChunks = Math.ceil(content.length / chunkSize);
-            for (let i = 0; i < numChunks; i++) {
-                const start = i * chunkSize;
-                const end = Math.min(start + chunkSize, content.length);
-                const chunk = content.substring(start, end);
-                const partNum = i + 1;
+            // Helper to send content in chunks
+            const sendChunks = (label: string, text: string) => {
+                if (!text) return;
+                const chunks = Math.ceil(text.length / chunkSize);
+                for (let i = 0; i < chunks; i++) {
+                    const start = i * chunkSize;
+                    const end = Math.min(start + chunkSize, text.length);
+                    const chunk = text.substring(start, end);
+                    messages.push(
+                        vscode.LanguageModelChatMessage.User(
+                            `${label} (Part ${i + 1}/${chunks}):\n${chunk}`
+                        )
+                    );
+                }
+            };
 
-                messages.push(
-                    vscode.LanguageModelChatMessage.User(
-                        `Part ${partNum}/${numChunks}:\n${chunk}`
-                    )
-                );
-            }
+            // Send full context first
+            sendChunks('OpenAPI Specification', openApiContent);
+            sendChunks('Confluence Documentation', confluenceContent);
+            sendChunks('Postman Collection', postmanContent);
+
+            // Send main content
+            sendChunks('Karate Test Content', content);
 
             // Final instruction message
             messages.push(vscode.LanguageModelChatMessage.User(instructionPrompt));
         } else {
-            // Single message for small content - include context inline
+            // Single message for small content
             let fullMessage = '';
 
-            if (openApiContent.length > 0) {
-                fullMessage += `OpenAPI Specification:\n${openApiContent}\n\n`;
-            }
-            if (confluenceContent.length > 0) {
-                fullMessage += `Confluence Documentation:\n${confluenceContent}\n\n`;
-            }
-            if (postmanContent.length > 0) {
-                fullMessage += `Postman Collection:
-\${postmanContent}
-
-`;
-            }
-
+            if (openApiContent.length > 0) fullMessage += `OpenAPI Specification:\n${openApiContent}\n\n`;
+            if (confluenceContent.length > 0) fullMessage += `Confluence Documentation:\n${confluenceContent}\n\n`;
+            if (postmanContent.length > 0) fullMessage += `Postman Collection:\n${postmanContent}\n\n`;
 
             fullMessage += `${content}\n\n${instructionPrompt}`;
 
-            messages.push(
-                vscode.LanguageModelChatMessage.User(fullMessage)
-            );
+            messages.push(vscode.LanguageModelChatMessage.User(fullMessage));
         }
 
         // Send request to Copilot
@@ -214,18 +203,68 @@ export class CopilotService {
         }
 
         const model = models[0];
-        const response = await model.sendRequest(
-            messages,
-            {},
-            new vscode.CancellationTokenSource().token
-        );
 
-        let result = '';
-        for await (const fragment of response.text) {
-            result += fragment;
+        try {
+            // Create a timeout token if no token provided, or link to provided token
+            const timeoutMs = 120000; // 2 minutes timeout
+            const timeoutSource = new vscode.CancellationTokenSource();
+
+            // Set timeout
+            const timer = setTimeout(() => {
+                timeoutSource.cancel();
+            }, timeoutMs);
+
+            // Link to parent token if provided
+            if (token) {
+                token.onCancellationRequested(() => {
+                    timeoutSource.cancel();
+                    clearTimeout(timer);
+                });
+            }
+
+            const response = await model.sendRequest(
+                messages,
+                {},
+                timeoutSource.token
+            );
+
+            let result = '';
+            for await (const fragment of response.text) {
+                result += fragment;
+            }
+
+            // Check for refusal response
+            if (!isRetry && (
+                result.toLowerCase().includes("sorry, i can't assist") ||
+                result.toLowerCase().includes("sorry, i cannot assist") ||
+                result.toLowerCase().includes("i cannot fulfill this request")
+            )) {
+                logger.warn('Copilot refused request. Retrying with safety filter instructions...');
+
+                const safetyInstruction = `
+The previous response was refused. 
+STRICT REQUIREMENT: OMIT any content that triggers safety policies (security testing, penetration testing, etc.).
+Focus ONLY on functional verification and standard QA validation.
+Process the rest of the request and provide the Karate test code.`;
+
+                return this.sendMultiTurnRequest(
+                    content,
+                    instructionPrompt + "\n\n" + safetyInstruction,
+                    fullContext,
+                    chunkSize,
+                    true, // Set retry flag
+                    token
+                );
+            }
+
+            return result;
+        } catch (error) {
+            if (error instanceof vscode.CancellationError) {
+                logger.warn('Copilot request cancelled or timed out');
+                return "Error: Request cancelled or timed out.";
+            }
+            throw error;
         }
-
-        return result;
     }
 
     /**
@@ -292,65 +331,43 @@ export class CopilotService {
             // Comprehensive instruction prompt
             const instructionPrompt = `${contextInfo}
 
-OBJECTIVE: Transform the Karate test above into a PRODUCTION-READY test suite.
+OBJECTIVE: Transform the Karate test above into a RELIABLE, QA-FOCUSED test suite.
 
-COMPREHENSIVE REQUIREMENTS:
+STRICT GUIDELINES:
+1. **NO HALLUCINATIONS**: Do NOT invent fields, endpoints, or data not present in the content provided.
+2. **SAFE VALIDATION ONLY**: Focus on standard functional testing. Do NOT include "attack" vectors, "injection" tests, or "penetration" testing patterns.
 
-1. **Variable Management & Setup**:
-   - Extract reusable values to variables
-   - Use proper #(varName) syntax for references
-   - Add Background section for common setup
-   - Define base URLs, common headers, tokens
+REQUIREMENTS:
 
-2. **Core Validations** (CRITICAL):
-   - Status codes: Success (200, 201, 204) AND errors (400, 401, 403, 404, 500)
-   - Complete response schema validation
-   - Header validation (Content-Type, response headers)
-   - Response time assertions: And assert responseTime < reasonable_ms
+1. **Variable Management**:
+   - Extract reusable values to variables.
+   - Use proper #(varName) syntax.
+   - Define base URLs and common headers.
 
-3. **Data Quality Assertions**:
-   - Type checks: #string, #number, #boolean, #array, #object 
-   - Null/presence validation: #present, #null, #notnull
-   - Pattern matching: #regex for emails, dates, UUIDs, etc.
-   - Array validations: #[N] for length, each for iteration
-   - Nested object validation: Complete structure checks
+2. **Core Validations**:
+   - Status codes: Standard success (2xx) and error (4xx/5xx) checks.
+   - Schema validation: Match response structure.
+   - Type checks: #string, #number, #boolean.
 
-4. **Comprehensive Test Coverage**:
-   - Positive scenarios (happy path)
-   - Negative scenarios (invalid data, unauthorized, not found)
-   - Edge cases (empty responses, null values, boundary conditions)
-   - Error message validation
-   - Pagination handling if applicable
+3. **Data Integrity**:
+   - Null/presence validation: #present, #null.
+   - Basic pattern matching: Email formats, dates.
+   - Array validations: Length checks, iteration.
 
-5. **Karate Best Practices**:
-   - Descriptive scenario names (clear intent)
-   - Proper indentation (4 spaces)
-   - Meaningful comments for complex logic
-   - Scenario Outlines for data-driven tests
-   - Reusable function calls where appropriate
-   -Tags for categorization (@smoke, @regression, @validation)
+4. **Negative Scenarios (Functional)**:
+   - Invalid data formats (e.g., text in number fields).
+   - Missing required fields.
+   - Boundary values (min/max).
 
-6. **Real-World Quality**:
-   - Realistic test data (not foo/bar)
-   - Proper cleanup/teardown if needed
-   - Transaction scenarios
-   - Idempotency checks for POST/PUT
-   - Concurrent request handling awareness
-
-7. **Authentication & Performance**:
-   - Authentication validation
-   - Authorization boundary testing
-   - Input validation tests
-   - Input sanitization and output encoding validation
-   - Performance assertions for critical endpoints
+5. **Best Practices**:
+   - Descriptive scenario names.
+   - Proper indentation.
+   - Scenario Outlines for data-driven tests.
 
 OUTPUT FORMAT:
-- Return the COMPLETE enhanced Karate feature file
-- Start with Feature: declaration
-- Include Background if beneficial
-- Multiple Scenario blocks with comprehensive assertions
-- NO explanations, NO markdown code blocks
-- Just the pure Karate DSL content
+- Return the COMPLETE enhanced Karate feature file.
+- NO explanations, NO markdown code blocks.
+- Just the pure Karate DSL content.
 
 Enhance the test now:`;
 
@@ -398,7 +415,8 @@ Enhance the test now:`;
     static async enhanceKarateTestComprehensive(
         featureContent: string,
         context: string,
-        fullContext?: CopilotFullContext
+        fullContext?: CopilotFullContext,
+        token?: vscode.CancellationToken
     ): Promise<string> {
         try {
             const isAvailable = await this.isCopilotAvailable();
@@ -431,149 +449,75 @@ Enhance the test now:`;
             // Ultra-comprehensive instruction prompt
             const instructionPrompt = `${contextInfo}
 
-OBJECTIVE: Transform the Karate test above into an ENTERPRISE-GRADE, PRODUCTION-READY comprehensive test suite.
+OBJECTIVE: Transform the Karate test above into an ENTERPRISE-GRADE, PRODUCTION-READY test suite.
 
-ULTRA-COMPREHENSIVE REQUIREMENTS (15 Categories):
+STRICT ANTI-HALLUCINATION RULES:
+1. **Adhere to Context**: Use ONLY endpoints, fields, and data structures present in the provided Open API spec / Documentation.
+2. **No Invention**: Do NOT create new API paths or fictitious response fields.
 
-1. **Test Architecture & Organization**:
-   - Use Background for authentication and common setup
-   - Group related scenarios logically
-   - Use tags: @smoke, @regression, @validation, @performance, @integration
-   - Scenario Outlines for data-driven testing
-   - Reusable functions in separate feature files
+COMPREHENSIVE REQUIREMENTS:
 
-2. **Complete HTTP Status Coverage**:
-   - Success: 200 (OK), 201 (Created), 202 (Accepted), 204 (No Content)
-   - Redirection: 301, 302, 304 if applicable
-   - Client Errors: 400 (Bad Request), 401 (Unauthorized), 403 (Forbidden), 404 (Not Found), 409 (Conflict), 422 (Validation)
-   - Server Errors: 500 (Internal), 502 (Bad Gateway), 503 (Unavailable), 504 (Timeout)
-   - Each with appropriate error message validation
+1. **Test Architecture**:
+   - Use Background for setup.
+   - Proper tagging (@smoke, @regression).
+   - Scenario Outlines for data variations.
 
-3. **Schema & Structure Validation**:
-   - Complete response structure: And match response == { ... }
-   - Nested object validation
-   - Optional vs required fields: #present, #notpresent
-   - Polymorphic responses if API supports
-   - Header schema validation
+2. **HTTP Status Coverage**:
+   - Success (2xx) and Standard Error (4xx/5xx) scenarios.
+   - Validate strict status codes.
 
-4. **Data Type & Quality Assertions**:
-   - Primitive types: #string, #number, #boolean, #null
-   - Complex types: #array, #object, #uuid, #regex
-   - Format validation: dates (ISO 8601), emails, URLs, phone numbers
-   - Enum validation for fixed values
-   - Number ranges: And assert response.age >= 0 && response.age <= 120
+3. **Deep Schema Validation**:
+   - Complete structure matching: And match response == { ... }
+   - Strict type enforcement: #string, #number.
+   - Optional vs Mandatory field checks.
 
-5. **Array & Collection Validations**:
-   - Empty arrays: And match response.items == []
-   - Exact length: And match response.items == '#[5]'
-   - Min length: And match response.items == '#[1_]'  
-   - Max length: And match response.items == '#[_10]'
-   - Each element schema: And match each response.items == { id: '#number', name: '#string' }
-   - Array contains: And match response.items contains { id: 123 }
-   - Sorted order validation if required
+4. **Data Validation**:
+   - Value constraints (min, max).
+   - Regex patterns for standard formats (UUID, Date, Email).
+   - Enum validation where known.
 
-6. **Edge Cases & Boundary Conditions**:
-   - Empty request body: POST/PUT with {}
-   - Null values in optional fields
-   - Zero values: 0, 0.0, empty strings ""
-   - Minimum values: Int.MIN, empty arrays []
-   - Maximum values: Very long strings, large numbers
-   - Unicode characters: émojis 🚀, special chars
-   - HTML/XML special characters: <>&"'
+5. **Business Logic & Workflow**:
+   - State transitions (if documented).
+   - CRUD lifecycle where applicable.
+   - Data dependencies (creating parent before child).
 
-7. **Negative Testing & Error Scenarios**:
-   - Invalid authentication: expired/malformed tokens
-   - Missing required fields: 400 with field-specific errors
-   - Invalid data types: string instead of number
-   - Out-of-range values: negative age, future dates
-   - Malformed JSON: syntax errors
-   - Invalid enum values
-   - Constraint violations: duplicate keys, foreign key errors
+6. **Edge Cases**:
+   - Empty collections/arrays.
+   - Boundary values (0, empty strings).
+   - Special characters handling (UTF-8).
+   - Null value handling.
 
-8. **Authentication & Authorization**:
-   - Authentication: Valid, invalid, missing, expired tokens
-   - Authorization: Role-based access control scenarios
-   - Input validation: Database parameters properly sanitized
-   - Output encoding: HTML/JavaScript content properly escaped
-   - CSRF token validation if applicable
-   - Sensitive data: Passwords not in responses, proper masking
-   - Response headers validation: X-Content-Type-Options, X-Frame-Options, CSP
+7. **Safe Negative Testing**:
+   - Malformed data formats.
+   - Missing headers/required params.
+   - Invalid IDs.
+   - NOTE: Do NOT provoke security alerts (avoid SQLi/XSS patterns).
 
-9. **Performance & Reliability**:
-   - Response time: And assert responseTime < 500 (adjust per endpoint)
-   - Concurrent requests: Multiple parallel calls
-   - Rate limiting: Test 429 Too Many Requests
-   - Retry logic: Idempotency for POST/PUT
-   - Timeout handling: Long-running operations
-   - Cache control: ETag, Cache-Control headers
+8. **Performance**:
+   - Reasonable response time assertions.
 
-10. **State Management & Workflows**:
-    - CRUD lifecycle: Create → Read → Update → Delete
-    - State transitions: Draft → Published → Archived
-    - Transaction scenarios: Multi-step workflows
-    - Idempotency: Same request twice yields same result
-    - Concurrency: Optimistic locking (version fields)
-    - Cleanup: Delete test data after scenario
-
-11. **Pagination & Filtering**:
-    - Page size variations: 10, 50, 100
-    - Page navigation: First, middle, last pages
-    - Empty pages: Beyond last page
-    - Sorting: ASC, DESC on different fields
-    - Filtering: Single and multiple filters
-    - Search: Partial matches, case sensitivity
-
-12. **Variable Management & Reusability**:
-    - Extract reusable values: * def userId = response.data.id
-    - Use #(varName) for references consistently
-    - Environment-specific config: baseUrl, credentials
-    - Dynamic data: timestamps, UUIDs, random values
-    - Shared state across scenarios
-    - Proper scoping: Background vs Scenario variables
-
-13. **Best Practices & Code Quality**:
-    - Descriptive scenario names: "As admin, create user with valid data succeeds"
-    - Clear Given-When-Then structure
-    - Meaningful comments for complex logic
-    - Consistent formatting: 4-space indentation
-    - DRY principle: Extract repeated logic to functions
-    - Professional test data: realistic names, emails, values
-    - Assertions before actions that change state
-
-14. **Documentation & Maintainability**:
-    - Feature description explaining purpose
-    - Scenario descriptions with business context
-    - Inline comments for non-obvious assertions
-    - TODO for manual verification items
-    - Version/API documentation references
-    - Contact info for test ownership
-
-15. **Real-World Production Readiness**:
-    - Data cleanup: Delete created resources
-    - Test independence: Each scenario can run standalone
-    - Deterministic: Same input = same output
-    - CI/CD friendly: Tagged for different pipeline stages
-    - Environment agnostic: Configurable base URLs
-    - Monitoring: Log critical checkpoints
-    - Error reporting: Clear failure messages
+9. **Quality & Maintainability**:
+   - Clear, intent-based scenario names.
+   - Reusable functions for repeated logic.
+   - Readable formatting (4-space indent).
 
 CRITICAL OUTPUT FORMAT:
-- Return COMPLETE enhanced Karate feature file
-- Start with Feature: [description]
-- Include Background if beneficial
-- Multiple comprehensive Scenario blocks
-- Use Scenario Outline for data variations
-- Include ALL categories above where applicable
-- NO explanations, NO markdown blocks
-- Pure Karate DSL only
+- Return COMPLETE enhanced Karate feature file.
+- Start with Feature: [description].
+- Multiple comprehensive Scenario blocks.
+- NO explanations, NO markdown blocks.
+- Pure Karate DSL only.
 
-Transform the test now into enterprise-grade quality:`;
+Transform the test now:`;
 
             // Use multi-turn for large features
             const enhancedContent = await this.sendMultiTurnRequest(
                 featureContent,
                 instructionPrompt,
-                fullContext
+                fullContext,
+                3000,
+                false,
+                token
             );
 
             const cleanContent = this.cleanCopilotResponse(enhancedContent);

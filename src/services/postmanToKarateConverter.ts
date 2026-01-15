@@ -477,6 +477,17 @@ export class PostmanToKarateConverter {
         request: PostmanRequest,
         variables: Map<string, string>
     ): Promise<string[]> {
+        // Step 1: Proactive Scan - Detect and sanitize policy triggers
+        const { ContentScanner } = await import('./contentScanner');
+        const scanResult = ContentScanner.scan(script);
+
+        // Use sanitized version to avoid blocking
+        const safeScript = scanResult.hasTriggers ? scanResult.sanitizedContent : script;
+
+        if (scanResult.hasTriggers) {
+            logger.info(`✨ Smart Scanner: Sanitized ${scanResult.triggers.length} triggers in Postman script: ${scanResult.triggers.join(', ')}`);
+        }
+
         try {
             const { CopilotService } = await import('./copilotService');
 
@@ -484,7 +495,7 @@ export class PostmanToKarateConverter {
             const isAvailable = await CopilotService.isCopilotAvailable();
             if (!isAvailable) {
                 logger.info('Copilot not available, using manual conversion');
-                return this.convertTestScript(script, variables);
+                return this.convertTestScript(safeScript, variables);
             }
 
             const vscode = await import('vscode');
@@ -640,7 +651,10 @@ COMPREHENSIVE CONVERSION REQUIREMENTS:
 8. **Arrays** - Use #[N] for length, #[_ N] for max, each for iteration
 9. **Error Scenarios** - Validate error responses and messages
 10. **Best Practices** - Use proper Karate syntax with #(varName) for variables, add meaningful comments
-12. **Wild Scenarios** - Handle unusual data, boundary values, malformed inputs
+
+STRICT GUIDELINES:
+- **No Hallucinations**: Do not invent logic or variables not present in the original script.
+- **Safety**: Do not add security testing patterns unless explicitly present in the source.
 
 OUTPUT FORMAT:
 - Then status <code>
@@ -658,7 +672,7 @@ Return ONLY the Karate assertion lines.`;
             const models = await vscode.default.lm.selectChatModels(selector);
 
             if (models.length === 0) {
-                return this.convertTestScript(script, variables);
+                return this.convertTestScript(safeScript, variables);
             }
 
             const model = models[0];
@@ -693,11 +707,11 @@ Return ONLY the Karate assertion lines.`;
             logger.info(`Copilot converted ${assertions.length} assertions from test script`);
 
             // If Copilot didn't produce good results, fall back to manual
-            return assertions.length > 0 ? assertions : this.convertTestScript(script, variables);
+            return assertions.length > 0 ? assertions : this.convertTestScript(safeScript, variables);
 
         } catch (error) {
             logger.warn('Copilot test script conversion failed, using manual conversion', error as Error);
-            return this.convertTestScript(script, variables);
+            return this.convertTestScript(safeScript, variables);
         }
     }
 
@@ -770,6 +784,11 @@ Postman Pre-Request Script:
 \`\`\`javascript
 ${script}
 \`\`\`
+
+STRICT RULES (NO HALLUCINATIONS):
+1. **Scope**: Convert ONLY the logic present in the script.
+2. **No Invention**: Do NOT add variables or calculations not in the source.
+3. **Variables**: Use * def for all declarations.
 
 CRITICAL Requirements:
 1. **Variable assignments**:

@@ -433,8 +433,8 @@ export function activate(context: vscode.ExtensionContext) {
                 await vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
                     title: 'Importing Postman Collection...',
-                    cancellable: false
-                }, async (progress) => {
+                    cancellable: true
+                }, async (progress, token) => {
                     progress.report({ increment: 20, message: 'Parsing collection...' });
 
                     const { PostmanImportService } = await import('./services/postmanImportService');
@@ -448,7 +448,7 @@ export function activate(context: vscode.ExtensionContext) {
                         includeAuth: true,
                         useCopilot,
                         environmentFile: environmentPath
-                    });
+                    }, token);
 
                     progress.report({ increment: 100 });
 
@@ -483,6 +483,10 @@ export function activate(context: vscode.ExtensionContext) {
                     }
                 });
             } catch (error) {
+                if (error instanceof vscode.CancellationError) {
+                    vscode.window.showInformationMessage('Import cancelled by user');
+                    return;
+                }
                 logger.error('Postman import failed', error as Error);
                 vscode.window.showErrorMessage(`Failed to import Postman collection: ${error}`);
             }

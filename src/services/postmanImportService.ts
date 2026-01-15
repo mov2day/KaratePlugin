@@ -45,7 +45,8 @@ export class PostmanImportService {
             convertScripts: true,
             includeAuth: true,
             useCopilot: false
-        }
+        },
+        token?: vscode.CancellationToken
     ): Promise<ImportResult> {
         const result: ImportResult = {
             success: false,
@@ -98,7 +99,8 @@ export class PostmanImportService {
                         variables,
                         outputDir,
                         options,
-                        collection
+                        collection,
+                        token
                     );
 
                     if (featureFile) {
@@ -168,7 +170,8 @@ export class PostmanImportService {
         variables: Map<string, string>,
         outputDir: string,
         options: ImportOptions,
-        collection: PostmanCollection
+        collection: PostmanCollection,
+        token?: vscode.CancellationToken
     ): Promise<string | null> {
         try {
             const scenarios: string[] = [];
@@ -198,7 +201,7 @@ export class PostmanImportService {
 
                     if (isAvailable) {
                         logger.info(`Enhancing ${featureName} with Copilot...`);
-                        featureContent = await this.enhanceWithCopilot(featureContent, collection, requests);
+                        featureContent = await this.enhanceWithCopilot(featureContent, collection, requests, token);
                     }
                 } catch (error) {
                     logger.warn('Copilot enhancement failed, using basic conversion', error as Error);
@@ -232,7 +235,8 @@ export class PostmanImportService {
     private async enhanceWithCopilot(
         karateContent: string,
         collection: PostmanCollection,
-        requests: Array<{ request: any; path: string[] }>
+        requests: Array<{ request: any; path: string[] }>,
+        token?: vscode.CancellationToken
     ): Promise<string> {
         const { CopilotService } = await import('./copilotService');
 
@@ -262,7 +266,8 @@ This test was auto-converted from Postman. Please enhance it with:
                 {
                     type: 'postman',
                     postmanCollection: JSON.stringify(collection, null, 2)
-                }
+                },
+                token
             );
 
             return enhanced || karateContent;

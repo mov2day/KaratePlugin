@@ -62,8 +62,9 @@ export async function generateCombined(context: vscode.ExtensionContext): Promis
             const baseUrl = ConfigManager.getConfluenceBaseUrl();
             const email = ConfigManager.getConfluenceEmail();
             const apiToken = await ConfigManager.getConfluenceApiToken(context);
+            const authType = vscode.workspace.getConfiguration('karateDsl.confluence').get<'basic' | 'bearer'>('authType', 'basic');
 
-            const confluenceClient = new ConfluenceClient(baseUrl, email, apiToken);
+            const confluenceClient = new ConfluenceClient(baseUrl, email || "", apiToken, authType);
             const page = await confluenceClient.getPageById(pageId);
 
             // Parse Confluence content

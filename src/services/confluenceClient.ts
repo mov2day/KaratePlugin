@@ -15,17 +15,28 @@ export class ConfluenceClient {
     private baseUrl: string;
     private isCloud: boolean;
 
-    constructor(baseUrl: string, email: string, apiToken: string) {
+    constructor(baseUrl: string, email: string, apiToken: string, authType: 'basic' | 'bearer' = 'basic') {
         // Normalize base URL
         this.baseUrl = this.normalizeBaseUrl(baseUrl);
         this.isCloud = this.detectConfluenceType(this.baseUrl);
 
-        const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
+        // Determine authorization header based on auth type
+        let authHeader: string;
+        if (authType === 'bearer') {
+            // Bearer token for Data Center/Server PAT
+            authHeader = `Bearer ${apiToken}`;
+            logger.info('Using Bearer token authentication (PAT for Data Center/Server)');
+        } else {
+            // Basic auth for Cloud (email:token)
+            const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
+            authHeader = `Basic ${auth}`;
+            logger.info('Using Basic authentication (Cloud)');
+        }
 
         this.axiosInstance = axios.create({
             baseURL: this.baseUrl,
             headers: {
-                'Authorization': `Basic ${auth}`,
+                'Authorization': authHeader,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },

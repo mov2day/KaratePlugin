@@ -37,6 +37,7 @@ export async function generateFromConfluence(context: vscode.ExtensionContext): 
         const baseUrl = ConfigManager.getConfluenceBaseUrl();
         const email = ConfigManager.getConfluenceEmail();
         const apiToken = await ConfigManager.getConfluenceApiToken(context);
+        const authType = vscode.workspace.getConfiguration('karateDsl.confluence').get<'basic' | 'bearer'>('authType', 'basic');
 
         // Step 3: Fetch and parse page
         await vscode.window.withProgress({
@@ -46,7 +47,7 @@ export async function generateFromConfluence(context: vscode.ExtensionContext): 
         }, async (progress) => {
             // Fetch page
             progress.report({ increment: 30, message: 'Fetching Confluence page...' });
-            const client = new ConfluenceClient(baseUrl, email, apiToken);
+            const client = new ConfluenceClient(baseUrl, email || "", apiToken, authType);
             const page = await client.getPageById(pageId);
 
             // Parse page content

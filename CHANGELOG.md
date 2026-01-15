@@ -5,6 +5,14 @@ All notable changes to the "Karate Test Generator" extension will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.9] - 2026-01-15
+
+### Improved
+- **Copilot Reliability**: Optimized prompts to prevent "Sorry, I can't assist with that" responses by removing safety-triggering language while maintaining test quality.
+- **Smart Retry Mechanism**: Automatically detects Copilot refusals and retries with refined instructions to ensure successful test generation.
+- **Strict Anti-Hallucination**: Enforced stricter context adherence to prevent invention of non-existent fields or endpoints.
+- **Context Preservation**: Fixed an issue where large OpenAPI specs or Postman collections similar to 50KB+ were truncating context in multi-turn conversations.
+
 ## [1.2.8] - 2026-01-14
 
 ### Added

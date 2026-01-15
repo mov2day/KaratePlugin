@@ -836,3 +836,22 @@ button:active {
         width: 100%;
     }
 }
+
+/* Help Section */
+.help-section {
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.help-section ul {
+    margin: 8px 0 12px 20px;
+    padding: 0;
+}
+
+.help-section li {
+    margin-bottom: 6px;
+}
+
+.help-section p {
+    margin-bottom: 8px;
+}

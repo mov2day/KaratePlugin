@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
   "description": "Professional Karate Test Generator & Maintenance with AI - Transform OpenAPI, Postman, and Confluence into automated tests with GitHub Copilot",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -194,6 +194,19 @@
           "type": "string",
           "default": "",
           "description": "Confluence user email for authentication"
+        },
+        "karateDsl.confluence.authType": {
+          "type": "string",
+          "enum": [
+            "basic",
+            "bearer"
+          ],
+          "default": "basic",
+          "description": "Authentication type: 'basic' for Confluence Cloud (email:token), 'bearer' for Data Center/Server PAT tokens",
+          "enumDescriptions": [
+            "Basic Auth (Cloud): Uses email:token encoded as Base64",
+            "Bearer Token (Data Center/Server): Uses PAT token with Bearer scheme"
+          ]
         },
         "karateDsl.testTemplate": {
           "type": "string",

@@ -8,7 +8,7 @@ Generate comprehensive API tests from OpenAPI specifications, Confluence documen
 **Keywords**: Karate API testing, OpenAPI test generation, API automation,
 Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing, Postman to Karate, Postman to Karate converter, Postman migration to Karate,postman
 
-[![Version](https://img.shields.io/badge/version-1.2.8-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.2.9-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
 
@@ -19,13 +19,18 @@ Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
 
 ---
 
-## 🆕 What's New in v1.2.8
+## 🆕 What's New in v1.2.9
 
-### 🚀 Multi-Turn Copilot Enhancement
-- **No Token Limits**: Handles OpenAPI specs, Confluence docs, and Postman collections of ANY size
-- **Full Context Awareness**: Copilot sees 100% of your documentation (not just summaries)
-- **Intelligent Chunking**: Automatically breaks large content into manageable pieces
-- **All Modes Supported**: OpenAPI, Confluence, Combined, and Postman fully enhanced
+### 🛡️ Enhanced Copilot Reliability
+- **Smart Retries**: Automatically handles "Sorry, I can't assist" responses by retrying with optimized prompts.
+- **Context Fidelity**: Fixed issue where large inputs dropped context - now 100% of large specs/collections are preserved.
+- **Strict Accuracy**: New anti-hallucination guardrails ensure generated tests match your actual API.
+
+
+### 📄 Enhanced Confluence Integration
+- **Auth Type Selection**: Support for both Cloud (Basic Auth) and Data Center/Server (Bearer Token) controlled via settings Option
+- **Plain Text Content**: Now fetches clean plain text from Confluence API
+- **Better Error Messages**: Clear guidance for authentication issues
 
 ### 📊 Comprehensive Test Generation
 - **Production-Ready Tests**: 7-category enhancement for immediate use
@@ -199,6 +204,21 @@ Right-click spec.yaml → "Generate Tests Now"
 2. Select "Karate: Learn Style Now"
 3. Future generations will match this style
 ```
+
+### ⚙️ Configuration Guide
+
+**Accessing Settings**:
+- **Mac**: Press `Cmd+,`
+- **Windows / Linux**: Press `Ctrl+,`
+
+**Confluence Setup**:
+1. Search for `karateDsl.confluence`
+2. **Base URL**: Your Confluence URL (e.g., `https://confluence.company.com`)
+3. **Email**: Your email (Cloud) or empty (Data Center)
+4. **API Token**: Your Atlassian Token (Cloud) or PAT (Data Center)
+5. **Auth Type** (New): 
+   - Select `basic` for Cloud
+   - Select `bearer` for Data Center/Server (PAT)
 
 ### Automatic Test Maintenance
 

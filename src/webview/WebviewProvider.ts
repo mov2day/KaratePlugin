@@ -203,8 +203,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             const baseUrl = ConfigManager.getConfluenceBaseUrl();
             const email = ConfigManager.getConfluenceEmail();
             const apiToken = await ConfigManager.getConfluenceApiToken(this._context);
+            const authType = vscode.workspace.getConfiguration('karateDsl.confluence').get<'basic' | 'bearer'>('authType', 'basic');
 
-            const client = new ConfluenceClient(baseUrl, email, apiToken);
+            const client = new ConfluenceClient(baseUrl, email || "", apiToken, authType);
             const page = await client.getPageById(pageId);
 
             this.sendProgress('Parsing page content...', 60);
@@ -293,8 +294,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             const baseUrl = ConfigManager.getConfluenceBaseUrl();
             const email = ConfigManager.getConfluenceEmail();
             const apiToken = await ConfigManager.getConfluenceApiToken(this._context);
+            const authType = vscode.workspace.getConfiguration('karateDsl.confluence').get<'basic' | 'bearer'>('authType', 'basic');
 
-            const client = new ConfluenceClient(baseUrl, email, apiToken);
+            const client = new ConfluenceClient(baseUrl, email || "", apiToken, authType);
             const page = await client.getPageById(pageId);
 
             this.sendProgress('Generating combined tests...', 60);
@@ -635,6 +637,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             <button class="tab-button" data-tab="coverage">
                 <span>📊</span> Coverage
             </button>
+            <button class="tab-button" data-tab="help">
+                <span>❓</span> Help
+            </button>
         </div>
 
         <!-- Dashboard / Welcome (Hidden when tabs are active) -->
@@ -653,6 +658,11 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 <div class="welcome-icon">🎨</div>
                 <h3>Personalize</h3>
                 <p>Styles & Templates</p>
+            </div>
+            <div class="welcome-card card" data-target="help">
+                <div class="welcome-icon">❓</div>
+                <h3>Help & Guide</h3>
+                <p>Features & Usage</p>
             </div>
         </div>
 
@@ -780,6 +790,108 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             <button class="primary-button" id="generate-combined-btn">
                 <span>🚀</span> Generate Tests
             </button>
+        </div>
+
+        <!-- Help Tab -->
+        <div class="tab-content" id="help-tab">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🤖</span>
+                    <span class="card-title">Copilot Integration</span>
+                </div>
+                <div class="help-section">
+                    <p><strong>Available Features:</strong></p>
+                    <ul>
+                        <li><strong>Enhance Tests:</strong> Select "AI Enhancement" before generating to get improved assertions, negative scenarios, and better data.</li>
+                        <li><strong>Coverage Dashboard:</strong> Use AI to analyze coverage and suggest missing tests.</li>
+                        <li><strong>Postman Import:</strong> Intelligent conversion of scripts to Karate assertions.</li>
+                    </ul>
+                    <p><strong>Note:</strong> Copilot requires an active subscription and the VS Code Copilot extension.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📄</span>
+                    <span class="card-title">OpenAPI Generation</span>
+                </div>
+                <div class="help-section">
+                    <p>1. Go to the <strong>OpenAPI</strong> tab.</p>
+                    <p>2. Select your <code>.json</code> or <code>.yaml</code> spec file.</p>
+                    <p>3. (Optional) Check "AI Enhancement" for smarter tests.</p>
+                    <p>4. Click <strong>Generate Tests</strong>.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📋</span>
+                    <span class="card-title">Confluence Integration</span>
+                </div>
+                <div class="help-section">
+                    <p>Generate tests from API documentation pages.</p>
+                    <ul>
+                        <li><strong>Setup:</strong> Configure URL, Email, and Token in Settings.</li>
+                        <li><strong>Auth Type:</strong> Choose 'Basic' (Cloud) or 'Bearer' (Data Center).</li>
+                        <li><strong>Usage:</strong> Enter the full Page URL or Page ID in the Confluence tab.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📦</span>
+                    <span class="card-title">Postman Import</span>
+                </div>
+                <div class="help-section">
+                    <p>Convert collections directly from the explorer:</p>
+                    <p>1. Right-click a <code>.json</code> Postman collection.</p>
+                    <p>2. Select <strong>Karate: Import Postman Collection</strong>.</p>
+                    <p>3. If an environment file exists nearby, it will be auto-detected.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🔄</span>
+                    <span class="card-title">Auto-Maintenance</span>
+                </div>
+                <div class="help-section">
+                    <p>The extension watches your OpenAPI files for changes.</p>
+                    <p>When you save a change to a spec, a notification will appear offering to <strong>Update with Copilot</strong>. This preserves your custom logic while adding new fields/endpoints.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">⚙️</span>
+                    <span class="card-title">Settings Configuration</span>
+                </div>
+                <div class="help-section">
+                    <p>Customize the extension behavior in the <strong>Settings</strong> tab:</p>
+                    <ul>
+                        <li><strong>Output Path:</strong> Destination folder for generated tests (default: <code>src/test/java/karate</code>).</li>
+                        <li><strong>Test Template:</strong> Choose between standard or custom templates.</li>
+                        <li><strong>Confluence:</strong> Set Base URL, Email, and API Token for docs integration.</li>
+                        <li><strong>Copilot:</strong> Enable/Disable Copilot globally.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">⚡</span>
+                    <span class="card-title">Quick Imports</span>
+                </div>
+                <div class="help-section">
+                    <p><strong>From Explorer:</strong> Right-click any file to see options:</p>
+                    <ul>
+                        <li><code>.json/.yaml</code> (OpenAPI): Generate Karate Tests</li>
+                        <li><code>.json</code> (Postman): Import Postman Collection</li>
+                        <li><code>.feature</code>: Learn Style from File</li>
+                    </ul>
+                </div>
+            </div>
         </div>
 
         <!-- Template Tab -->
