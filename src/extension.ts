@@ -18,8 +18,49 @@ const shownNotifications = new Map<string, number>(); // specPath -> timestamp
 const processingSpecs = new Set<string>(); // specs currently being processed
 const NOTIFICATION_COOLDOWN_MS = 30000; // 30 seconds cooldown
 
+import { KarateCodeActionProvider } from './services/linter/KarateCodeActionProvider';
+import { KarateLinter } from './services/linter/KarateLinter';
+
 export function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
+
+    // Initialize Services
+    const linter = new KarateLinter();
+    context.subscriptions.push(linter);
+
+    // Register Copilot Suggestion Command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('karate-dsl.copilotSuggest', (document: vscode.TextDocument, range: vscode.Range) => {
+            const { CopilotSuggestionService } = require('./services/linter/CopilotSuggestionService');
+            new CopilotSuggestionService().suggestImprovement(document, range);
+        })
+    );
+
+    // Register Health Command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('karate-dsl.analyzeProjectHealth', () => {
+            const { HealthDashboardPanel } = require('./services/health/HealthDashboardPanel');
+            HealthDashboardPanel.createOrShow(context.extensionUri);
+        })
+    );
+
+    // Register Code Actions
+    context.subscriptions.push(
+        vscode.languages.registerCodeActionsProvider(
+            { language: 'karate', scheme: 'file' },
+            new KarateCodeActionProvider(),
+            { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+        )
+    );
+    // Also support .feature files not yet detected as karate language? 
+    // Usually extension sets association. Assume 'karate' or 'feature' check.
+    context.subscriptions.push(
+        vscode.languages.registerCodeActionsProvider(
+            { pattern: '**/*.feature' },
+            new KarateCodeActionProvider(),
+            { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+        )
+    );
 
     // Initialize Copilot transparency logger
     CopilotLogger.initialize(context);

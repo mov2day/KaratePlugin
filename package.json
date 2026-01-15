@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
   "description": "Professional Karate Test Generator & Maintenance with AI - Transform OpenAPI, Postman, and Confluence into automated tests with GitHub Copilot",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -111,6 +111,10 @@
       {
         "command": "karate-dsl.importPostmanCollection",
         "title": "Karate: Import Postman Collection"
+      },
+      {
+        "command": "karate-dsl.analyzeProjectHealth",
+        "title": "Karate: Analyze Project Health"
       }
     ],
     "viewsContainers": {
@@ -237,6 +241,14 @@
           "type": "boolean",
           "default": true,
           "description": "Show token usage statistics for Copilot requests in the activity log"
+        },
+        "karate.linter.enabledRules": {
+          "type": "object",
+          "default": {},
+          "description": "Enable/Disable specific linter rules (e.g. \"K001\": false)",
+          "additionalProperties": {
+            "type": "boolean"
+          }
         }
       }
     }

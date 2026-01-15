@@ -8,7 +8,7 @@ Generate comprehensive API tests from OpenAPI specifications, Confluence documen
 **Keywords**: Karate API testing, OpenAPI test generation, API automation,
 Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing, Postman to Karate, Postman to Karate converter, Postman migration to Karate,postman
 
-[![Version](https://img.shields.io/badge/version-1.2.9-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.2.10-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
 
@@ -18,6 +18,13 @@ and supports **automatic test maintenance when OpenAPI specs evolve**.
 Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
 
 ---
+
+## 🆕 What's New in v1.2.10
+### 🩺 Project Health Doctor
+- **Real-time Linter**: Instant feedback on bad practices (Hardcoded URLs, Duplicate Scenarios, Indentation).
+- **Health Dashboard**: Visualize your project structure and dependencies with an interactive graph.
+- **Security Scanner**: Detects missing authentication tests and hardcoded secrets.
+- **Quick Fixes**: Auto-fix formatting issues and more.
 
 ## 🆕 What's New in v1.2.9
 
@@ -108,7 +115,13 @@ This extension is designed to work hand-in-hand with GitHub Copilot to provide:
 ### 🎨 Style Learning
 - **Learn from Examples** - Right-click existing tests → "Learn Style Now"
 - **Consistent Formatting** - Maintains your team's coding standards
-- **Custom Templates** - Save and reuse your preferred test patterns
+  - **Custom Templates** - Save and reuse your preferred test patterns
+
+### 🩺 Project Health & Quality
+- **Real-Time Linter** - Catches errors as you type
+- **Dependency Graph** - Visualize feature file connections
+- **Security Audit** - Automated check for common security gaps
+- **DRY Analysis** - Identify unused files and duplicate code
 
 ### 🎯 Modern UI
 - **Activity Bar Panel** - Quick access to all features

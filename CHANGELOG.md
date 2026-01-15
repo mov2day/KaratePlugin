@@ -5,6 +5,14 @@ All notable changes to the "Karate Test Generator" extension will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.10]
+- **New Feature**: "Project Health Doctor" - A comprehensive suite for maintaining high-quality Karate tests.
+- **Feature**: Real-time Linter with 8+ rules (Indentation, Naming, Hardcoded URLs).
+- **Feature**: Interactive Health Dashboard with Dependency Graph (Mermaid.js).
+- **Feature**: Security Scanner for missing auth tests and hardcoded secrets.
+- **Feature**: Code Actions (Quick Fixes) for formatting issues.
+- **Improved**: Added `karate.linter.enabledRules` configuration to toggle specific rules.
+
 ## [1.2.9] - 2026-01-15
 
 ### Improved
