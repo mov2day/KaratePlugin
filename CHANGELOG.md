@@ -5,6 +5,36 @@ All notable changes to the "Karate Test Generator" extension will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.11] - 2026-01-17
+
+### Added
+- **Copilot Model Selection**: Dynamic model picker command to select from available Copilot models
+  - Command: "Karate: Select Copilot Model" shows real-time available models
+  - Settings dropdown: `karateDsl.copilot.model` with 6 predefined models (default: gpt-5-mini)
+  - Auto-refresh: Changing model in settings re-initializes Copilot instantly
+  - Smart fallback: Automatically uses gpt-4o/gpt-4/gpt-3.5-turbo if configured model unavailable
+- **Copilot Initialization**: Model object cached at VS Code startup for instant operations
+- **Configuration Listener**: Dynamic re-initialization when model setting changes
+
+### Improved
+- **Performance**: All Copilot operations now use cached model object (zero runtime latency)
+- **Error Handling**: Quota exhaustion shows "Change Model" button for easy switching
+- **Notification Reliability**: Fixed missing `await` on transient error notifications
+- **Invalid Spec Handling**: Auto-untrack specs with formatting errors to prevent notification loops
+  - Shows 3-second transient notification before auto-dismissing
+  - Prevents infinite error notifications for malformed specs
+
+### Fixed
+- Missing `await` on `withProgress` for transient spec error notifications
+- All 11 notification points now properly auto-dismiss in error cases
+- Invalid tracked specs causing continuous error notifications
+
+### Technical
+- Added `cachedModel` property to CopilotService
+- Re-implemented `initialize()` method for startup model caching
+- Updated all Copilot methods to use cachedModel (sendMultiTurnRequest, generateAdditionalScenarios, getSuggestions)
+- Comprehensive notification audit completed (11 withProgress, 17 errors, 13 warnings)
+
 ## [1.2.10]
 - **New Feature**: "Project Health Doctor" - A comprehensive suite for maintaining high-quality Karate tests.
 - **Feature**: Real-time Linter with 8+ rules (Indentation, Naming, Hardcoded URLs).
@@ -12,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Feature**: Security Scanner for missing auth tests and hardcoded secrets.
 - **Feature**: Code Actions (Quick Fixes) for formatting issues.
 - **Improved**: Added `karate.linter.enabledRules` configuration to toggle specific rules.
+
 
 ## [1.2.9] - 2026-01-15
 

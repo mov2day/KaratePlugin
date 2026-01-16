@@ -62,8 +62,20 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // Initialize Copilot transparency logger
+    // Initialize Copilot transparency logger & models
+    const { CopilotService } = require('./services/copilotService');
     CopilotLogger.initialize(context);
+    CopilotService.initialize();
+
+    // Listen for model configuration changes to re-initialize
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('karateDsl.copilot.model')) {
+                logger.info('Copilot model configuration changed. Re-initializing...');
+                CopilotService.initialize();
+            }
+        })
+    );
 
     // Register webview provider
     const webviewProvider = new KarateWebviewProvider(context.extensionUri, context);
@@ -108,6 +120,58 @@ export function activate(context: vscode.ExtensionContext) {
     const clearCopilotActivityCommand = vscode.commands.registerCommand(
         'karate-dsl.clearCopilotActivity',
         () => CopilotLogger.clear()
+    );
+
+    const selectCopilotModelCommand = vscode.commands.registerCommand(
+        'karate-dsl.selectCopilotModel',
+        async () => {
+            try {
+                // Get fresh list of available models
+                const { CopilotService } = await import('./services/copilotService');
+                const models = await CopilotService.getAvailableModels();
+
+                // Add current selection indicator
+                const { ConfigManager } = await import('./utils/configManager');
+                const current = ConfigManager.getCopilotModel();
+
+                const items = models.map(m => ({
+                    label: m,
+                    description: m === current ? '(Current)' : '',
+                    detail: m === 'gpt-5-mini' ? 'Recommended for speed' : (m === 'claude-sonnet-4.5' ? 'Recommended for complex logic' : '')
+                }));
+
+                // Allow custom input
+                items.push({
+                    label: '$(pencil) Enter Custom Model ID...',
+                    description: '',
+                    detail: 'Manually enter a model ID not listed here'
+                });
+
+                const selection = await vscode.window.showQuickPick(items, {
+                    placeHolder: 'Select GitHub Copilot Model for Karate Tests'
+                });
+
+                if (selection) {
+                    let modelId = selection.label;
+
+                    if (modelId.includes('Enter Custom Model ID')) {
+                        const input = await vscode.window.showInputBox({
+                            placeHolder: 'e.g., gpt-4-32k',
+                            prompt: 'Enter the exact Model ID/Family'
+                        });
+                        if (!input) return;
+                        modelId = input;
+                    }
+
+                    // Update setting
+                    await vscode.workspace.getConfiguration('karateDsl').update('copilot.model', modelId, vscode.ConfigurationTarget.Global);
+                    vscode.window.showInformationMessage(`Copilot model set to: ${modelId}`);
+                    logger.info(`User selected Copilot model: ${modelId}`);
+                }
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to select model: ${error}`);
+            }
+        }
     );
 
     const combinedCommand = vscode.commands.registerCommand(
@@ -547,7 +611,10 @@ export function activate(context: vscode.ExtensionContext) {
         checkSpecChangesCommand,
         compareOpenAPIVersionsCommand,
         showCoverageDashboardCommand,
-        importPostmanCommand
+        importPostmanCommand,
+        selectCopilotModelCommand,
+        showCopilotActivityCommand,
+        clearCopilotActivityCommand
     );
 }
 
@@ -708,7 +775,29 @@ async function handleSpecChange(
         }
     } catch (error) {
         logger.error('Error handling spec change', error as Error);
-        vscode.window.showErrorMessage(`Failed to analyze spec changes: ${error}`);
+
+        // Spec has invalid format or critical error
+        // Untrack to prevent loop
+        try {
+            if (processingSpecs.has(specPath)) {
+                processingSpecs.delete(specPath);
+            }
+
+            await specHashManager.deleteMetadata(specPath);
+            logger.warn(`Untracked ${specPath} due to processing error`);
+
+            // Show transient or less intrusive error
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Stop tracking ${path.basename(specPath)} due to error: ${(error as Error).message}`,
+                cancellable: false
+            }, async (progress) => {
+                await new Promise(resolve => setTimeout(resolve, 3000)); // Show for 3s then dismiss
+            });
+
+        } catch (cleanupError) {
+            logger.error('Failed to cleanup metadata', cleanupError as Error);
+        }
     }
 }
 

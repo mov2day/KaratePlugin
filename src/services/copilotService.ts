@@ -12,8 +12,48 @@ export interface CopilotFullContext {
 
 export class CopilotService {
     private static availableModels: string[] | null = null;
+    private static cachedModel: vscode.LanguageModelChat | undefined;
     private static lastModelCheck: number = 0;
     private static readonly MODEL_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+    /**
+     * Initialize Copilot Service - Fetches and caches model at startup
+     */
+    static async initialize(): Promise<void> {
+        try {
+            // Background initialization of models
+            const allModels = await vscode.lm.selectChatModels({
+                vendor: 'copilot'
+            });
+
+            // Extract unique model families
+            const families = allModels
+                .map(model => model.family)
+                .filter((family, index, self) => self.indexOf(family) === index);
+
+            this.availableModels = families.length > 0 ? families : ['gpt-4o'];
+            this.lastModelCheck = Date.now();
+
+            logger.info(`Copilot initialized. Available models: ${this.availableModels.join(', ')}`);
+
+            // Cache the preferred model object immediately
+            try {
+                const selector = await this.getChatModelSelector();
+                const matchingModels = await vscode.lm.selectChatModels(selector);
+                if (matchingModels.length > 0) {
+                    this.cachedModel = matchingModels[0];
+                    logger.info(`Copilot initialized. Cached model object for family: ${this.cachedModel.family}`);
+                }
+            } catch (err) {
+                logger.warn('Failed to cache model object during initialization', err as Error);
+            }
+
+        } catch (error) {
+            logger.warn('Failed to initialize Copilot models', error as Error);
+            this.availableModels = ['gpt-4o']; // Default fallback
+        }
+    }
+
 
     /**
      * Get all available Copilot models for the user
@@ -195,14 +235,20 @@ export class CopilotService {
         }
 
         // Send request to Copilot
-        const selector = await this.getChatModelSelector();
-        const models = await vscode.lm.selectChatModels(selector);
+        let model = this.cachedModel;
 
-        if (models.length === 0) {
-            throw new Error('No Copilot models available');
+        if (!model) {
+            const selector = await this.getChatModelSelector();
+            const models = await vscode.lm.selectChatModels(selector);
+            if (models.length > 0) {
+                model = models[0];
+                this.cachedModel = model;
+            }
         }
 
-        const model = models[0];
+        if (!model) {
+            throw new Error('No Copilot models available');
+        }
 
         try {
             // Create a timeout token if no token provided, or link to provided token
@@ -390,13 +436,13 @@ Enhance the test now:`;
         } catch (error) {
             // Handle quota exhaustion gracefully
             const errorMessage = (error as Error).message.toLowerCase();
-            if (errorMessage.includes('quota') || errorMessage.includes('rate limit') || errorMessage.includes('exhausted')) {
-                vscode.window.showWarningMessage(
-                    '⚠️ Copilot quota exhausted. Returning original test. Try using GPT-3.5 Turbo or wait a bit.',
-                    'Open Settings'
+            if (errorMessage.includes('quota') || errorMessage.includes('rate limit') || errorMessage.includes('exhausted') || errorMessage.includes('429')) {
+                vscode.window.showErrorMessage(
+                    '⚠️ Copilot quota exhausted for this model. Please switch to a different model in settings.',
+                    'Change Model'
                 ).then(selection => {
-                    if (selection === 'Open Settings') {
-                        vscode.commands.executeCommand('workbench.action.openSettings', 'karateDsl.copilot');
+                    if (selection === 'Change Model') {
+                        vscode.commands.executeCommand('karate-dsl.selectCopilotModel');
                     }
                 });
                 logger.warn('Copilot quota exhausted, returning original feature');
@@ -558,14 +604,19 @@ Transform the test now:`;
         requirements?: string[]
     ): Promise<string[]> {
         try {
-            const selector = await this.getChatModelSelector();
-            const models = await vscode.lm.selectChatModels(selector);
-
-            if (models.length === 0) {
-                throw new Error('GitHub Copilot is not available');
+            let model = this.cachedModel;
+            if (!model) {
+                const selector = await this.getChatModelSelector();
+                const models = await vscode.lm.selectChatModels(selector);
+                if (models.length > 0) {
+                    model = models[0];
+                    this.cachedModel = model;
+                }
             }
 
-            const model = models[0];
+            if (!model) {
+                throw new Error('GitHub Copilot is not available');
+            }
 
             const requirementsText = requirements && requirements.length > 0
                 ? `\n\nAdditional Requirements:\n${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}`
@@ -635,14 +686,19 @@ Return ONLY the Scenario blocks (not the full feature file), one per line, in Ka
      */
     static async getSuggestions(featureContent: string): Promise<string[]> {
         try {
-            const selector = await this.getChatModelSelector();
-            const models = await vscode.lm.selectChatModels(selector);
-
-            if (models.length === 0) {
-                return [];
+            let model = this.cachedModel;
+            if (!model) {
+                const selector = await this.getChatModelSelector();
+                const models = await vscode.lm.selectChatModels(selector);
+                if (models.length > 0) {
+                    model = models[0];
+                    this.cachedModel = model;
+                }
             }
 
-            const model = models[0];
+            if (!model) {
+                return [];
+            }
 
             const messages = [
                 vscode.LanguageModelChatMessage.User(

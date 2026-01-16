@@ -111,10 +111,10 @@ export class ConfigManager {
     }
 
     /**
-     * Get preferred Copilot model (uses dynamic discovery at runtime)
+     * Get preferred Copilot model
      */
     static getCopilotModel(): string {
-        // Return default - actual model determined dynamically at runtime
-        return 'gpt-4o';
+        const config = vscode.workspace.getConfiguration('karateDsl');
+        return config.get<string>('copilot.model', 'gpt-5-mini');
     }
 }
