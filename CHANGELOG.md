@@ -5,9 +5,13 @@ All notable changes to the "Karate Test Generator" extension will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.11] - 2026-01-17
+## [1.2.12] - 2026-01-17
 
 ### Added
+- **Coverage Dashboard Enhancements**:
+  - **Append to File**: "Generate Test" and "Generate with AI" now support appending scenarios to existing feature files
+  - **Context-Aware AI Generation**: When appending, Copilot automatically reuses existing Background variables, auth setup, and coding style
+  - **File Selection**: Intelligent QuickPick to choose between "New Feature File" or "Append to [Selected File]"
 - **Copilot Model Selection**: Dynamic model picker command to select from available Copilot models
   - Command: "Karate: Select Copilot Model" shows real-time available models
   - Settings dropdown: `karateDsl.copilot.model` with 6 predefined models (default: gpt-5-mini)
@@ -17,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Configuration Listener**: Dynamic re-initialization when model setting changes
 
 ### Improved
+- **Smart Appending**: Appending tests via AI now reads the target file first to ensure seamless integration with existing `Background` sections
 - **Performance**: All Copilot operations now use cached model object (zero runtime latency)
 - **Error Handling**: Quota exhaustion shows "Change Model" button for easy switching
 - **Notification Reliability**: Fixed missing `await` on transient error notifications

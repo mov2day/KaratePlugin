@@ -8,7 +8,7 @@ Generate comprehensive API tests from OpenAPI specifications, Confluence documen
 **Keywords**: Karate API testing, OpenAPI test generation, API automation,
 Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing, Postman to Karate, Postman to Karate converter, Postman migration to Karate,postman
 
-[![Version](https://img.shields.io/badge/version-1.2.11-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.2.12-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
 
@@ -19,19 +19,20 @@ Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
 
 ---
 
-## 🆕 What's New in v1.2.11
+## 🆕 What's New in v1.2.12
+
+### 📊 Enhanced Coverage Dashboard
+- **Add Tests to Existing Files**: You can now append AI-generated tests to existing feature files directly from the dashboard.
+- **Context-Aware Generation**: Copilot reads your existing file's `Background` and style to generate scenarios that fit perfectly without manual edits.
+- **Smart Selection**: Choose to create a new file or append to any file currently selected in the dashboard filter.
 
 ### 🎯 Copilot Model Selection
 - **Dynamic Model Picker**: New command "Karate: Select Copilot Model" shows all available models from your GitHub Copilot subscription
 - **Settings Dropdown**: Choose from 6 predefined models (gpt-5-mini, gpt-5.2-codex, claude-sonnet-4.5, etc.)
 - **Auto-Refresh**: Changing model in settings instantly re-initializes Copilot
-- **Smart Fallback**: Automatically switches to available models if configured model is unavailable
 
-### ⚡️ Performance Improvements
+### ⚡️ Performance & fixes
 - **Zero Latency**: All Copilot operations now use cached model object (instant startup)
-- **Smart Error Handling**: Quota exhaustion shows "Change Model" button for quick switching
-
-### 🐛 Bug Fixes
 - **Notification Reliability**: All progress notifications now properly auto-dismiss in error cases
 - **Invalid Spec Handling**: Auto-untrack specs with formatting errors to prevent notification spam
 

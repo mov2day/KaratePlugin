@@ -67,11 +67,11 @@ export class CoverageDashboardProvider {
                     break;
                 case 'generateTest':
                     logger.info('Handling generateTest');
-                    await this.handleGenerateTest(data.endpoint);
+                    await this.handleGenerateTest(data.endpoint, data.featurePaths);
                     break;
                 case 'generateTestWithAI':
                     logger.info('Handling generateTestWithAI');
-                    await this.handleGenerateTestWithAI(data.endpoint);
+                    await this.handleGenerateTestWithAI(data.endpoint, data.featurePaths);
                     break;
                 case 'viewDetails':
                     logger.info('Handling viewDetails');
@@ -187,84 +187,190 @@ export class CoverageDashboardProvider {
         };
     }
 
-    private async handleGenerateTest(endpoint: any) {
+    private async handleGenerateTest(endpoint: any, featurePaths?: string[]) {
         try {
-            // Trigger test generation for this endpoint
             const { KarateGenerator } = await import('../services/karateGenerator');
             const generator = new KarateGenerator();
+            const fs = await import('fs');
+            const path = await import('path');
 
-            // Generate a basic feature for this endpoint
-            const feature = generator.generateFromOpenAPI([endpoint], endpoint.path.replace(/\//g, '_'));
-            const scenario = generator.featureToString(feature);
+            let targetFile: string | undefined;
 
-            // Show in editor
-            const doc = await vscode.workspace.openTextDocument({
-                content: scenario,
-                language: 'karate'
-            });
-            await vscode.window.showTextDocument(doc);
+            // Ask user if they want to append to an existing file
+            if (featurePaths && featurePaths.length > 0) {
+                const options = [
+                    { label: '$(file-add) Create New Feature File', description: 'Generate a new file' },
+                    ...featurePaths.map(p => ({
+                        label: `$(file) Append to ${path.basename(p)}`,
+                        description: p,
+                        detail: 'Adds a new scenario to this file'
+                    }))
+                ];
 
-            vscode.window.showInformationMessage(`Generated test for ${endpoint.method} ${endpoint.path}`);
+                const selection = await vscode.window.showQuickPick(options, {
+                    placeHolder: 'Where should the test be generated?'
+                });
+
+                if (!selection) return; // User cancelled
+
+                if (selection.description !== 'Generate a new file') {
+                    targetFile = selection.description;
+                }
+            }
+
+            if (targetFile) {
+                // APPEND MODE
+                const content = fs.readFileSync(targetFile, 'utf-8');
+
+                // Generate a simple scenario block (since we don't use AI here)
+                // We try to infer if 'url' variable is used in background for slightly better code
+                const hasUrlVar = content.includes('url baseUrl') || content.includes('url ');
+
+                let scenario = `
+  Scenario: ${endpoint.summary || `${endpoint.method} ${endpoint.path}`}
+    Given path '${endpoint.path}'
+    When method ${endpoint.method}
+    Then status 200
+`;
+                // Simple indentation fix
+                if (content.includes('  Scenario:')) {
+                    // scenario is already indented 2 spaces
+                } else if (content.includes('Scenario:')) {
+                    scenario = scenario.replace(/^  /gm, ''); // Remove indentation if file uses 0 indent
+                }
+
+                const newContent = content + '\n' + scenario;
+                fs.writeFileSync(targetFile, newContent);
+
+                const doc = await vscode.workspace.openTextDocument(targetFile);
+                await vscode.window.showTextDocument(doc);
+
+                vscode.window.showInformationMessage(`Appended test to ${path.basename(targetFile)}`);
+
+            } else {
+                // NEW FILE MODE
+                const feature = generator.generateFromOpenAPI([endpoint], endpoint.path.replace(/\//g, '_'));
+                const scenario = generator.featureToString(feature);
+
+                const doc = await vscode.workspace.openTextDocument({
+                    content: scenario,
+                    language: 'karate'
+                });
+                await vscode.window.showTextDocument(doc);
+                vscode.window.showInformationMessage(`Generated test for ${endpoint.method} ${endpoint.path}`);
+            }
         } catch (error) {
             vscode.window.showErrorMessage(`Failed to generate test: ${(error as Error).message}`);
         }
     }
 
-    private async handleGenerateTestWithAI(endpoint: any) {
-        await vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: `Generating AI-enhanced test for ${endpoint.method} ${endpoint.path}`,
-            cancellable: false
-        }, async (progress) => {
-            try {
-                progress.report({ increment: 10, message: 'Checking Copilot availability...' });
+    private async handleGenerateTestWithAI(endpoint: any, featurePaths?: string[]) {
+        try {
+            const fs = await import('fs');
+            const path = await import('path');
+            let targetFile: string | undefined;
 
-                // Check if Copilot is available
-                const { CopilotService } = await import('../services/copilotService');
-                const isAvailable = await CopilotService.isCopilotAvailable();
+            // Ask user if they want to append to an existing file
+            if (featurePaths && featurePaths.length > 0) {
+                const options = [
+                    { label: '$(file-add) Create New Feature File', description: 'Generate a new file' },
+                    ...featurePaths.map(p => ({
+                        label: `$(file) Append to ${path.basename(p)}`,
+                        description: p,
+                        detail: 'Adds AI-generated scenarios reusing background & style'
+                    }))
+                ];
 
-                if (!isAvailable) {
-                    vscode.window.showWarningMessage('GitHub Copilot is not available. Generating basic test instead.');
-                    await this.handleGenerateTest(endpoint);
-                    return;
-                }
-
-                progress.report({ increment: 20, message: 'Generating basic test structure...' });
-
-                // Generate basic test first
-                const { KarateGenerator } = await import('../services/karateGenerator');
-                const generator = new KarateGenerator();
-                const feature = generator.generateFromOpenAPI([endpoint], endpoint.path.replace(/\//g, '_'));
-                const basicTest = generator.featureToString(feature);
-
-                progress.report({ increment: 30, message: 'Enhancing with AI (this may take a moment)...' });
-
-                // Enhance with Copilot
-                const context = `Generate comprehensive tests for ${endpoint.method} ${endpoint.path}`;
-                const enhancedTest = await CopilotService.enhanceKarateTestComprehensive(
-                    basicTest,
-                    context,
-                    {
-                        type: 'openapi',
-                        openApiSpec: JSON.stringify(endpoint)
-                    }
-                );
-
-                progress.report({ increment: 40, message: 'Opening enhanced test...' });
-
-                // Show in editor
-                const doc = await vscode.workspace.openTextDocument({
-                    content: enhancedTest || basicTest,
-                    language: 'karate'
+                const selection = await vscode.window.showQuickPick(options, {
+                    placeHolder: 'Where should the AI-generated test be added?'
                 });
-                await vscode.window.showTextDocument(doc);
 
-                vscode.window.showInformationMessage(`✅ Generated AI-enhanced test for ${endpoint.method} ${endpoint.path}`);
-            } catch (error) {
-                logger.error('Failed to generate AI test', error as Error);
-                vscode.window.showErrorMessage(`Failed to generate AI test: ${(error as Error).message}`);
+                if (!selection) return;
+
+                if (selection.description !== 'Generate a new file') {
+                    targetFile = selection.description;
+                }
             }
-        });
+
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Generating AI-enhanced test for ${endpoint.method} ${endpoint.path}`,
+                cancellable: false
+            }, async (progress) => {
+                try {
+                    progress.report({ increment: 10, message: 'Checking Copilot availability...' });
+
+                    const { CopilotService } = await import('../services/copilotService');
+                    const isAvailable = await CopilotService.isCopilotAvailable();
+
+                    if (!isAvailable) {
+                        vscode.window.showWarningMessage('GitHub Copilot is not available. Generating basic test instead.');
+                        await this.handleGenerateTest(endpoint, targetFile ? [targetFile] : undefined);
+                        return;
+                    }
+
+                    if (targetFile) {
+                        // APPEND MODE (AI)
+                        progress.report({ increment: 30, message: 'Reading existing file context...' });
+                        const content = fs.readFileSync(targetFile, 'utf-8');
+
+                        progress.report({ increment: 50, message: 'Generating scenarios matching file style...' });
+
+                        const newScenarios = await CopilotService.generateAdditionalScenarios(
+                            content,
+                            `${endpoint.method} ${endpoint.path} - ${endpoint.summary || 'API Endpoint'}`,
+                            ['Follow the style and background usage of the existing file', 'Generate valid Karate DSL scenarios']
+                        );
+
+                        if (newScenarios && newScenarios.length > 0) {
+                            const appendContent = '\n' + newScenarios.join('\n\n');
+                            fs.writeFileSync(targetFile, content + appendContent);
+
+                            const doc = await vscode.workspace.openTextDocument(targetFile);
+                            await vscode.window.showTextDocument(doc);
+
+                            vscode.window.showInformationMessage(`AI appended ${newScenarios.length} scenarios to ${path.basename(targetFile)}`);
+                        } else {
+                            vscode.window.showWarningMessage('Copilot did not return valid scenarios');
+                        }
+
+                    } else {
+                        // NEW FILE MODE (AI)
+                        progress.report({ increment: 20, message: 'Generating basic test structure...' });
+
+                        const { KarateGenerator } = await import('../services/karateGenerator');
+                        const generator = new KarateGenerator();
+                        const feature = generator.generateFromOpenAPI([endpoint], endpoint.path.replace(/\//g, '_'));
+                        const basicTest = generator.featureToString(feature);
+
+                        progress.report({ increment: 30, message: 'Enhancing with AI...' });
+
+                        const enhancedTest = await CopilotService.enhanceKarateTestComprehensive(
+                            basicTest,
+                            `Generate comprehensive tests for ${endpoint.method} ${endpoint.path}`,
+                            { type: 'openapi', openApiSpec: JSON.stringify(endpoint) }
+                        );
+
+
+                        progress.report({ increment: 40, message: 'Opening enhanced test...' });
+
+                        // Show in editor
+                        const doc = await vscode.workspace.openTextDocument({
+                            content: enhancedTest || basicTest,
+                            language: 'karate'
+                        });
+                        await vscode.window.showTextDocument(doc);
+
+                        vscode.window.showInformationMessage(`✅ Generated AI-enhanced test for ${endpoint.method} ${endpoint.path}`);
+                    }
+                } catch (error) {
+                    logger.error('Failed to generate AI test', error as Error);
+                    vscode.window.showErrorMessage(`Failed to generate AI test: ${(error as Error).message}`);
+                }
+            });
+        } catch (error) {
+            // Outer catch
+        }
     }
 
     private async handleViewDetails(endpoint: any) {
@@ -840,14 +946,14 @@ export class CoverageDashboardProvider {
                     const btn = document.createElement('button');
                     btn.className = 'btn';
                     btn.textContent = 'Generate Test';
-                    btn.onclick = function() { vscode.postMessage({ command: 'generateTest', endpoint: ep }); };
+                    btn.onclick = function() { vscode.postMessage({ command: 'generateTest', endpoint: ep, featurePaths: selectedFeaturePaths }); };
                     actions.appendChild(btn);
                     
                     const aiBtn = document.createElement('button');
                     aiBtn.className = 'btn';
                     aiBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
                     aiBtn.textContent = '🤖 Generate with AI';
-                    aiBtn.onclick = function() { vscode.postMessage({ command: 'generateTestWithAI', endpoint: ep }); };
+                    aiBtn.onclick = function() { vscode.postMessage({ command: 'generateTestWithAI', endpoint: ep, featurePaths: selectedFeaturePaths }); };
                     actions.appendChild(aiBtn);
                 }
                 
@@ -1003,6 +1109,19 @@ export class CoverageDashboardProvider {
             html += '</ul></div></div>';
             
             container.innerHTML = html;
+
+            // Add event listeners to buttons
+            const btns = container.querySelectorAll('.priority-ai-btn');
+            btns.forEach(btn => {
+                btn.onclick = function() {
+                    const ep = {
+                        method: this.getAttribute('data-method'),
+                        path: this.getAttribute('data-path'),
+                        description: this.getAttribute('data-description')
+                    };
+                    vscode.postMessage({ command: 'generateTestWithAI', endpoint: ep, featurePaths: selectedFeaturePaths });
+                };
+            });
         }
 
         function showLoading() {
