@@ -100,6 +100,7 @@ export class PostmanImportService {
                         outputDir,
                         options,
                         collection,
+                        collectionPath,  // NEW: Pass collection path for file-based context
                         token
                     );
 
@@ -171,6 +172,7 @@ export class PostmanImportService {
         outputDir: string,
         options: ImportOptions,
         collection: PostmanCollection,
+        collectionPath: string,  // NEW: Collection file path for file-based context
         token?: vscode.CancellationToken
     ): Promise<string | null> {
         try {
@@ -201,7 +203,14 @@ export class PostmanImportService {
 
                     if (isAvailable) {
                         logger.info(`Enhancing ${featureName} with Copilot...`);
-                        featureContent = await this.enhanceWithCopilot(featureContent, collection, requests, token);
+                        featureContent = await this.enhanceWithCopilot(
+                            featureContent,
+                            collection,
+                            requests,
+                            collectionPath,  // NEW: Pass collection path
+                            options.environmentFile,  // NEW: Pass environment file if present
+                            token
+                        );
                     }
                 } catch (error) {
                     logger.warn('Copilot enhancement failed, using basic conversion', error as Error);
@@ -230,44 +239,66 @@ export class PostmanImportService {
     }
 
     /**
-     * Enhance converted Karate test with Copilot
+     * Enhance converted Karate test with Copilot using file-based context
      */
     private async enhanceWithCopilot(
         karateContent: string,
         collection: PostmanCollection,
         requests: Array<{ request: any; path: string[] }>,
+        collectionPath: string,  // NEW: Collection file path
+        environmentPath?: string,  // NEW: Environment file path
         token?: vscode.CancellationToken
     ): Promise<string> {
         const { CopilotService } = await import('./copilotService');
 
-        // Build detailed context about the Postman collection
+        // Build detailed context
         const requestDetails = requests.map(r => {
             const req = r.request;
             return `- ${req.method} ${typeof req.url === 'string' ? req.url : req.url.raw}`;
         }).join('\n');
 
-        const context = `Converted from Postman Collection: ${collection.info.name}
+        const context = `Convert Postman collection to production-ready Karate tests: ${collection.info.name}
 
 Original Endpoints:
 ${requestDetails}
 
-This test was auto-converted from Postman. Please enhance it with:
-1. Comprehensive validations from any test scripts
-2. Proper variable definitions and realistic test data
-3. Better assertions based on the API responses
-4. Edge cases and error scenarios
-5. Proper authentication setup`;
+STRICT REQUIREMENTS:
+- Use ONLY requests defined in the attached Postman collection
+- NO hallucinations or invented endpoints
+- Convert all test scripts to proper Karate assertions
+- Transform pre-request scripts to Karate JavaScript
+- Map Postman variables to Karate syntax: {{var}} → #(var)
+- Include authentication setup from collection
+- Generate comprehensive assertions for all scenarios
+- Handle error cases and validation
+
+CONVERSION GUIDELINES:
+1. Status codes → Then status/And status
+2. pm.expect() → And match/And assert
+3. pm.environment.set() → * def variable = value
+4. Response time → And assert responseTime < N
+5. Header checks → And match header X == value`;
 
         try {
-            // Use comprehensive enhancement
-            const enhanced = await CopilotService.enhanceKarateTestComprehensive(
+            // NEW: Use file-based context with Agent Skills
+            const files: any[] = [];
+
+            // Attach collection file
+            const collectionUri = CopilotService.createFileUri(collectionPath);
+            files.push(collectionUri);
+
+            // Attach environment file if provided
+            if (environmentPath && fs.existsSync(environmentPath)) {
+                const envUri = CopilotService.createFileUri(environmentPath);
+                files.push(envUri);
+                logger.info('Including environment file in context');
+            }
+
+            const enhanced = await CopilotService.enhanceTestWithFileContext(
                 karateContent,
                 context,
-                {
-                    type: 'postman',
-                    postmanCollection: JSON.stringify(collection, null, 2)
-                },
-                token
+                'postman',
+                files  // ~10-20 tokens instead of 1000s!
             );
 
             return enhanced || karateContent;

@@ -65,21 +65,27 @@ export async function generateFromOpenAPI(context: vscode.ExtensionContext): Pro
 
                 if (isAvailable) {
                     try {
-                        const context = `OpenAPI spec: ${specFileName}, ${endpoints.length} endpoints`;
+                        const context = `Generate comprehensive Karate API tests from OpenAPI specification: ${specFileName} with ${endpoints.length} endpoints.
 
-                        // Read full OpenAPI spec content to send to Copilot
-                        const fs = await import('fs');
-                        const fullSpecContent = fs.readFileSync(specPath, 'utf-8');
+STRICT REQUIREMENTS:
+- Use ONLY endpoints and schemas defined in the attached OpenAPI spec
+- NO hallucinations or invented endpoints
+- Generate positive, negative, and edge case scenarios
+- Include proper schema validation with Karate type markers
+- Add comprehensive assertions for each endpoint
+- Use proper authentication patterns from spec`;
 
-                        finalContent = await CopilotService.enhanceKarateTestComprehensive(
+                        // NEW: Use file-based context with Agent Skills
+                        const specUri = CopilotService.createFileUri(specPath);
+
+                        finalContent = await CopilotService.enhanceTestWithFileContext(
                             featureContent,
                             context,
-                            {
-                                type: 'openapi',
-                                openApiSpec: fullSpecContent
-                            }
+                            'openapi',
+                            [specUri]  // ~10 tokens instead of 1000s!
                         );
-                        logger.info('Enhanced tests with Copilot using full OpenAPI context');
+
+                        logger.info('Enhanced tests with Copilot using file-based context and Agent Skills');
                     } catch (error) {
                         logger.warn('Copilot enhancement failed, using original tests', error as Error);
                         vscode.window.showWarningMessage('Copilot enhancement failed. Using original tests.');

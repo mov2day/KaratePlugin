@@ -131,24 +131,39 @@ export async function generateFromConfluence(context: vscode.ExtensionContext): 
                 const isAvailable = await CopilotService.isCopilotAvailable();
 
                 if (isAvailable) {
+                    let tempUri: vscode.Uri | null = null;
+
                     try {
-                        const context = `Confluence page: ${page.title}, ${scenarios.length} scenarios`;
+                        const context = `Generate comprehensive Karate API tests from Confluence documentation: ${page.title} with ${scenarios.length} scenarios.
 
-                        // Prepare full Confluence context
+STRICT REQUIREMENTS:
+- Use ONLY information present in the attached Confluence page
+- NO hallucinations or invented test data
+- Extract API endpoints, parameters, and expected responses from documentation
+- Generate positive, negative, and edge case scenarios
+- Include proper schema validation
+- Add comprehensive assertions based on documented behavior
+- Map test steps from Confluence to executable Karate DSL`;
+
+                        // NEW: Create temp file for Confluence HTML content
                         const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
+                        tempUri = await CopilotService.createTempFile(confluenceContent, '.html');
 
-                        featureContent = await CopilotService.enhanceKarateTestComprehensive(
+                        featureContent = await CopilotService.enhanceTestWithFileContext(
                             featureContent,
                             context,
-                            {
-                                type: 'confluence',
-                                confluencePage: confluenceContent,
-                                requirements: testData.requirements
-                            }
+                            'confluence',
+                            [tempUri]  // ~10 tokens instead of 1000s!
                         );
-                        logger.info('Enhanced tests with Copilot using full Confluence context');
+
+                        logger.info('Enhanced tests with Copilot using file-based Confluence context');
                     } catch (error) {
                         logger.warn('Copilot enhancement failed, using original tests', error as Error);
+                    } finally {
+                        // Always cleanup temp files
+                        if (tempUri) {
+                            await CopilotService.cleanupTempFiles();
+                        }
                     }
                 }
             }

@@ -345,23 +345,35 @@ export class CoverageDashboardProvider {
 
                         progress.report({ increment: 30, message: 'Enhancing with AI...' });
 
-                        const enhancedTest = await CopilotService.enhanceKarateTestComprehensive(
-                            basicTest,
-                            `Generate comprehensive tests for ${endpoint.method} ${endpoint.path}`,
-                            { type: 'openapi', openApiSpec: JSON.stringify(endpoint) }
-                        );
+                        let tempUri: vscode.Uri | null = null;
+                        try {
+                            const context = `Generate comprehensive tests for ${endpoint.method} ${endpoint.path}`;
 
+                            // Create temp file for endpoint JSON
+                            tempUri = await CopilotService.createTempFile(JSON.stringify(endpoint, null, 2), '.json');
 
-                        progress.report({ increment: 40, message: 'Opening enhanced test...' });
+                            const enhancedTest = await CopilotService.enhanceTestWithFileContext(
+                                basicTest,
+                                context,
+                                'openapi',
+                                [tempUri]
+                            );
 
-                        // Show in editor
-                        const doc = await vscode.workspace.openTextDocument({
-                            content: enhancedTest || basicTest,
-                            language: 'karate'
-                        });
-                        await vscode.window.showTextDocument(doc);
+                            progress.report({ increment: 40, message: 'Opening enhanced test...' });
 
-                        vscode.window.showInformationMessage(`✅ Generated AI-enhanced test for ${endpoint.method} ${endpoint.path}`);
+                            // Show in editor
+                            const doc = await vscode.workspace.openTextDocument({
+                                content: enhancedTest || basicTest,
+                                language: 'karate'
+                            });
+                            await vscode.window.showTextDocument(doc);
+
+                            vscode.window.showInformationMessage(`✅ Generated AI-enhanced test for ${endpoint.method} ${endpoint.path}`);
+                        } finally {
+                            if (tempUri) {
+                                await CopilotService.cleanupTempFiles();
+                            }
+                        }
                     }
                 } catch (error) {
                     logger.error('Failed to generate AI test', error as Error);

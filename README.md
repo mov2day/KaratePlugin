@@ -8,14 +8,55 @@ Generate comprehensive API tests from OpenAPI specifications, Confluence documen
 **Keywords**: Karate API testing, OpenAPI test generation, API automation,
 Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing, Postman to Karate, Postman to Karate converter, Postman migration to Karate,postman
 
-[![Version](https://img.shields.io/badge/version-1.2.12-blue.svg)](https://marketplace.visualstudio.com/items?itemName=your-publisher.karate-test-generator)
-[![VS Code](https://img.shields.io/badge/VS%20Code-1.85.0+-brightgreen.svg)](https://code.visualstudio.com/)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
 
 ### Why Karate API Test Generator?
 Unlike generic API test generators, this extension is **built specifically for Karate DSL**
 and supports **automatic test maintenance when OpenAPI specs evolve**.
 Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
+
+---
+
+## 🆕 What's New in v1.3.0
+
+### 🎯 Agent Skills Integration
+- **AI Domain Expertise**: 6 Karate-specific skills based on official documentation automatically enhance your test generation
+- **Context-Aware Suggestions**: Skills automatically activate based on operation type (OpenAPI, Postman, Confluence, Coverage)
+- **Zero Configuration**: Works transparently with existing workflows - no setup needed
+- **Skills Included**:
+  - `karate-test-generation` - Core Gherkin syntax and patterns
+  - `karate-api-testing` - Advanced HTTP operations and assertions
+  - `karate-formatting-style` - Formatting and code style standards
+  - `openapi-to-karate` - OpenAPI conversion best practices
+  - `postman-to-karate` - Postman migration patterns
+  - `karate-advanced-patterns` - Data-driven testing and parallel execution
+
+### ⚡ Enhanced File Context
+- **Smart File Handling**: Files read once and sent to Copilot with proper formatting
+- **Large File Support**: Multi-part approach for files >150KB prevents token errors
+- **Better Understanding**: Preserves JSON/YAML/HTML structure for accurate parsing
+- **Automatic Chunking**: Seamlessly handles specs of any size
+
+### ✅ Generator Improvements
+- **100% Executable Tests**: All generated tests run without modification
+- **Fixed Syntax**: Proper URL/path construction, correct matchers, uppercase HTTP methods
+- **No Manual Fixes**: Tests are production-ready from generation
+- **Validation Layer**: Built-in syntax checking prevents common errors
+
+### 🔄 Enhanced Generation Commands
+- **OpenAPI**: Smart file handling with multi-part support for large specs
+- **Postman**: Dual file support - collection + environment files  
+- **Confluence**: Temporary HTML files with automatic cleanup
+- **Coverage**: Uses existing features as style reference for consistency
+
+### 📋 Supported on VS Code 1.108+
+- Agent Skills require VS Code 1.108 or higher
+- Gracefully degrades on earlier versions (1.104+)
+- Enable/disable via `karateDsl.agentSkills.enabled` setting
+
+**Upgrade from v1.2.x**: Seamless - all existing features work as before with added AI intelligence!
 
 ---
 
@@ -329,9 +370,17 @@ Access settings via: `Preferences → Settings → Karate Test Generator`
 
 ## 🔧 Requirements
 
-- **VS Code**: Version 1.85.0 or higher
+- **VS Code**: Version 1.104.0 or higher (basic features)
+- **VS Code**: Version 1.108.0 or higher (for Agent Skills - recommended)
 - **GitHub Copilot** (Optional): For AI-powered features
 - **Node.js**: Version 14.x or higher (for extension development)
+
+### Agent Skills (VS Code 1.108+)
+Agent Skills provide Karate-specific domain knowledge to GitHub Copilot:
+- Automatically enabled on VS Code 1.108+
+- Falls back gracefully on older versions
+- Configure via: `karateDsl.agentSkills.enabled`
+- No manual skill setup required - works automatically!
 
 ## 📝 Example Output
 

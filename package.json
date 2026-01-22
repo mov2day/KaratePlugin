@@ -2,12 +2,12 @@
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
   "description": "Professional Karate Test Generator & Maintenance with AI - Transform OpenAPI, Postman, and Confluence into automated tests with GitHub Copilot",
-  "version": "1.2.12",
+  "version": "1.3.0",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.108.0"
   },
   "pricing": "Free",
   "categories": [
@@ -246,6 +246,21 @@
           "default": true,
           "description": "Show token usage statistics for Copilot requests in the activity log"
         },
+        "karateDsl.agentSkills.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Agent Skills support (requires VS Code 1.108+ and chat.useAgentSkills setting)"
+        },
+        "karateDsl.agentSkills.autoSuggest": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically suggest relevant Agent Skills based on context"
+        },
+        "karateDsl.agentSkills.showInStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Agent Skills status in the status bar"
+        },
         "karateDsl.copilot.model": {
           "type": "string",
           "default": "gpt-5-mini",
@@ -254,15 +269,19 @@
             "gpt-5-mini",
             "gpt-5.2-codex",
             "claude-sonnet-4.5",
+            "claude-haiku-4.5",
+            "claude-opus-4.5",
             "gpt-4o",
             "gpt-4",
             "gpt-3.5-turbo"
           ],
           "enumDescriptions": [
             "GPT-5 Mini (Fast & Efficient) - Recommended",
-            "GPT-5.2 Codex (Optimized for Code)",
-            "Claude Sonnet 4.5 (High Reasoning)",
-            "GPT-4 Omni",
+            "GPT-5.2 Codex (Optimized for Code Generation)",
+            "Claude Sonnet 4.5 (Balanced, Best Coding Model)",
+            "Claude Haiku 4.5 (Fast, Cost-Efficient)",
+            "Claude Opus 4.5 (Maximum Intelligence, Flagship)",
+            "GPT-4 Omni (Vision Support)",
             "GPT-4 (Legacy)",
             "GPT-3.5 Turbo (Fast)"
           ]
@@ -291,7 +310,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.x",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.108.0",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
     "@vscode/test-electron": "^2.3.8",

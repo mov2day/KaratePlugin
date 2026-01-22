@@ -148,14 +148,14 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 const isAvailable = await CopilotService.isCopilotAvailable();
 
                 if (isAvailable) {
-                    const fs = await import('fs');
-                    const fullSpecContent = fs.readFileSync(filePath, 'utf-8');
-                    const context = `OpenAPI spec: ${specFileName}, ${endpoints.length} endpoints`;
+                    const context = `Generate comprehensive Karate API tests from OpenAPI specification: ${specFileName} with ${endpoints.length} endpoints.`;
+                    const specUri = CopilotService.createFileUri(filePath);
 
-                    featureContent = await CopilotService.enhanceKarateTestComprehensive(
+                    featureContent = await CopilotService.enhanceTestWithFileContext(
                         featureContent,
                         context,
-                        { type: 'openapi', openApiSpec: fullSpecContent }
+                        'openapi',
+                        [specUri]
                     );
                 }
             }
@@ -241,14 +241,24 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 const isAvailable = await CopilotService.isCopilotAvailable();
 
                 if (isAvailable) {
-                    const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
-                    const context = `Confluence page: ${page.title}, ${scenarios.length} scenarios`;
+                    let tempUri: vscode.Uri | null = null;
+                    try {
+                        const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
+                        const context = `Generate comprehensive Karate API tests from Confluence documentation: ${page.title} with ${scenarios.length} scenarios.`;
 
-                    featureContent = await CopilotService.enhanceKarateTestComprehensive(
-                        featureContent,
-                        context,
-                        { type: 'confluence', confluencePage: confluenceContent, requirements: testData.requirements }
-                    );
+                        tempUri = await CopilotService.createTempFile(confluenceContent, '.html');
+
+                        featureContent = await CopilotService.enhanceTestWithFileContext(
+                            featureContent,
+                            context,
+                            'confluence',
+                            [tempUri]
+                        );
+                    } finally {
+                        if (tempUri) {
+                            await CopilotService.cleanupTempFiles();
+                        }
+                    }
                 }
             }
 
@@ -339,21 +349,30 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 const isAvailable = await CopilotService.isCopilotAvailable();
 
                 if (isAvailable) {
-                    const fs = await import('fs');
-                    const fullSpecContent = fs.readFileSync(openApiPath, 'utf-8');
-                    const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
-                    const context = `Combined: OpenAPI ${specFileName} + Confluence ${page.title}`;
+                    let tempUri: vscode.Uri | null = null;
+                    try {
+                        const files: vscode.Uri[] = [];
+                        const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
+                        const context = `Generate comprehensive Karate API tests combining OpenAPI specification with Confluence documentation: ${specFileName} + ${page.title}.`;
 
-                    featureContent = await CopilotService.enhanceKarateTestComprehensive(
-                        featureContent,
-                        context,
-                        {
-                            type: 'combined',
-                            openApiSpec: fullSpecContent,
-                            confluencePage: confluenceContent,
-                            requirements: testData.requirements
+                        // Attach OpenAPI spec file
+                        files.push(CopilotService.createFileUri(openApiPath));
+
+                        // Create temp file for Confluence content
+                        tempUri = await CopilotService.createTempFile(confluenceContent, '.html');
+                        files.push(tempUri);
+
+                        featureContent = await CopilotService.enhanceTestWithFileContext(
+                            featureContent,
+                            context,
+                            'confluence',
+                            files
+                        );
+                    } finally {
+                        if (tempUri) {
+                            await CopilotService.cleanupTempFiles();
                         }
-                    );
+                    }
                 }
             }
 

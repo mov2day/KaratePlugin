@@ -136,27 +136,45 @@ export async function generateCombined(context: vscode.ExtensionContext): Promis
                 const isAvailable = await CopilotService.isCopilotAvailable();
 
                 if (isAvailable) {
+                    let tempUri: vscode.Uri | null = null;
+
                     try {
-                        const context = `Combined: OpenAPI ${specFileName} + Confluence ${page.title}, ${scenarios.length} scenarios`;
+                        const context = `Generate comprehensive Karate API tests combining OpenAPI specification with Confluence documentation.
 
-                        // Prepare full context
-                        const fs = await import('fs');
-                        const fullSpecContent = fs.readFileSync(specPath, 'utf-8');
+STRICT REQUIREMENTS:
+- Use ONLY information from the attached OpenAPI spec and Confluence page
+- NO hallucinations or invented endpoints
+- Generate positive, negative, and edge case scenarios
+- Map business requirements from Confluence to technical tests from OpenAPI
+- Include proper schema validation from OpenAPI spec
+- Add comprehensive assertions
+- Follow Karate DSL best practices`;
+
+                        // NEW: Create file URIs instead of reading content
+                        const files: vscode.Uri[] = [];
+
+                        // Attach OpenAPI spec file
+                        files.push(CopilotService.createFileUri(specPath));
+
+                        // Create temp file for Confluence content
                         const pageContent = page.body.storage?.value || page.body.view?.value || '';
+                        tempUri = await CopilotService.createTempFile(pageContent, '.html');
+                        files.push(tempUri);
 
-                        featureContent = await CopilotService.enhanceKarateTestComprehensive(
+                        featureContent = await CopilotService.enhanceTestWithFileContext(
                             featureContent,
                             context,
-                            {
-                                type: 'combined',
-                                openApiSpec: fullSpecContent,
-                                confluencePage: pageContent,
-                                requirements: testData.requirements
-                            }
+                            'confluence',  // Use confluence as primary context type
+                            files  // Attach both OpenAPI and Confluence files
                         );
-                        logger.info('Enhanced combined tests with Copilot');
+                        logger.info('Enhanced combined tests with file-based context');
                     } catch (error) {
                         logger.warn('Copilot enhancement failed, using original tests', error as Error);
+                    } finally {
+                        // Always cleanup temp files
+                        if (tempUri) {
+                            await CopilotService.cleanupTempFiles();
+                        }
                     }
                 }
             }

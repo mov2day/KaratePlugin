@@ -49,19 +49,19 @@ export class KarateGenerator {
             endpoint.operationId ||
             `${endpoint.method} ${endpoint.path}`;
 
-        // Set base URL
+        // Add path (URL set in background)
         steps.push({
             keyword: 'Given',
-            text: "url baseUrl + '" + endpoint.path + "'"
+            text: `path '${endpoint.path}'`
         });
 
-        // Add path parameters
+        // Add path parameters as variables (Karate auto-substitutes in path)
         const pathParams = endpoint.parameters?.filter(p => p.in === 'path') || [];
         for (const param of pathParams) {
             const exampleValue = this.openApiParser.getExampleValue(param.schema);
             steps.push({
                 keyword: 'And',
-                text: `path '${param.name}' = ${JSON.stringify(exampleValue)}`
+                text: `def ${param.name} = ${JSON.stringify(exampleValue)}`
             });
         }
 
@@ -102,7 +102,7 @@ export class KarateGenerator {
         // Execute request
         steps.push({
             keyword: 'When',
-            text: `method ${endpoint.method.toLowerCase()}`
+            text: `method ${endpoint.method.toUpperCase()}`
         });
 
         // Add response assertions
@@ -124,9 +124,10 @@ export class KarateGenerator {
                 if (schema && schema.properties) {
                     const properties = Object.keys(schema.properties);
                     if (properties.length > 0) {
+                        const matchObj = properties.slice(0, 5).map(p => `${p}: '#notnull'`).join(', ');
                         steps.push({
                             keyword: 'And',
-                            text: `match response contains { ${properties.slice(0, 3).map(p => `${p}: '#present'`).join(', ')} }`
+                            text: `match response contains { ${matchObj} }`
                         });
                     }
                 }
@@ -254,16 +255,24 @@ export class KarateGenerator {
         const steps: KarateStep[] = [];
 
         const varName = this.style.variableCase === 'snake_case' ? 'base_url' : 'baseUrl';
+
+        // Define base URL variable
         steps.push({
-            keyword: 'Given',
+            keyword: '*',
             text: `def ${varName} = '${baseUrl || 'http://localhost:8080'}'`
+        });
+
+        // Set URL for all scenarios
+        steps.push({
+            keyword: '*',
+            text: `url ${varName}`
         });
 
         const template = ConfigManager.getTestTemplate();
 
         if (template === 'detailed') {
             steps.push({
-                keyword: 'And',
+                keyword: '*',
                 text: "configure headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' }"
             });
         }

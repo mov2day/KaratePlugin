@@ -208,30 +208,39 @@ export class CoverageAnalyzer {
      */
     private async analyzeMissingTestsWithCopilot(endpoint: any, coverage: EndpointCoverage): Promise<string[]> {
         const { CopilotService } = await import('./copilotService');
+        const { ContextBuilder } = await import('../utils/contextBuilder');
 
-        const prompt = `
-Analyze this API endpoint and identify missing test scenarios:
+        const prompt = `Analyze this API endpoint and identify missing test scenarios:
 
 Endpoint: ${endpoint.method.toUpperCase()} ${endpoint.path}
 Operation ID: ${endpoint.operationId || 'N/A'}
 Current Test Coverage: ${coverage.scenarios.length} scenario(s)
 Existing Scenarios: ${coverage.scenarios.join(', ') || 'None'}
 
-Based on REST API best practices, what test scenarios are missing?
-List only the missing scenarios, one per line, without numbering or explanation.
+STRICT REQUIREMENTS:
+- List ONLY missing test scenarios
+- Use Karate DSL best practices
+- NO explanations or numbering
+- One scenario per line
+
 Focus on:
 - Success cases (200, 201, 204)
 - Client errors (400, 401, 403, 404)
 - Server errors (500, 503)
 - Edge cases (empty data, invalid input, boundary conditions)
-- Auth tests (authentication, authorization)
-`;
+- Authentication tests`;
 
         try {
-            const response = await CopilotService.enhanceKarateTest('', prompt, {
-                type: 'openapi',
-                openApiSpec: JSON.stringify(endpoint)
-            });
+            // NEW: Get existing feature files as style reference
+            const workspace = await ContextBuilder.buildWorkspaceContext();
+            const existingFeatures = workspace.featureFiles.slice(0, 2); // Max 2 examples for style
+
+            const response = await CopilotService.enhanceTestWithFileContext(
+                '',
+                prompt,
+                'coverage',
+                existingFeatures  // Include existing features for coding style
+            );
 
             // Parse response into array of test scenarios
             const scenarios = response

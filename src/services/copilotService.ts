@@ -1,13 +1,21 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { logger } from '../utils/logger';
 import { CopilotLogger } from '../utils/copilotLogger';
+import { AgentSkillsService } from './agentSkillsService';
+import { ContextBuilder } from '../utils/contextBuilder';
 
 export interface CopilotFullContext {
-    type: 'openapi' | 'confluence' | 'combined' | 'postman';
+    type: 'openapi' | 'confluence' | 'combined' | 'postman' | 'coverage';
     openApiSpec?: string;
     confluencePage?: string;
     postmanCollection?: string;
     requirements?: string[];
+    // File paths for file-based context (preferred over text content)
+    specFilePath?: string;
+    collectionFilePath?: string;
+    environmentFilePath?: string;
+    featureFilePath?: string;
 }
 
 export class CopilotService {
@@ -779,5 +787,230 @@ Return suggestions as a numbered list, one per line.`
         }
 
         return scenarios;
+    }
+
+    /**
+     * Enhanced test generation with file attachments and Agent Skills
+     * This method uses file-based context instead of text chunking
+     */
+    static async enhanceTestWithFileContext(
+        featureContent: string,
+        context: string,
+        contextType: 'openapi' | 'postman' | 'confluence' | 'coverage' | 'general',
+        files: vscode.Uri[] = []
+    ): Promise<string> {
+        try {
+            const isAvailable = await this.isCopilotAvailable();
+            if (!isAvailable) {
+                logger.warn('Copilot is not available, returning original feature');
+                return featureContent;
+            }
+
+            logger.info(`Enhancing test with file-based context (${contextType}) and Agent Skills`);
+
+            const messages: vscode.LanguageModelChatMessage[] = [];
+
+            // Build Agent Skills context
+            const skillsAvailable = await AgentSkillsService.isAgentSkillsAvailable();
+            let skillContext = '';
+
+            if (skillsAvailable) {
+                const relevantSkills = await AgentSkillsService.suggestRelevantSkills({ type: contextType });
+                if (relevantSkills.length > 0) {
+                    skillContext = AgentSkillsService.buildSkillContext(relevantSkills);
+                    logger.info(`Using Agent Skills: ${relevantSkills.join(', ')}`);
+                }
+            }
+
+            // Check total file size to determine approach
+            let totalSizeKB = 0;
+            const fileContents: Array<{ fileName: string; content: string; sizeKB: number }> = [];
+
+            // Read all files and calculate size
+            for (const fileUri of files) {
+                try {
+                    const fs = await import('fs');
+                    const stats = fs.statSync(fileUri.fsPath);
+                    const fileSizeKB = stats.size / 1024;
+                    totalSizeKB += fileSizeKB;
+
+                    const content = fs.readFileSync(fileUri.fsPath, 'utf-8');
+                    const fileName = path.basename(fileUri.fsPath);
+
+                    fileContents.push({ fileName, content, sizeKB: fileSizeKB });
+                    logger.info(`Read ${fileName}: ${fileSizeKB.toFixed(1)}KB`);
+                } catch (error) {
+                    logger.warn(`Failed to read file ${path.basename(fileUri.fsPath)}:`, error as Error);
+                }
+            }
+
+            // Decision: Use multi-part for large files (>150KB total)
+            const USE_MULTIPART = totalSizeKB > 150;
+
+            if (USE_MULTIPART) {
+                logger.info(`Large file size detected (${totalSizeKB.toFixed(1)}KB) - using multi-part approach`);
+                return await this.enhanceWithMultiPart(featureContent, context, fileContents, skillContext, contextType);
+            }
+
+            // Small files: Single request approach
+            logger.info(`Small file size (${totalSizeKB.toFixed(1)}KB) - using single request`);
+
+            // Build enhanced prompt with ACTUAL file content
+            let promptText = `${context}\n\n`;
+
+            // Include file contents
+            if (fileContents.length > 0) {
+                promptText += '=== ATTACHED FILES ===\n\n';
+
+                for (const file of fileContents) {
+                    promptText += `📄 File: ${file.fileName} (${file.sizeKB.toFixed(1)}KB)\n`;
+                    promptText += '```\n';
+                    promptText += file.content;
+                    promptText += '\n```\n\n';
+                }
+
+                promptText += '=== END OF ATTACHED FILES ===\n\n';
+            }
+
+            if (skillContext) {
+                promptText += skillContext + '\n';
+            }
+
+            promptText += `Karate Test to Enhance:\n${featureContent}\n\n`;
+            promptText += 'OUTPUT: Return the COMPLETE enhanced Karate feature file. NO explanations, NO markdown blocks.';
+
+            messages.push(vscode.LanguageModelChatMessage.User(promptText));
+
+            // Send request
+            let model = this.cachedModel;
+            if (!model) {
+                const selector = await this.getChatModelSelector();
+                const models = await vscode.lm.selectChatModels(selector);
+                if (models.length > 0) {
+                    model = models[0];
+                    this.cachedModel = model;
+                }
+            }
+
+            if (!model) {
+                throw new Error('No Copilot models available');
+            }
+
+            const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+
+            let result = '';
+            for await (const fragment of response.text) {
+                result += fragment;
+            }
+
+            const cleanContent = this.cleanCopilotResponse(result);
+
+            // Log for transparency
+            const fileNames = fileContents.map(f => f.fileName).join(', ');
+            CopilotLogger.logRequest(`Enhance Test (${contextType}) - Single Request`, context, `[Files: ${fileNames}] Total: ${totalSizeKB.toFixed(1)}KB`);
+            CopilotLogger.logResponse(`Enhance Test (${contextType})`, cleanContent, 0);
+
+            logger.info('Successfully enhanced test with file content (single request)');
+            return cleanContent;
+
+        } catch (error) {
+            logger.error('Failed to enhance test with file context', error as Error);
+            return featureContent;
+        }
+    }
+
+    /**
+     * Enhanced test generation using multi-part approach for large files
+     * Sends file content in chunks to avoid token limits
+     */
+    private static async enhanceWithMultiPart(
+        featureContent: string,
+        context: string,
+        fileContents: Array<{ fileName: string; content: string; sizeKB: number }>,
+        skillContext: string,
+        contextType: string
+    ): Promise<string> {
+        try {
+            const messages: vscode.LanguageModelChatMessage[] = [];
+
+            // Turn 1: Send context and Agent Skills
+            let turn1 = `${context}\n\n`;
+            if (skillContext) {
+                turn1 += skillContext + '\n\n';
+            }
+            turn1 += 'I will send you file contents in the next messages. Please analyze them.';
+            messages.push(vscode.LanguageModelChatMessage.User(turn1));
+            messages.push(vscode.LanguageModelChatMessage.Assistant('I understand. Please send the file contents.'));
+
+            // Turn 2+: Send file contents (chunk if multiple files)
+            for (const file of fileContents) {
+                const fileMessage = `📄 File: ${file.fileName} (${file.sizeKB.toFixed(1)}KB)\n\`\`\`\n${file.content}\n\`\`\``;
+                messages.push(vscode.LanguageModelChatMessage.User(fileMessage));
+                messages.push(vscode.LanguageModelChatMessage.Assistant('File content received and analyzed.'));
+            }
+
+            // Final turn: Send test to enhance
+            const finalPrompt = `Based on the files provided, enhance this Karate test:\n\n${featureContent}\n\nOUTPUT: Return the COMPLETE enhanced Karate feature file. NO explanations, NO markdown blocks.`;
+            messages.push(vscode.LanguageModelChatMessage.User(finalPrompt));
+
+            // Send multi-turn request
+            let model = this.cachedModel;
+            if (!model) {
+                const selector = await this.getChatModelSelector();
+                const models = await vscode.lm.selectChatModels(selector);
+                if (models.length > 0) {
+                    model = models[0];
+                    this.cachedModel = model;
+                }
+            }
+
+            if (!model) {
+                throw new Error('No Copilot models available');
+            }
+
+            logger.info(`Sending multi-part request: ${messages.length} messages`);
+            const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+
+            let result = '';
+            for await (const fragment of response.text) {
+                result += fragment;
+            }
+
+            const cleanContent = this.cleanCopilotResponse(result);
+
+            // Log for transparency
+            const fileNames = fileContents.map(f => f.fileName).join(', ');
+            const totalSize = fileContents.reduce((sum, f) => sum + f.sizeKB, 0);
+            CopilotLogger.logRequest(`Enhance Test (${contextType}) - Multi-Part`, context, `[Files: ${fileNames}] Total: ${totalSize.toFixed(1)}KB, ${messages.length} turns`);
+            CopilotLogger.logResponse(`Enhance Test (${contextType})`, cleanContent, 0);
+
+            logger.info(`Successfully enhanced test with multi-part approach (${messages.length} turns)`);
+            return cleanContent;
+
+        } catch (error) {
+            logger.error('Multi-part enhancement failed', error as Error);
+            throw error;
+        }
+    }
+
+    /**
+     * Helper method to create file URI from path
+     */
+    static createFileUri(filePath: string): vscode.Uri {
+        return vscode.Uri.file(filePath);
+    }
+
+    /**
+     * Helper method to create temp file for non-file content
+     */
+    static async createTempFile(content: string, extension: string): Promise<vscode.Uri> {
+        return ContextBuilder.createTempFileFromContent(content, extension);
+    }
+
+    /**
+     * Cleanup temporary files created during context building
+     */
+    static async cleanupTempFiles(): Promise<void> {
+        await ContextBuilder.cleanupTempFiles();
     }
 }
