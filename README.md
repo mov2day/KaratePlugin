@@ -8,7 +8,7 @@ Generate comprehensive API tests from OpenAPI specifications, Confluence documen
 **Keywords**: Karate API testing, OpenAPI test generation, API automation,
 Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing, Postman to Karate, Postman to Karate converter, Postman migration to Karate,postman
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.3.2-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-brightgreen.svg)](https://code.visualstudio.com/)
 
 
@@ -19,22 +19,35 @@ Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
 
 ---
 
-## 🆕 What's New in v1.3.1
+## 🆕 What's New in v1.3.2
+
+### 🧪 Native Test Executor
+Now you can run Karate tests directly from the **VS Code Testing Tab**!
+
+#### 1. Native Test Explorer Support
+- **Auto-Discovery**: Automatically finds all `.feature` files in your workspace.
+- **Granular Execution**: Run individual **Scenarios** or entire **Features** with a single click.
+- **Inline Results**: View pass/fail status directly in the editor gutter.
+
+#### 2. Seamless Integration
+- **Run & Debug**: Trigger runs from the Testing sidebar or CodeLenses.
+- **Instant Reporting**: Automatically opens the new Premium Dashboard upon completion.
+- **Deep Linking**: Click a failure in the report to jump straight to the code.
 
 ### 📊 Premium Execution Dashboard
 Completely overhauled execution report with an modern design.
 
 #### 1. Modern Dashboard Overview
 Get a high-level view of your test execution with beautiful visual metrics.
-![Dashboard Overview](images/dashboard-overview.png)
+![Dashboard Overview](https://github.com/mov2day/Docs/blob/main/dashboard-overview.png?raw=true)
 
 #### 2. Detailed Feature Breakdown
 Drill down into specific features with sorting and filtering capabilities.
-![Feature List](images/dashboard-features.png)
+![Feature List](https://github.com/mov2day/Docs/blob/main/dashboard-feature.png?raw=true)
 
 #### 3. Step-Level Details
 Inspect HTTP requests, responses, and logs with syntax highlighting.
-![Step Details](images/dashboard-details.png)
+![Step Details](https://github.com/mov2day/Docs/blob/main/dashboard-detail.png?raw=true)
 
 #### 4. Interactive History Trend
 Track your test stability over time with the new history chart.

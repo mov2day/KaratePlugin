@@ -5,8 +5,15 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.1] - 2026-02-06
+## [1.3.2] - 2026-02-07
 ### Added
+- **Native Test Executor**
+  - **VS Code Testing API**: Full integration with the native Testing sidebar
+  - **Granular Execution**: Run specific scenarios independently using the "Run" icon
+  - **Auto-Discovery**: Instant detection of all `.feature` files and scenarios
+  - **Inline Feedback**: Visual pass/fail indicators in the editor gutter
+  - **Smart Linking**: Direct navigation from dashboard failures to code lines
+
 - **Premium Execution Dashboard 2.0**
   - Completely redesigned modern UI
   - **Visual Analytics**: Interactive Donut charts (Status) and Bar charts (Duration)
