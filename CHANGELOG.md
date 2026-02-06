@@ -5,6 +5,23 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-02-06
+### Added
+- **Premium Execution Dashboard 2.0**
+  - Completely redesigned modern UI
+  - **Visual Analytics**: Interactive Donut charts (Status) and Bar charts (Duration)
+  - **Sidebar Navigation**: Seamless switching between Dashboard, Features, Failures, and History
+  - **Drill-Down Panels**: Slide-out details view for keeping context
+  - **Rich Step Details**: Beautifully formatted HTTP requests, responses, and logs
+  - **Search & Filtering**: Real-time feature filtering
+  - **Dark Mode**: Native VS Code theme support with glassmorphism effects
+
+### Changed
+- **UI Polish**: Standardized execution time formatting (e.g., `0.45s`)
+- **Branding**: Updated dashboard to use official extension logo
+
+---
+
 ## [1.3.0] - 2026-01-21
 
 ### Added
@@ -12,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `karate-test-generation` - Core Gherkin syntax and Karate DSL patterns
   - `karate-api-testing` - Advanced HTTP operations, assertions, and authentication
   - `karate-formatting-style` - Formatting and code style conventions
-  - `openapi-to-karate` - OpenAPI specification conversion patterns
+  - `openapi-to-karate` - OpenAPI conversion best practices
   - `postman-to-karate` - Postman collection migration patterns
   - `karate-advanced-patterns` - JavaScript functions, data-driven testing, parallel execution
 - **File Content Handling**: Proper file reading and context sharing with Copilot
@@ -46,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - OpenAPI, Postman, Confluence, Combined, Coverage
   - Smart chunking for large files
   - Proper cleanup for temp files
+  - Adjusted error handling mechanisms
 
 ### Performance
 - **100% Executable Tests**: All generated tests run without modification

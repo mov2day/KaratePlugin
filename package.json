@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
   "description": "Professional Karate Test Generator & Maintenance with AI - Transform OpenAPI, Postman, and Confluence into automated tests with GitHub Copilot",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -119,6 +119,38 @@
       {
         "command": "karate-dsl.analyzeProjectHealth",
         "title": "Karate: Analyze Project Health"
+      },
+      {
+        "command": "karate-dsl.runFeature",
+        "title": "Karate: Run Feature"
+      },
+      {
+        "command": "karate-dsl.runScenario",
+        "title": "Karate: Run Scenario"
+      },
+      {
+        "command": "karate-dsl.runFolder",
+        "title": "Karate: Run All Tests in Folder"
+      },
+      {
+        "command": "karate-dsl.runByTags",
+        "title": "Karate: Run Tests by Tags"
+      },
+      {
+        "command": "karate-dsl.showExecutionReport",
+        "title": "Karate: Show Test Execution Report"
+      },
+      {
+        "command": "karate-dsl.showTestHistory",
+        "title": "Karate: Show Test History"
+      },
+      {
+        "command": "karate-dsl.clearKarateCache",
+        "title": "Karate: Clear JAR Cache"
+      },
+      {
+        "command": "karate-dsl.copilotSuggest",
+        "title": "Karate: AI Powered Suggestion"
       }
     ],
     "viewsContainers": {
@@ -173,6 +205,16 @@
           "command": "karate-dsl.learnStyleFromExplorer",
           "when": "resourceExtname == .feature",
           "group": "karate@4"
+        },
+        {
+          "command": "karate-dsl.runFeature",
+          "when": "resourceExtname == .feature",
+          "group": "karateExecution@1"
+        },
+        {
+          "command": "karate-dsl.runScenario",
+          "when": "editorTextFocus && resourceExtname == .feature",
+          "group": "karateExecution@2"
         }
       ]
     },
@@ -285,6 +327,40 @@
             "GPT-4 (Legacy)",
             "GPT-3.5 Turbo (Fast)"
           ]
+        },
+        "karateDsl.health.disabledRules": {
+          "type": "array",
+          "default": [],
+          "description": "List of health check rules to disable"
+        },
+        "karateDsl.execution.defaultBuildTool": {
+          "type": "string",
+          "enum": [
+            "cli",
+            "maven",
+            "gradle"
+          ],
+          "default": "cli",
+          "description": "Default build tool to use for test execution"
+        },
+        "karateDsl.execution.parallelThreads": {
+          "type": "number",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 16,
+          "description": "Number of parallel threads for test execution"
+        },
+        "karateDsl.execution.historyLimit": {
+          "type": "number",
+          "default": 50,
+          "minimum": 10,
+          "maximum": 200,
+          "description": "Number of test execution history entries to keep"
+        },
+        "karateDsl.execution.autoOpenReport": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically open execution report after running tests"
         },
         "karate.linter.enabledRules": {
           "type": "object",

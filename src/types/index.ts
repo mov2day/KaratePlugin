@@ -65,3 +65,85 @@ export interface ConfluenceTestCase {
     steps: string[];
     expectedResult?: string;
 }
+
+// Test Execution Types
+export interface TestExecutionOptions {
+    type: 'feature' | 'features' | 'folder' | 'tags' | 'scenario';
+    target: string | string[]; // file path(s), folder path, or scenario identifier
+    tags?: string[]; // for tag-based execution
+    environment?: string; // e.g., 'dev', 'staging', 'prod'
+    buildTool?: 'maven' | 'gradle' | 'cli'; // execution method
+    parallel?: number; // parallel thread count
+    workingDirectory?: string; // project root for build tools
+}
+
+export interface TestExecutionResult {
+    id: string; // unique execution ID
+    timestamp: number;
+    options: TestExecutionOptions;
+    summary: TestSummary;
+    features: FeatureResult[];
+    duration: number; // total execution time in ms
+    status: 'success' | 'failed' | 'error';
+    error?: string;
+}
+
+export interface TestSummary {
+    totalFeatures: number;
+    totalScenarios: number;
+    passed: number;
+    failed: number;
+    skipped: number;
+    passPercentage: number;
+    executionTime: string; // formatted time (e.g., "2m 15s")
+}
+
+export interface FeatureResult {
+    name: string;
+    relativePath: string;
+    absolutePath: string;
+    scenarios: ScenarioResult[];
+    duration: number;
+    passed: number;
+    failed: number;
+    skipped: number;
+    status: 'passed' | 'failed' | 'skipped';
+    error?: string;
+}
+
+export interface ScenarioResult {
+    name: string;
+    line: number; // line number in feature file
+    status: 'passed' | 'failed' | 'skipped';
+    steps: StepResult[];
+    duration: number;
+    error?: string;
+    tags?: string[];
+}
+
+export interface StepResult {
+    keyword: string;
+    text: string;
+    line?: number;
+    status: 'passed' | 'failed' | 'skipped';
+    duration: number;
+    error?: string;
+    errorMessage?: string;
+    log?: string; // Full stepLog from Karate
+    httpRequest?: HTTPRequestDetails;
+    httpResponse?: HTTPResponseDetails;
+}
+
+export interface HTTPRequestDetails {
+    method: string;
+    url: string;
+    headers?: Record<string, string>;
+    body?: string;
+}
+
+export interface HTTPResponseDetails {
+    status?: number;
+    headers?: Record<string, string>;
+    body?: string;
+    duration?: number;
+}

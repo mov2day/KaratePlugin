@@ -6,6 +6,7 @@ import { generateFromConfluence } from './commands/generateFromConfluence';
 import { generateCombined } from './commands/generateCombined';
 import { KarateWebviewProvider } from './webview/WebviewProvider';
 import { CoverageDashboardProvider } from './webview/CoverageDashboardProvider';
+import { ExecutionReportProvider } from './webview/ExecutionReportProvider';
 import { SpecWatcher } from './services/specWatcher';
 import { SpecHashManager } from './services/specHashManager';
 import { SpecDiffAnalyzer } from './services/specDiffAnalyzer';
@@ -20,6 +21,12 @@ const NOTIFICATION_COOLDOWN_MS = 30000; // 30 seconds cooldown
 
 import { KarateCodeActionProvider } from './services/linter/KarateCodeActionProvider';
 import { KarateLinter } from './services/linter/KarateLinter';
+import { TestExecutor } from './services/execution/TestExecutor';
+import { TestHistoryService } from './services/execution/TestHistoryService';
+import { TestCodeLensProvider } from './services/execution/TestCodeLensProvider';
+import { TestStatusDecorationProvider } from './services/execution/TestStatusDecorationProvider';
+import { KarateCliExecutor } from './services/execution/KarateCliExecutor';
+import { KarateTestController } from './services/execution/KarateTestController';
 
 export function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
@@ -88,6 +95,39 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Create coverage dashboard provider (for standalone panel only)
     const coverageDashboardProvider = new CoverageDashboardProvider(context.extensionUri);
+
+    // Create execution report provider
+    const executionReportProvider = new ExecutionReportProvider(context.extensionUri);
+
+    // Initialize test executor
+    const testExecutor = new TestExecutor(context.extensionPath);
+
+    // Initialize test history service
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+    let testHistoryService: TestHistoryService | undefined;
+    if (workspaceRoot) {
+        testHistoryService = new TestHistoryService(workspaceRoot);
+    }
+
+    // Register CodeLens provider for feature files
+    const codeLensProvider = new TestCodeLensProvider();
+    context.subscriptions.push(
+        vscode.languages.registerCodeLensProvider(
+            { language: 'karate', scheme: 'file' },
+            codeLensProvider
+        ),
+        vscode.languages.registerCodeLensProvider(
+            { pattern: '**/*.feature' },
+            codeLensProvider
+        )
+    );
+
+    // Register test status decorations provider
+    const decorationProvider = new TestStatusDecorationProvider(context);
+
+    // Register Test Explorer integration
+    const testController = new KarateTestController(context, testExecutor);
+    context.subscriptions.push(decorationProvider);
 
     // Initialize AI-Powered Test Maintenance
     const specHashManager = new SpecHashManager(context);
@@ -598,6 +638,267 @@ export function activate(context: vscode.ExtensionContext) {
         }
     );
 
+    // Test Execution Commands
+    const runFeatureCommand = vscode.commands.registerCommand(
+        'karate-dsl.runFeature',
+        async (uri?: vscode.Uri) => {
+            try {
+                const featureUri = uri || vscode.window.activeTextEditor?.document.uri;
+                if (!featureUri || !featureUri.fsPath.endsWith('.feature')) {
+                    vscode.window.showWarningMessage('Please select a feature file to run');
+                    return;
+                }
+
+                await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: `Running ${path.basename(featureUri.fsPath)}...`,
+                    cancellable: true
+                }, async (progress, token) => {
+                    progress.report({ increment: 10, message: 'Starting execution...' });
+
+                    const result = await testExecutor.execute({
+                        type: 'feature',
+                        target: featureUri.fsPath,
+                        buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
+                        workingDirectory: workspaceRoot
+                    }, token);
+
+                    progress.report({ increment: 90, message: 'Execution complete' });
+
+                    // Save to history
+                    if (testHistoryService) {
+                        await testHistoryService.saveResult(result);
+                    }
+
+                    // Update providers
+                    codeLensProvider.updateResult(result);
+                    decorationProvider.updateResult(result);
+
+                    // Show report
+                    await executionReportProvider.showReport(result);
+
+                    if (result.status === 'success') {
+                        vscode.window.showInformationMessage(
+                            `✅ Tests passed: ${result.summary.passed}/${result.summary.totalScenarios}`
+                        );
+                    } else if (result.status === 'failed') {
+                        vscode.window.showErrorMessage(
+                            `❌ Tests failed: ${result.summary.failed} failures, ${result.summary.passed} passed`
+                        );
+                    }
+                });
+            } catch (error) {
+                logger.error('Feature execution failed', error as Error);
+                vscode.window.showErrorMessage(`Failed to run feature: ${error}`);
+            }
+        }
+    );
+
+    const runScenarioCommand = vscode.commands.registerCommand(
+        'karate-dsl.runScenario',
+        async (uri?: vscode.Uri, line?: number, scenarioName?: string) => {
+            try {
+                const featureUri = uri || vscode.window.activeTextEditor?.document.uri;
+                if (!featureUri) {
+                    vscode.window.showWarningMessage('No feature file active');
+                    return;
+                }
+
+                if (!featureUri.fsPath.endsWith('.feature')) {
+                    vscode.window.showWarningMessage('Please open a .feature file to run scenarios');
+                    return;
+                }
+
+                const editor = vscode.window.activeTextEditor;
+                const scenarioLine = line !== undefined ? line : editor?.selection.active.line || 0;
+
+                // Try to extract scenario name from document if not provided
+                let detectedScenarioName = scenarioName;
+                if (!detectedScenarioName && editor && editor.document.uri.fsPath === featureUri.fsPath) {
+                    const document = editor.document;
+                    // Search backwards from cursor to find the Scenario line
+                    for (let i = scenarioLine; i >= 0; i--) {
+                        const lineText = document.lineAt(i).text.trim();
+                        if (lineText.startsWith('Scenario:') || lineText.match(/^Scenario\s+Outline:/)) {
+                            const match = lineText.match(/Scenario(?:\s+Outline)?:\s*(.+)/);
+                            if (match) {
+                                detectedScenarioName = match[1].trim();
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                const target = `${featureUri.fsPath}:${scenarioLine + 1}`;
+                const displayName = detectedScenarioName || `line ${scenarioLine + 1}`;
+
+                await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: `Running scenario: ${displayName}...`,
+                    cancellable: true
+                }, async (progress, token) => {
+                    progress.report({ increment: 10, message: 'Starting execution...' });
+
+                    const result = await testExecutor.execute({
+                        type: 'scenario',
+                        target,
+                        buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
+                        workingDirectory: workspaceRoot
+                    }, token);
+
+                    progress.report({ increment: 90, message: 'Execution complete' });
+
+                    // Save and update
+                    if (testHistoryService) await testHistoryService.saveResult(result);
+                    codeLensProvider.updateResult(result);
+                    decorationProvider.updateResult(result);
+
+                    // Show report
+                    await executionReportProvider.showReport(result);
+
+                    if (result.status === 'success') {
+                        vscode.window.showInformationMessage(`✅ Scenario "${displayName}" passed`);
+                    } else if (result.status === 'failed') {
+                        vscode.window.showErrorMessage(`❌ Scenario "${displayName}" failed`);
+                    } else if (result.status === 'error') {
+                        // Error already shown in TestExecutor
+                    }
+                });
+            } catch (error) {
+                logger.error('Scenario execution failed', error as Error);
+                // Don't show error here as TestExecutor handles it
+            }
+        }
+    );
+
+    const runFolderCommand = vscode.commands.registerCommand(
+        'karate-dsl.runFolder',
+        async (uri?: vscode.Uri) => {
+            try {
+                const folderPath = uri?.fsPath || workspaceRoot;
+                if (!folderPath) {
+                    vscode.window.showWarningMessage('No folder selected');
+                    return;
+                }
+
+                await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: `Running all tests in ${path.basename(folderPath)}...`,
+                    cancellable: true
+                }, async (progress, token) => {
+                    const result = await testExecutor.execute({
+                        type: 'folder',
+                        target: folderPath,
+                        buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
+                        parallel: vscode.workspace.getConfiguration('karateDsl').get('execution.parallelThreads') || 1,
+                        workingDirectory: workspaceRoot
+                    }, token);
+
+                    if (testHistoryService) await testHistoryService.saveResult(result);
+                    codeLensProvider.updateResult(result);
+                    decorationProvider.updateResult(result);
+                    await executionReportProvider.showReport(result);
+
+                    vscode.window.showInformationMessage(
+                        `✅ Executed ${result.summary.totalScenarios} scenarios: ${result.summary.passed} passed, ${result.summary.failed} failed`
+                    );
+                });
+            } catch (error) {
+                logger.error('Folder execution failed', error as Error);
+                vscode.window.showErrorMessage(`Failed to run folder: ${error}`);
+            }
+        }
+    );
+
+    const runByTagsCommand = vscode.commands.registerCommand(
+        'karate-dsl.runByTags',
+        async () => {
+            try {
+                const tags = await vscode.window.showInputBox({
+                    prompt: 'Enter tags to filter (comma-separated)',
+                    placeHolder: 'e.g., @smoke, @regression'
+                });
+
+                if (!tags) return;
+
+                const tagList = tags.split(',').map(t => t.trim().replace(/^@/, ''));
+
+                await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: `Running tests with tags: ${tagList.join(', ')}...`,
+                    cancellable: true
+                }, async (progress, token) => {
+                    const result = await testExecutor.execute({
+                        type: 'tags',
+                        target: workspaceRoot || '',
+                        tags: tagList,
+                        buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
+                        workingDirectory: workspaceRoot
+                    }, token);
+
+                    if (testHistoryService) await testHistoryService.saveResult(result);
+                    codeLensProvider.updateResult(result);
+                    decorationProvider.updateResult(result);
+                    await executionReportProvider.showReport(result);
+                });
+            } catch (error) {
+                logger.error('Tag-based execution failed', error as Error);
+                vscode.window.showErrorMessage(`Failed to run tests by tags: ${error}`);
+            }
+        }
+    );
+
+    const showExecutionReportCommand = vscode.commands.registerCommand(
+        'karate-dsl.showExecutionReport',
+        async () => {
+            await executionReportProvider.showReport();
+        }
+    );
+
+    const showTestHistoryCommand = vscode.commands.registerCommand(
+        'karate-dsl.showTestHistory',
+        async () => {
+            if (!testHistoryService) {
+                vscode.window.showWarningMessage('No workspace folder open');
+                return;
+            }
+
+            const history = await testHistoryService.getHistory(10);
+            if (history.length === 0) {
+                vscode.window.showInformationMessage('No test execution history available');
+                return;
+            }
+
+            const items = history.map(h => ({
+                label: `$(${h.status === 'success' ? 'check' : 'error'}) ${new Date(h.timestamp).toLocaleString()}`,
+                description: `${h.summary.passed}/${h.summary.totalScenarios} passed (${h.summary.passPercentage.toFixed(1)}%)`,
+                detail: `Duration: ${h.summary.executionTime}`,
+                result: h
+            }));
+
+            const selected = await vscode.window.showQuickPick(items, {
+                placeHolder: 'Select a test run to view'
+            });
+
+            if (selected) {
+                await executionReportProvider.showReport(selected.result);
+            }
+        }
+    );
+
+    // Clear Karate JAR cache command
+    const clearKarateCacheCommand = vscode.commands.registerCommand(
+        'karate-dsl.clearKarateCache',
+        async () => {
+            const cleared = KarateCliExecutor.clearJarCache(context.extensionPath);
+            if (cleared) {
+                vscode.window.showInformationMessage('✅ Karate JAR cache cleared. The JAR will be re-downloaded on next execution.');
+            } else {
+                vscode.window.showInformationMessage('No cached JAR found.');
+            }
+        }
+    );
+
     context.subscriptions.push(
         openApiCommand,
         confluenceCommand,
@@ -614,7 +915,14 @@ export function activate(context: vscode.ExtensionContext) {
         importPostmanCommand,
         selectCopilotModelCommand,
         showCopilotActivityCommand,
-        clearCopilotActivityCommand
+        clearCopilotActivityCommand,
+        runFeatureCommand,
+        runScenarioCommand,
+        runFolderCommand,
+        runByTagsCommand,
+        showExecutionReportCommand,
+        showTestHistoryCommand,
+        clearKarateCacheCommand
     );
 }
 

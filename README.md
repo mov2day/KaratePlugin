@@ -19,25 +19,31 @@ Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
 
 ---
 
-## 🆕 What's New in v1.3.0
+## 🆕 What's New in v1.3.1
 
-### 🎯 Agent Skills Integration
-- **AI Domain Expertise**: 6 Karate-specific skills based on official documentation automatically enhance your test generation
-- **Context-Aware Suggestions**: Skills automatically activate based on operation type (OpenAPI, Postman, Confluence, Coverage)
-- **Zero Configuration**: Works transparently with existing workflows - no setup needed
-- **Skills Included**:
-  - `karate-test-generation` - Core Gherkin syntax and patterns
-  - `karate-api-testing` - Advanced HTTP operations and assertions
-  - `karate-formatting-style` - Formatting and code style standards
-  - `openapi-to-karate` - OpenAPI conversion best practices
-  - `postman-to-karate` - Postman migration patterns
-  - `karate-advanced-patterns` - Data-driven testing and parallel execution
+### 📊 Premium Execution Dashboard
+Completely overhauled execution report with an modern design.
 
-### ⚡ Enhanced File Context
-- **Smart File Handling**: Files read once and sent to Copilot with proper formatting
-- **Large File Support**: Multi-part approach for files >150KB prevents token errors
-- **Better Understanding**: Preserves JSON/YAML/HTML structure for accurate parsing
-- **Automatic Chunking**: Seamlessly handles specs of any size
+#### 1. Modern Dashboard Overview
+Get a high-level view of your test execution with beautiful visual metrics.
+![Dashboard Overview](images/dashboard-overview.png)
+
+#### 2. Detailed Feature Breakdown
+Drill down into specific features with sorting and filtering capabilities.
+![Feature List](images/dashboard-features.png)
+
+#### 3. Step-Level Details
+Inspect HTTP requests, responses, and logs with syntax highlighting.
+![Step Details](images/dashboard-details.png)
+
+#### 4. Interactive History Trend
+Track your test stability over time with the new history chart.
+
+### ✨ Key Features
+- **Sidebar Navigation**: Switch context instantly.
+- **Visual Analytics**: Charts for pass rates and execution duration.
+- **Dark Mode**: Fully supports VS Code themes.
+- **Search & Filter**: Find failing tests in seconds.
 
 ### ✅ Generator Improvements
 - **100% Executable Tests**: All generated tests run without modification
