@@ -1297,4 +1297,8 @@ async function handleSpecChange(
     }
 }
 
-export function deactivate() { }
+
+
+export function deactivate() {
+    logger.info('Karate DSL Generator extension deactivated');
+}

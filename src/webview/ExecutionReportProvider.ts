@@ -22,12 +22,12 @@ export class ExecutionReportProvider {
      * Show the execution report dashboard
      */
     public async showReport(result?: TestExecutionResult) {
-        console.log('[ExecutionReportProvider] showReport called with result:', result ? 'yes' : 'no');
+        logger.info(`[ExecutionReportProvider] showReport called with result: ${result ? 'yes' : 'no'}`);
 
         if (result) {
             this._currentResult = result;
-            console.log('[ExecutionReportProvider] Current result features:', result.features?.length);
-            console.log('[ExecutionReportProvider] Current result scenarios:', result.summary?.totalScenarios);
+            logger.info(`[ExecutionReportProvider] Current result features: ${result.features?.length}`);
+            logger.info(`[ExecutionReportProvider] Current result scenarios: ${result.summary?.totalScenarios}`);
         }
 
         // Get workspace root for history service
@@ -41,14 +41,14 @@ export class ExecutionReportProvider {
             this._panel.reveal(vscode.ViewColumn.One);
             if (this._currentResult) {
                 const serialized = this.serializeResult(this._currentResult);
-                console.log('[ExecutionReportProvider] Posting message to existing panel');
+                logger.info('[ExecutionReportProvider] Posting message to existing panel');
                 this._panel.webview.postMessage({
                     type: 'executionResult',
                     data: serialized
                 });
             }
         } else {
-            console.log('[ExecutionReportProvider] Creating new panel');
+            logger.info('[ExecutionReportProvider] Creating new panel');
             this._panel = vscode.window.createWebviewPanel(
                 ExecutionReportProvider.viewType,
                 '🎯 Karate Test Execution Report',
@@ -66,10 +66,10 @@ export class ExecutionReportProvider {
             this._panel.webview.onDidReceiveMessage(async message => {
                 if (message.command === 'webviewReady') {
                     // Webview is ready, send data now
-                    console.log('[ExecutionReportProvider] Webview ready signal received');
+                    logger.info('[ExecutionReportProvider] Webview ready signal received');
                     if (this._currentResult) {
                         const serialized = this.serializeResult(this._currentResult);
-                        console.log('[ExecutionReportProvider] Sending data after webview ready');
+                        logger.info('[ExecutionReportProvider] Sending data after webview ready');
                         this._panel?.webview.postMessage({
                             type: 'executionResult',
                             data: serialized
@@ -80,7 +80,6 @@ export class ExecutionReportProvider {
                 } else if (message.command === 'error') {
                     // Log errors from webview
                     logger.error(`[Webview Error] ${message.error.message}`, message.error);
-                    console.error('[Webview Error]', message.error);
                     vscode.window.showErrorMessage(`Dashboard Error: ${message.error.message}`);
                 } else {
                     await this.handleMessage(message);
@@ -221,11 +220,7 @@ export class ExecutionReportProvider {
      * Serialize test result for webview
      */
     private serializeResult(result: TestExecutionResult): any {
-        console.log('[ExecutionReportProvider] Serializing result:', {
-            features: result.features?.length,
-            scenarios: result.summary?.totalScenarios,
-            status: result.status
-        });
+        logger.info(`[ExecutionReportProvider] Serializing result: features=${result.features?.length}, scenarios=${result.summary?.totalScenarios}, status=${result.status}`);
 
         const serialized = {
             id: result.id,
@@ -255,8 +250,8 @@ export class ExecutionReportProvider {
             error: result.error
         };
 
-        console.log('[ExecutionReportProvider] Serialized features:', serialized.features.length);
-        console.log('[ExecutionReportProvider] First feature scenarios:', serialized.features[0]?.scenarios?.length);
+        logger.info(`[ExecutionReportProvider] Serialized features: ${serialized.features.length}`);
+        logger.info(`[ExecutionReportProvider] First feature scenarios: ${serialized.features[0]?.scenarios?.length}`);
 
         return serialized;
     }

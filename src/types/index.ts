@@ -143,9 +143,81 @@ export interface HTTPRequestDetails {
     body?: string;
 }
 
+// Configuration Types
+export interface KarateConfig {
+    outputPath: string;
+    useCopilot: boolean;
+    testTemplate: string;
+    confluence?: {
+        baseUrl?: string;
+        email?: string;
+        authType?: 'basic' | 'bearer';
+    };
+    structuringStrategy?: 'flat' | 'domain' | 'atomic';
+    autoTag?: boolean;
+}
+
+// Generation Types
+export interface GenerationOptions {
+    filePath?: string; // For OpenAPI
+    pageUrl?: string; // For Confluence
+    openApiPath?: string; // For Combined
+    confluenceUrl?: string; // For Combined
+    useCopilot: boolean;
+    templateId?: string;
+    scenarioTypes?: string[];
+    httpMethods?: string[];
+    customInstruction?: string;
+}
+
+// History Types
+export interface HistoryItem {
+    id: string;
+    timestamp: number;
+    type: 'openapi' | 'confluence' | 'combined';
+    source: string; // File path or URL
+    secondarySource?: string;
+    outputPath: string;
+    template: string;
+}
+
+// Template Types
+export interface KarateTemplate {
+    id: string;
+    name: string;
+    content: string;
+    description: string;
+    isCustom: boolean;
+}
+
+// Style Types
+export interface KarateStyle {
+    indentation: string;
+    variableCase: 'camelCase' | 'snake_case';
+    commentStyle: 'hash' | 'doubleSlash';
+    lineSpacing: number;
+}
+
 export interface HTTPResponseDetails {
     status?: number;
     headers?: Record<string, string>;
     body?: string;
     duration?: number;
 }
+
+// Webview Message Types
+export type WebviewMessage =
+    | { command: 'selectOpenAPIFile' }
+    | { command: 'generateFromOpenAPI'; filePath: string; useCopilot: boolean; templateId?: string; scenarioTypes?: string[]; httpMethods?: string[]; customInstruction?: string }
+    | { command: 'generateFromConfluence'; pageUrl: string; useCopilot: boolean; templateId?: string }
+    | { command: 'generateCombined'; openApiPath: string; confluenceUrl: string; useCopilot: boolean; templateId?: string; scenarioTypes?: string[]; httpMethods?: string[]; customInstruction?: string }
+    | { command: 'getConfig' }
+    | { command: 'saveConfig'; config: any }
+    | { command: 'getHistory' }
+    | { command: 'getTemplates' }
+    | { command: 'saveTemplate'; template: any }
+    | { command: 'learnStyle'; filePath?: string }
+    | { command: 'openGeneratedFile'; filePath: string }
+    | { command: 'copyToClipboard'; content: string }
+    | { command: 'syncTests'; specPath: string; updatePlan: any }
+    | { command: 'launchCoverageDashboard' };

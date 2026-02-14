@@ -96,7 +96,6 @@ export class TestExecutor {
             // Parse results - findReportDirectory now recursively searches for karate-summary.json
             const reportDir = ResultParser.findReportDirectory(workingDirectory);
             logger.info(`Report directory found: ${reportDir}`);
-            console.log(`[TestExecutor] Report directory: ${reportDir}`);
 
             if (!reportDir) {
                 logger.warn('Could not find karate-summary.json in target or build directories');
@@ -105,7 +104,6 @@ export class TestExecutor {
 
             const summaryFile = ResultParser.findSummaryFile(reportDir);
             logger.info(`Summary file: ${summaryFile}`);
-            console.log(`[TestExecutor] Summary file: ${summaryFile}`);
 
             if (!summaryFile) {
                 logger.warn('Report directory found but karate-summary.json is missing');

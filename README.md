@@ -4,7 +4,7 @@
 
 Transform OpenAPI specs, Postman collections, and Confluence docs into production-ready Karate tests in seconds. Run them from your editor, track coverage, and let AI keep everything in sync as your API evolves.
 
-[![Version](https://img.shields.io/badge/version-1.3.4-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.3.5-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-brightgreen.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -12,7 +12,7 @@ Transform OpenAPI specs, Postman collections, and Confluence docs into productio
 
 ---
 
-## 🆕 What's New in v1.3.4
+## 🆕 What's New in v1.3.5
 
 ### 🧠 Agent Skills & Prompt Hardening
 - **Grounded AI Generation**: Copilot now uses a dedicated knowledge base of Karate best practices to generate code.
@@ -33,6 +33,8 @@ Transform OpenAPI specs, Postman collections, and Confluence docs into productio
 ### ♻️ Smart Reusability Engine
 - **Auto-Extraction**: Detects repeated patterns (auth, setup, headers) and extracts them into reusable `common/` feature files.
 - **Intelligent Stubs**: Auto-creates `common/setup.feature`, `common/auth.feature` etc. with functional defaults if they don't exist.
+
+- Internal code quality improvements, security hardening, and test infrastructure updates.
 
 ---
 

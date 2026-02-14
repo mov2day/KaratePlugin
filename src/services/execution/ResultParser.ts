@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { TestExecutionResult, TestSummary, FeatureResult, ScenarioResult, StepResult } from '../../types';
+import { logger } from '../../utils/logger';
 
 /**
  * Parses Karate test execution results from JSON reports
@@ -19,8 +20,8 @@ export class ResultParser {
 
         const summaryData = JSON.parse(fs.readFileSync(summaryPath, 'utf-8'));
 
-        console.log(`[ResultParser] Summary data keys:`, Object.keys(summaryData));
-        console.log(`[ResultParser] Feature summary length:`, summaryData.featureSummary?.length || 0);
+        logger.info(`[ResultParser] Summary data keys: ${Object.keys(summaryData).join(', ')}`);
+        logger.info(`[ResultParser] Feature summary length: ${summaryData.featureSummary?.length || 0}`);
 
         const features: FeatureResult[] = [];
         let totalScenarios = 0;
@@ -32,10 +33,10 @@ export class ResultParser {
         if (summaryData.featureSummary && Array.isArray(summaryData.featureSummary)) {
             // Get report directory from summaryPath
             const reportDirectory = path.dirname(summaryPath);
-            console.log(`[ResultParser] Using report directory for detailed parsing: ${reportDirectory}`);
+            logger.info(`[ResultParser] Using report directory for detailed parsing: ${reportDirectory}`);
 
             for (const featureData of summaryData.featureSummary) {
-                console.log(`[ResultParser] Parsing feature:`, featureData.name, `packageQualifiedName:`, featureData.packageQualifiedName);
+                logger.info(`[ResultParser] Parsing feature: ${featureData.name} packageQualifiedName: ${featureData.packageQualifiedName}`);
                 const featureResult = this.parseFeature(featureData, workingDirectory, reportDirectory);
                 features.push(featureResult);
 
@@ -95,12 +96,12 @@ export class ResultParser {
             const packageQualifiedName = featureData.packageQualifiedName || featureData.name || '';
             const detailedJsonPath = path.join(reportDirectory, `${packageQualifiedName}.karate-json.txt`);
 
-            console.log(`[ResultParser] Looking for detailed feature JSON: ${detailedJsonPath}`);
+            logger.info(`[ResultParser] Looking for detailed feature JSON: ${detailedJsonPath}`);
 
             if (fs.existsSync(detailedJsonPath)) {
                 try {
                     const detailedData = JSON.parse(fs.readFileSync(detailedJsonPath, 'utf-8'));
-                    console.log(`[ResultParser] Loaded detailed JSON with ${detailedData.scenarioResults?.length || 0} scenarios`);
+                    logger.info(`[ResultParser] Loaded detailed JSON with ${detailedData.scenarioResults?.length || 0} scenarios`);
 
                     // Parse detailed scenario results
                     if (detailedData.scenarioResults && Array.isArray(detailedData.scenarioResults)) {
@@ -114,7 +115,7 @@ export class ResultParser {
                         }
                     }
                 } catch (error) {
-                    console.error(`[ResultParser] Failed to parse detailed JSON: ${error}`);
+                    logger.error(`[ResultParser] Failed to parse detailed JSON: ${error}`);
                     // Fall back to creating synthetic scenarios
                     this.createSyntheticScenarios(scenarios, featureData);
                     passed = featureData.passedCount || 0;
@@ -122,7 +123,7 @@ export class ResultParser {
                     skipped = featureData.skippedCount || 0;
                 }
             } else {
-                console.log(`[ResultParser] Detailed JSON not found, using summary counts`);
+                logger.info(`[ResultParser] Detailed JSON not found, using summary counts`);
                 // Fall back to synthetic scenarios
                 this.createSyntheticScenarios(scenarios, featureData);
                 passed = featureData.passedCount || 0;
@@ -133,7 +134,7 @@ export class ResultParser {
 
         const relativePath = path.relative(workingDirectory, featureData.packageQualifiedName || featureData.relativePath || featureData.name || '');
 
-        console.log(`[ResultParser] Parsed feature: ${featureData.name}, scenarios: ${scenarios.length}, passed: ${passed}, failed: ${failed}`);
+        logger.info(`[ResultParser] Parsed feature: ${featureData.name}, scenarios: ${scenarios.length}, passed: ${passed}, failed: ${failed}`);
 
         return {
             name: featureData.name || path.basename(relativePath, '.feature'),
@@ -214,7 +215,7 @@ export class ResultParser {
             status = 'skipped';
         }
 
-        console.log(`[ResultParser] Parsed scenario: ${scenarioData.name || 'Unnamed'}, steps: ${steps.length}, status: ${status}`);
+        logger.info(`[ResultParser] Parsed scenario: ${scenarioData.name || 'Unnamed'} steps: ${steps.length} status: ${status}`);
 
         return {
             name: scenarioData.name || 'Unnamed Scenario',
@@ -333,27 +334,27 @@ export class ResultParser {
         // Karate 1.5+ changed the filename
         const summaryFilenames = ['karate-summary-json.txt', 'karate-summary.json'];
 
-        console.log(`[ResultParser] Searching for Karate summary in: ${workingDirectory}`);
+        logger.info(`[ResultParser] Searching for Karate summary in: ${workingDirectory}`);
 
         for (const searchRoot of searchRoots) {
             if (!fs.existsSync(searchRoot)) {
                 continue;
             }
 
-            console.log(`[ResultParser] Searching recursively in: ${searchRoot}`);
+            logger.info(`[ResultParser] Searching recursively in: ${searchRoot}`);
 
             for (const filename of summaryFilenames) {
                 const summaryFile = this.findFileRecursive(searchRoot, filename, 5); // Max 5 levels deep
 
                 if (summaryFile) {
                     const reportDir = path.dirname(summaryFile);
-                    console.log(`[ResultParser] Found report directory: ${reportDir}`);
+                    logger.info(`[ResultParser] Found report directory: ${reportDir}`);
                     return reportDir;
                 }
             }
         }
 
-        console.log(`[ResultParser] No Karate summary file found in any search location`);
+        logger.info(`[ResultParser] No Karate summary file found in any search location`);
         return null;
     }
 
@@ -372,7 +373,7 @@ export class ResultParser {
             for (const entry of entries) {
                 if (entry.isFile() && entry.name === filename) {
                     const foundPath = path.join(dir, entry.name);
-                    console.log(`[ResultParser] Found ${filename} at: ${foundPath}`);
+                    logger.info(`[ResultParser] Found ${filename} at: ${foundPath}`);
                     return foundPath;
                 }
             }
@@ -402,12 +403,12 @@ export class ResultParser {
     static findSummaryFile(reportDirectory: string): string | null {
         const possibleFilenames = ['karate-summary-json.txt', 'karate-summary.json'];
 
-        console.log(`[ResultParser] Looking for summary file in: ${reportDirectory}`);
+        logger.info(`[ResultParser] Looking for summary file in: ${reportDirectory}`);
 
         for (const filename of possibleFilenames) {
             const summaryPath = path.join(reportDirectory, filename);
             if (fs.existsSync(summaryPath)) {
-                console.log(`[ResultParser] Found summary file: ${summaryPath}`);
+                logger.info(`[ResultParser] Found summary file: ${summaryPath}`);
                 return summaryPath;
             }
         }
@@ -415,10 +416,10 @@ export class ResultParser {
         // List files in directory for debugging
         if (fs.existsSync(reportDirectory)) {
             const files = fs.readdirSync(reportDirectory);
-            console.log(`[ResultParser] Files in report directory:`, files);
+            logger.info(`[ResultParser] Files in report directory: ${files.join(', ')}`);
         }
 
-        console.log(`[ResultParser] Summary file not found in: ${reportDirectory}`);
+        logger.info(`[ResultParser] Summary file not found in: ${reportDirectory}`);
         return null;
     }
 }

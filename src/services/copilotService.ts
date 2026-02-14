@@ -4,6 +4,7 @@ import { logger } from '../utils/logger';
 import { CopilotLogger } from '../utils/copilotLogger';
 import { AgentSkillsService } from './agentSkillsService';
 import { ContextBuilder } from '../utils/contextBuilder';
+import { InputSanitizer } from './InputSanitizer';
 
 export interface CopilotFullContext {
     type: 'openapi' | 'confluence' | 'combined' | 'postman' | 'coverage';
@@ -181,13 +182,13 @@ export class CopilotService {
 
         if (fullContext) {
             if (fullContext.openApiSpec) {
-                openApiContent = fullContext.openApiSpec;
+                openApiContent = InputSanitizer.sanitizeSpec(fullContext.openApiSpec);
             }
             if (fullContext.confluencePage) {
                 confluenceContent = this.getPlainTextFromConfluence(fullContext.confluencePage);
             }
             if (fullContext.postmanCollection) {
-                postmanContent = fullContext.postmanCollection;
+                postmanContent = InputSanitizer.sanitizeSpec(fullContext.postmanCollection);
             }
         }
 
@@ -330,23 +331,15 @@ Process the rest of the request and provide the Karate test code.`;
         try {
             const pageData = JSON.parse(confluencePage);
             // Try atlas_doc_format first (plain text), then view, then storage
-            return pageData.body?.atlas_doc_format?.value ||
-                pageData.body?.view?.value?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ||
-                pageData.body?.storage?.value?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ||
+            const rawContent = pageData.body?.atlas_doc_format?.value ||
+                pageData.body?.view?.value ||
+                pageData.body?.storage?.value ||
                 confluencePage;
+
+            return InputSanitizer.sanitizeConfluence(rawContent);
         } catch {
             // If not JSON, assume it's already HTML/text content
-            // Strip HTML tags and clean up
-            return confluencePage
-                .replace(/<[^>]+>/g, ' ')
-                .replace(/&nbsp;/g, ' ')
-                .replace(/&amp;/g, '&')
-                .replace(/&lt;/g, '<')
-                .replace(/&gt;/g, '>')
-                .replace(/&quot;/g, '"')
-                .replace(/&#39;/g, "'")
-                .replace(/\s+/g, ' ')
-                .trim();
+            return InputSanitizer.sanitizeConfluence(confluencePage);
         }
     }
 
@@ -371,7 +364,8 @@ Process the rest of the request and provide the Karate test code.`;
             logger.info('Enhancing Karate test with Copilot');
 
             // Build context information
-            let contextInfo = `Context: ${context}\n\n`;
+            const safeContext = InputSanitizer.sanitizeUserInstruction(context);
+            let contextInfo = `Context: ${safeContext}\n\n`;
             if (fullContext) {
                 if (fullContext.openApiSpec) {
                     contextInfo += `OpenAPI Specification provided\n`;
@@ -474,7 +468,8 @@ Enhance the test now:`;
             logger.info('Starting comprehensive Karate test enhancement');
 
             // Build rich context
-            let contextInfo = `Context: ${context}\n\n`;
+            const safeContext = InputSanitizer.sanitizeUserInstruction(context);
+            let contextInfo = `Context: ${safeContext}\n\n`;
 
             if (fullContext) {
                 if (fullContext.type === 'openapi' && fullContext.openApiSpec) {
@@ -625,7 +620,7 @@ Transform the test now:`;
             }
 
             const requirementsText = requirements && requirements.length > 0
-                ? `\n\nAdditional Requirements:\n${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}`
+                ? `\n\nAdditional Requirements:\n${requirements.map(r => InputSanitizer.sanitizeUserInstruction(r)).map((r, i) => `${i + 1}. ${r}`).join('\n')}`
                 : '';
 
             // Get skill knowledge base for grounded generation

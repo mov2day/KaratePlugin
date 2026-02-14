@@ -50,7 +50,7 @@ export class CoverageDashboardProvider {
         // Handle messages from the webview
         panel.webview.onDidReceiveMessage(async (data) => {
             logger.info(`Coverage dashboard received message: ${data.command}`);
-            console.log('Coverage dashboard message:', data);
+            logger.info(`Coverage dashboard message data: ${JSON.stringify(data)}`);
 
             switch (data.command) {
                 case 'selectSpecs':
@@ -89,7 +89,7 @@ export class CoverageDashboardProvider {
 
     private async handleSelectSpecsForPanel(webview: vscode.Webview) {
         logger.info('handleSelectSpecsForPanel called');
-        console.log('Opening file picker for specs...');
+        logger.info('Opening file picker for specs...');
 
         const fileUris = await vscode.window.showOpenDialog({
             canSelectMany: true,
@@ -113,7 +113,7 @@ export class CoverageDashboardProvider {
 
     private async handleSelectFeaturesForPanel(webview: vscode.Webview) {
         logger.info('handleSelectFeaturesForPanel called');
-        console.log('Opening file picker for features...');
+        logger.info('Opening file picker for features...');
 
         const fileUris = await vscode.window.showOpenDialog({
             canSelectMany: true,
