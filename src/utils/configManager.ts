@@ -117,4 +117,20 @@ export class ConfigManager {
         const config = vscode.workspace.getConfiguration('karateDsl');
         return config.get<string>('copilot.model', 'gpt-5-mini');
     }
+
+    /**
+     * Get feature structuring strategy (domain groups by OpenAPI tags/path prefix, flat = single file)
+     */
+    static getStructuringStrategy(): 'domain' | 'flat' | 'method' {
+        const config = vscode.workspace.getConfiguration('karateDsl');
+        return config.get<'domain' | 'flat' | 'method'>('generation.structuringStrategy', 'domain');
+    }
+
+    /**
+     * Check if auto-tagging of scenarios is enabled (@positive, @negative, @edge, @domain)
+     */
+    static isAutoTagEnabled(): boolean {
+        const config = vscode.workspace.getConfiguration('karateDsl');
+        return config.get<boolean>('generation.autoTag', true);
+    }
 }

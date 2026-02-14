@@ -4,6 +4,7 @@ import * as path from 'path';
 import { PostmanParser, PostmanCollection, PostmanEnvironment } from './postmanParser';
 import { PostmanToKarateConverter } from './postmanToKarateConverter';
 import { FileUtils } from '../utils/fileUtils';
+import { ReusabilityEngine } from './ReusabilityEngine';
 import { logger } from '../utils/logger';
 
 export interface ImportOptions {
@@ -227,6 +228,18 @@ export class PostmanImportService {
                 fs.mkdirSync(dir, { recursive: true });
             }
 
+            // Apply reusability extraction
+            const reusabilityResult = ReusabilityEngine.extract(featureContent);
+            featureContent = reusabilityResult.modifiedContent;
+
+            if (reusabilityResult.commonFiles.length > 0) {
+                const commonDir = ReusabilityEngine.getCommonDir(fullPath);
+                for (const cf of reusabilityResult.commonFiles) {
+                    const cfPath = path.join(commonDir, path.basename(cf.path));
+                    FileUtils.writeFile(cfPath, cf.content);
+                }
+            }
+
             // Write file
             FileUtils.writeFile(fullPath, featureContent);
             logger.info(`Created feature file: ${fullPath}`);
@@ -340,7 +353,19 @@ CONVERSION GUIDELINES:
             const fileName = this.sanitizeFileName(collectionName) + '.feature';
             const fullPath = path.join(outputDir, fileName);
 
-            FileUtils.writeFile(fullPath, featureContent);
+            // Apply reusability extraction
+            const reusabilityResult = ReusabilityEngine.extract(featureContent);
+            const processedContent = reusabilityResult.modifiedContent;
+
+            if (reusabilityResult.commonFiles.length > 0) {
+                const commonDir = ReusabilityEngine.getCommonDir(fullPath);
+                for (const cf of reusabilityResult.commonFiles) {
+                    const cfPath = path.join(commonDir, path.basename(cf.path));
+                    FileUtils.writeFile(cfPath, cf.content);
+                }
+            }
+
+            FileUtils.writeFile(fullPath, processedContent);
             logger.info(`Created feature file: ${fullPath}`);
 
             return fullPath;

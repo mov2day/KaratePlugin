@@ -108,7 +108,10 @@
             command: 'generateFromOpenAPI',
             filePath: currentOpenApiPath,
             useCopilot: document.getElementById('openapi-copilot').checked,
-            templateId: document.getElementById('template-select').value
+            templateId: document.getElementById('template-select').value,
+            scenarioTypes: getCheckedValues('openapi-type'),
+            httpMethods: getCheckedValues('openapi-method'),
+            customInstruction: (document.getElementById('openapi-custom-instruction')?.value || '').trim()
         });
     });
 
@@ -136,7 +139,10 @@
             openApiPath: currentCombinedOpenApiPath,
             confluenceUrl,
             useCopilot: document.getElementById('combined-copilot').checked,
-            templateId: document.getElementById('template-select').value
+            templateId: document.getElementById('template-select').value,
+            scenarioTypes: getCheckedValues('combined-type'),
+            httpMethods: getCheckedValues('combined-method'),
+            customInstruction: (document.getElementById('combined-custom-instruction')?.value || '').trim()
         });
     });
 
@@ -381,6 +387,16 @@
     }
 
     // --- Helper Functions ---
+    function getCheckedValues(prefix) {
+        const values = [];
+        document.querySelectorAll(`[id^="${prefix}-"]`).forEach(cb => {
+            if (cb.checked) {
+                values.push(cb.id.replace(`${prefix}-`, ''));
+            }
+        });
+        return values;
+    }
+
     function showProgress(message, percentage) {
         const container = document.getElementById('progress-container');
         container.style.display = 'block';

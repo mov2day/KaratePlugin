@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
   "description": "Professional Karate Test Generator & Maintenance with AI - Transform OpenAPI, Postman, and Confluence into automated tests with GitHub Copilot",
-  "version": "1.3.2",
+  "version": "1.3.4",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -155,6 +155,22 @@
       {
         "command": "karate-dsl.copilotSuggest",
         "title": "Karate: AI Powered Suggestion"
+      },
+      {
+        "command": "karate-dsl.startRecording",
+        "title": "Karate: Start Recording Session"
+      },
+      {
+        "command": "karate-dsl.stopRecording",
+        "title": "Karate: Stop Recording & Synthesize"
+      },
+      {
+        "command": "karate-dsl.importHar",
+        "title": "Karate: Import HAR File"
+      },
+      {
+        "command": "karate-dsl.synthesizeSession",
+        "title": "Karate: Synthesize Session to Karate"
       }
     ],
     "viewsContainers": {
@@ -332,6 +348,26 @@
             "GPT-3.5 Turbo (Fast)"
           ]
         },
+        "karateDsl.generation.structuringStrategy": {
+          "type": "string",
+          "default": "domain",
+          "description": "How to organize generated feature files: domain (group by API tag/path), flat (single file), method (group by HTTP method)",
+          "enum": [
+            "domain",
+            "flat",
+            "method"
+          ],
+          "enumDescriptions": [
+            "Domain grouping — one feature file per API domain (e.g., orders.feature, payments.feature)",
+            "Flat — all scenarios in a single feature file (classic behavior)",
+            "Method grouping — one feature file per HTTP method (e.g., get.feature, post.feature)"
+          ]
+        },
+        "karateDsl.generation.autoTag": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically tag generated scenarios with @positive, @negative, @edge, @boundary, and @domain tags"
+        },
         "karateDsl.health.disabledRules": {
           "type": "array",
           "default": [],
@@ -365,6 +401,50 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically open execution report after running tests"
+        },
+        "karateDsl.execution.configPath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to karate-config.js or Java runner class (relative to workspace root)"
+        },
+        "karateDsl.execution.additionalClasspath": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional classpath entries for test execution (relative or absolute paths)"
+        },
+        "karateDsl.execution.jvmArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Custom JVM arguments passed to every test run. Example: `[\"-Xmx512m\", \"-Dfile.encoding=UTF-8\"]`"
+        },
+        "karateDsl.execution.karateArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Custom Karate CLI arguments appended to every test run. Example: `[\"--threads\", \"5\", \"--configdir\", \"src/test/resources\"]`"
+        },
+        "karateDsl.execution.systemProperties": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "System properties passed as `-D` flags to every test run. Example: `{\"karate.env\": \"dev\", \"myapp.baseUrl\": \"http://localhost:8080\"}`",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "karateDsl.session.proxyPort": {
+          "type": "number",
+          "default": 8081,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "Port for session recording proxy server"
         },
         "karate.linter.enabledRules": {
           "type": "object",

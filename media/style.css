@@ -285,6 +285,67 @@ body {
     background-color: var(--vscode-list-hoverBackground);
 }
 
+/* Precision Controls */
+.checkbox-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+}
+
+.checkbox-label.compact {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+.checkbox-label.compact span {
+    font-size: 12px;
+}
+
+.control-section-label {
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--vscode-descriptionForeground) !important;
+    margin-bottom: 6px !important;
+    display: flex !important;
+    align-items: center;
+    gap: 6px;
+}
+
+.badge-small {
+    font-size: 8px;
+    padding: 1px 5px;
+    border-radius: 8px;
+    background-color: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.copilot-only-section textarea {
+    width: 100%;
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-sm);
+    font-family: var(--vscode-font-family);
+    font-size: 12px;
+    resize: vertical;
+    outline: none;
+    transition: border-color var(--transition-speed);
+}
+
+.copilot-only-section textarea:focus {
+    border-color: var(--vscode-focusBorder);
+    box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.copilot-only-section textarea::placeholder {
+    color: var(--vscode-input-placeholderForeground);
+    font-style: italic;
+}
+
 .file-input {
     display: flex;
     flex-direction: column;

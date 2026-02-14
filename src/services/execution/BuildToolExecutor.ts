@@ -79,6 +79,29 @@ export class BuildToolExecutor {
         cancellationToken?: vscode.CancellationToken
     ): Promise<{ success: boolean; output: string }> {
         const args = ['test'];
+        const workingDir = options.workingDirectory || '';
+
+        // Use ConfigDiscovery to find runner classes
+        const { ConfigDiscovery } = await import('./ConfigDiscovery');
+        const karateConfig = ConfigDiscovery.discover(workingDir);
+
+        // If we have runner classes, use them with -Dtest parameter
+        if (karateConfig.runnerClasses.length > 0) {
+            // Use the best runner for the feature if executing a specific feature
+            let runnerClass: string | undefined;
+
+            if (options.type === 'feature' && typeof options.target === 'string') {
+                runnerClass = ConfigDiscovery.getRunnerForFeature(workingDir, options.target);
+            } else {
+                // Use first available runner
+                runnerClass = karateConfig.runnerClasses[0];
+            }
+
+            if (runnerClass) {
+                args.push(`-Dtest=${runnerClass}`);
+                logger.info(`Using Karate runner class: ${runnerClass}`);
+            }
+        }
 
         // Build Maven command based on execution type
         switch (options.type) {
@@ -114,14 +137,35 @@ export class BuildToolExecutor {
             args.push(`-Dkarate.threads=${options.parallel}`);
         }
 
-        // Add environment
-        if (options.environment) {
+        // Add user-configured parameters from settings
+        const execConfig = vscode.workspace.getConfiguration('karateDsl.execution');
+
+        // User system properties (take priority)
+        const systemProperties = execConfig.get<Record<string, string>>('systemProperties', {});
+        for (const [key, value] of Object.entries(systemProperties)) {
+            args.push(`-D${key}=${value}`);
+        }
+
+        // Add environment only if user hasn't set karate.env in systemProperties
+        if (options.environment && !systemProperties['karate.env']) {
             args.push(`-Dkarate.env=${options.environment}`);
+        }
+
+        // User JVM args (via -Dargline for Maven Surefire)
+        const userJvmArgs = execConfig.get<string[]>('jvmArgs', []);
+        if (userJvmArgs.length > 0) {
+            args.push(`-DargLine=${userJvmArgs.join(' ')}`);
+        }
+
+        // User Karate args (append to karate.options)
+        const userKarateArgs = execConfig.get<string[]>('karateArgs', []);
+        if (userKarateArgs.length > 0) {
+            args.push(...userKarateArgs);
         }
 
         logger.info(`Executing Maven: ${config.executable} ${args.join(' ')}`);
 
-        return this.executeCommand(config.executable, args, options.workingDirectory || '', cancellationToken);
+        return this.executeCommand(config.executable, args, workingDir, cancellationToken);
     }
 
     /**
@@ -133,6 +177,27 @@ export class BuildToolExecutor {
         cancellationToken?: vscode.CancellationToken
     ): Promise<{ success: boolean; output: string }> {
         const args = ['test'];
+        const workingDir = options.workingDirectory || '';
+
+        // Use ConfigDiscovery to find runner classes
+        const { ConfigDiscovery } = await import('./ConfigDiscovery');
+        const karateConfig = ConfigDiscovery.discover(workingDir);
+
+        // If we have runner classes, use them with --tests parameter
+        if (karateConfig.runnerClasses.length > 0) {
+            let runnerClass: string | undefined;
+
+            if (options.type === 'feature' && typeof options.target === 'string') {
+                runnerClass = ConfigDiscovery.getRunnerForFeature(workingDir, options.target);
+            } else {
+                runnerClass = karateConfig.runnerClasses[0];
+            }
+
+            if (runnerClass) {
+                args.push(`--tests`, runnerClass);
+                logger.info(`Using Karate runner class: ${runnerClass}`);
+            }
+        }
 
         // Build Gradle command based on execution type
         switch (options.type) {
@@ -165,14 +230,35 @@ export class BuildToolExecutor {
             args.push(`-Dkarate.threads=${options.parallel}`);
         }
 
-        // Add environment
-        if (options.environment) {
+        // Add user-configured parameters from settings
+        const execConfig = vscode.workspace.getConfiguration('karateDsl.execution');
+
+        // User system properties (take priority)
+        const systemProperties = execConfig.get<Record<string, string>>('systemProperties', {});
+        for (const [key, value] of Object.entries(systemProperties)) {
+            args.push(`-D${key}=${value}`);
+        }
+
+        // Add environment only if user hasn't set karate.env in systemProperties
+        if (options.environment && !systemProperties['karate.env']) {
             args.push(`-Dkarate.env=${options.environment}`);
+        }
+
+        // User JVM args
+        const userJvmArgs = execConfig.get<string[]>('jvmArgs', []);
+        if (userJvmArgs.length > 0) {
+            args.push(`-DjvmArgs=${userJvmArgs.join(' ')}`);
+        }
+
+        // User Karate args
+        const userKarateArgs = execConfig.get<string[]>('karateArgs', []);
+        if (userKarateArgs.length > 0) {
+            args.push(...userKarateArgs);
         }
 
         logger.info(`Executing Gradle: ${config.executable} ${args.join(' ')}`);
 
-        return this.executeCommand(config.executable, args, options.workingDirectory || '', cancellationToken);
+        return this.executeCommand(config.executable, args, workingDir, cancellationToken);
     }
 
     /**

@@ -4,6 +4,8 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import { OpenAPIParser } from '../services/openApiParser';
 import { KarateGenerator } from '../services/karateGenerator';
+import { FeatureStructurer, StructuringOptions } from '../services/FeatureStructurer';
+import { ReusabilityEngine } from '../services/ReusabilityEngine';
 import { ConfluenceClient } from '../services/confluenceClient';
 import { ConfluenceParser } from '../services/confluenceParser';
 import { ConfigManager } from '../utils/configManager';
@@ -17,6 +19,83 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _historyManager: any;
     private _templateManager: any;
     private _learnedStyle: any = null;
+
+    /**
+     * Process feature content through ReusabilityEngine.
+     * Extracts common patterns (auth, setup, headers, etc.) into shared feature files.
+     */
+    private applyReusability(content: string, outputPath: string): string {
+        const result = ReusabilityEngine.extract(content);
+
+        // Collect which common files the engine creates
+        const createdPaths = new Set<string>();
+
+        if (result.commonFiles.length > 0) {
+            const commonDir = ReusabilityEngine.getCommonDir(outputPath);
+
+            for (const file of result.commonFiles) {
+                const filePath = path.join(commonDir, path.basename(file.path));
+                FileUtils.writeFile(filePath, file.content);
+                createdPaths.add(path.basename(file.path));
+            }
+
+            logger.info(`ReusabilityEngine: extracted ${result.commonFiles.length} common file(s) to ${commonDir}`);
+        }
+
+        // Scan for phantom read('common/...') references from Copilot and create stubs
+        const readRefPattern = /read\(['"]common\/([^'"]+)['"]\)/g;
+        let match: RegExpExecArray | null;
+        while ((match = readRefPattern.exec(result.modifiedContent)) !== null) {
+            const refFilename = match[1];
+            if (!createdPaths.has(refFilename)) {
+                const commonDir = ReusabilityEngine.getCommonDir(outputPath);
+                const stubPath = path.join(commonDir, refFilename);
+                // Only create stub if the file doesn't already exist
+                if (!fs.existsSync(stubPath)) {
+                    const featureName = refFilename.replace('.feature', '').replace(/-/g, ' ');
+                    let steps = [
+                        '  # TODO: Implement this shared helper',
+                        `  * def result = 'placeholder'`
+                    ];
+
+                    // Smart defaults based on filename
+                    if (refFilename.includes('setup')) {
+                        steps = [
+                            "  * def baseUrl = karate.properties['baseUrl'] || 'http://localhost:8080'",
+                            '  * url baseUrl',
+                            '  * configure ssl = true'
+                        ];
+                    } else if (refFilename.includes('auth')) {
+                        steps = [
+                            "  * def token = 'mock-token-123'",
+                            "  * def authHeader = { Authorization: 'Bearer ' + token }"
+                        ];
+                    } else if (refFilename.includes('headers')) {
+                        steps = [
+                            "  * def headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' }"
+                        ];
+                    } else if (refFilename.includes('data')) {
+                        steps = [
+                            "  * def data = { id: 1, name: 'Test Item' }"
+                        ];
+                    }
+
+                    const stubContent = [
+                        `Feature: ${featureName.charAt(0).toUpperCase() + featureName.slice(1)} Helper`,
+                        '',
+                        `Scenario: ${featureName}`,
+                        ...steps,
+                        '',
+                    ].join('\n');
+                    FileUtils.writeFile(stubPath, stubContent);
+                    createdPaths.add(refFilename);
+                    logger.info(`ReusabilityEngine: created stub for phantom reference common/${refFilename}`);
+                }
+            }
+        }
+
+        return result.modifiedContent;
+    }
     private _specHashManager: SpecHashManager;
 
     constructor(private readonly _extensionUri: vscode.Uri, private readonly _context: vscode.ExtensionContext) {
@@ -57,13 +136,13 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     await this.handleSelectOpenAPIFile();
                     break;
                 case 'generateFromOpenAPI':
-                    await this.handleGenerateFromOpenAPI(data.filePath, data.useCopilot, data.templateId);
+                    await this.handleGenerateFromOpenAPI(data.filePath, data.useCopilot, data.templateId, data.scenarioTypes, data.httpMethods, data.customInstruction);
                     break;
                 case 'generateFromConfluence':
                     await this.handleGenerateFromConfluence(data.pageUrl, data.useCopilot, data.templateId);
                     break;
                 case 'generateCombined':
-                    await this.handleGenerateCombined(data.openApiPath, data.confluenceUrl, data.useCopilot, data.templateId);
+                    await this.handleGenerateCombined(data.openApiPath, data.confluenceUrl, data.useCopilot, data.templateId, data.scenarioTypes, data.httpMethods, data.customInstruction);
                     break;
                 case 'getConfig':
                     await this.sendConfig();
@@ -116,12 +195,17 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async handleGenerateFromOpenAPI(filePath: string, useCopilot: boolean, templateId?: string) {
+    private async handleGenerateFromOpenAPI(filePath: string, useCopilot: boolean, templateId?: string, scenarioTypes?: string[], httpMethods?: string[], customInstruction?: string) {
         try {
             this.sendProgress('Parsing OpenAPI specification...', 30);
 
             const parser = new OpenAPIParser();
-            const endpoints = await parser.parseSpec(filePath);
+            let endpoints = await parser.parseSpec(filePath);
+
+            // Filter by HTTP methods if specified
+            if (httpMethods && httpMethods.length > 0) {
+                endpoints = endpoints.filter(e => httpMethods.includes(e.method.toLowerCase()));
+            }
 
             this.sendProgress('Generating Karate tests...', 60);
 
@@ -135,51 +219,109 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     generator.setTemplate(template.content);
                 }
             }
+
             const specFileName = path.basename(filePath, path.extname(filePath));
-            const feature = generator.generateFromOpenAPI(endpoints, specFileName);
-            feature.background = generator.generateBackground();
-
-            let featureContent = generator.featureToString(feature);
-
-            // Copilot enhancement
-            if (useCopilot) {
-                this.sendProgress('Enhancing with GitHub Copilot...', 80);
-                const { CopilotService } = await import('../services/copilotService');
-                const isAvailable = await CopilotService.isCopilotAvailable();
-
-                if (isAvailable) {
-                    const context = `Generate comprehensive Karate API tests from OpenAPI specification: ${specFileName} with ${endpoints.length} endpoints.`;
-                    const specUri = CopilotService.createFileUri(filePath);
-
-                    featureContent = await CopilotService.enhanceTestWithFileContext(
-                        featureContent,
-                        context,
-                        'openapi',
-                        [specUri]
-                    );
-                }
-            }
-
-            // Save file
+            const strategy = ConfigManager.getStructuringStrategy();
             const outputPath = FileUtils.resolveOutputPath();
-            const outputFile = path.join(outputPath, `${specFileName}.feature`);
-            const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-            FileUtils.writeFile(uniqueFile, featureContent);
 
-            this.sendSuccess(`Generated ${endpoints.length} test scenarios`, uniqueFile, featureContent);
-            logger.info(`Generated tests: ${uniqueFile}`);
+            if (strategy !== 'flat') {
+                // Structured output: multiple domain-grouped files
+                const options: StructuringOptions = {
+                    strategy,
+                    autoTag: ConfigManager.isAutoTagEnabled(),
+                    outputRoot: outputPath
+                };
 
-            // Record history
-            await this._historyManager.addToHistory({
-                type: 'openapi',
-                source: filePath,
-                outputPath: uniqueFile,
-                template: ConfigManager.getTestTemplate()
-            });
-            await this.sendHistory();
+                const structured = generator.generateStructured(endpoints, options, scenarioTypes);
 
-            // Save metadata for AI-Powered Test Maintenance
-            await this.saveSpecMetadata(filePath, endpoints, uniqueFile);
+                // Copilot enhancement per file
+                const createdFiles: string[] = [];
+                for (const file of structured.files) {
+                    let content = file.content;
+
+                    if (useCopilot) {
+                        this.sendProgress(`Enhancing ${file.featureName} with Copilot...`, 80);
+                        const { CopilotService } = await import('../services/copilotService');
+                        const isAvailable = await CopilotService.isCopilotAvailable();
+
+                        if (isAvailable) {
+                            const typesStr = scenarioTypes?.length ? ` Scenario types: ${scenarioTypes.join(', ')}.` : '';
+                            const instrStr = customInstruction ? ` Custom instruction: ${customInstruction}` : '';
+                            const methodsStr = httpMethods?.length ? ` HTTP methods: ${httpMethods.join(', ').toUpperCase()}.` : '';
+                            const context = `Enhance Karate API tests for ${file.featureName} from OpenAPI specification: ${specFileName}.${methodsStr}${typesStr}${instrStr}`;
+                            const specUri = CopilotService.createFileUri(filePath);
+                            content = await CopilotService.enhanceTestWithFileContext(
+                                content, context, 'openapi', [specUri]
+                            );
+                        }
+                    }
+
+                    const outputFile = path.join(outputPath, file.relativePath);
+                    const uniqueFile = FileUtils.getUniqueFilename(outputFile);
+                    content = this.applyReusability(content, uniqueFile);
+                    FileUtils.writeFile(uniqueFile, content);
+                    createdFiles.push(uniqueFile);
+                }
+
+                const firstFile = createdFiles[0] || outputPath;
+                const firstContent = structured.files[0]?.content || '';
+                this.sendSuccess(
+                    `Generated ${endpoints.length} scenarios across ${createdFiles.length} domain files`,
+                    firstFile,
+                    firstContent
+                );
+                logger.info(`Generated structured tests: ${createdFiles.join(', ')}`);
+
+                // Record history for first file
+                await this._historyManager.addToHistory({
+                    type: 'openapi',
+                    source: filePath,
+                    outputPath: firstFile,
+                    template: ConfigManager.getTestTemplate()
+                });
+                await this.sendHistory();
+                await this.saveSpecMetadata(filePath, endpoints, firstFile);
+
+            } else {
+                // Flat strategy: original single-file behavior
+                const feature = generator.generateFromOpenAPI(endpoints, specFileName, scenarioTypes);
+                feature.background = generator.generateBackground();
+                let featureContent = generator.featureToString(feature);
+
+                if (useCopilot) {
+                    this.sendProgress('Enhancing with GitHub Copilot...', 80);
+                    const { CopilotService } = await import('../services/copilotService');
+                    const isAvailable = await CopilotService.isCopilotAvailable();
+
+                    if (isAvailable) {
+                        const typesStr = scenarioTypes?.length ? ` Scenario types: ${scenarioTypes.join(', ')}.` : '';
+                        const instrStr = customInstruction ? ` Custom instruction: ${customInstruction}` : '';
+                        const methodsStr = httpMethods?.length ? ` HTTP methods: ${httpMethods.join(', ').toUpperCase()}.` : '';
+                        const context = `Generate comprehensive Karate API tests from OpenAPI specification: ${specFileName} with ${endpoints.length} endpoints.${methodsStr}${typesStr}${instrStr}`;
+                        const specUri = CopilotService.createFileUri(filePath);
+                        featureContent = await CopilotService.enhanceTestWithFileContext(
+                            featureContent, context, 'openapi', [specUri]
+                        );
+                    }
+                }
+
+                const outputFile = path.join(outputPath, `${specFileName}.feature`);
+                const uniqueFile = FileUtils.getUniqueFilename(outputFile);
+                featureContent = this.applyReusability(featureContent, uniqueFile);
+                FileUtils.writeFile(uniqueFile, featureContent);
+
+                this.sendSuccess(`Generated ${endpoints.length} test scenarios`, uniqueFile, featureContent);
+                logger.info(`Generated tests: ${uniqueFile}`);
+
+                await this._historyManager.addToHistory({
+                    type: 'openapi',
+                    source: filePath,
+                    outputPath: uniqueFile,
+                    template: ConfigManager.getTestTemplate()
+                });
+                await this.sendHistory();
+                await this.saveSpecMetadata(filePath, endpoints, uniqueFile);
+            }
 
         } catch (error) {
             this.sendError((error as Error).message);
@@ -267,6 +409,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             const sanitizedTitle = page.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
             const outputFile = path.join(outputPath, `${sanitizedTitle}.feature`);
             const uniqueFile = FileUtils.getUniqueFilename(outputFile);
+            featureContent = this.applyReusability(featureContent, uniqueFile);
             FileUtils.writeFile(uniqueFile, featureContent);
 
             this.sendSuccess(`Generated ${scenarios.length} test scenarios`, uniqueFile, featureContent);
@@ -287,13 +430,18 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async handleGenerateCombined(openApiPath: string, confluenceUrl: string, useCopilot: boolean, templateId?: string) {
+    private async handleGenerateCombined(openApiPath: string, confluenceUrl: string, useCopilot: boolean, templateId?: string, scenarioTypes?: string[], httpMethods?: string[], customInstruction?: string) {
         try {
             this.sendProgress('Processing both sources...', 20);
 
             // Parse OpenAPI
             const parser = new OpenAPIParser();
-            const endpoints = await parser.parseSpec(openApiPath);
+            let endpoints = await parser.parseSpec(openApiPath);
+
+            // Filter by HTTP methods if specified
+            if (httpMethods && httpMethods.length > 0) {
+                endpoints = endpoints.filter(e => httpMethods.includes(e.method.toLowerCase()));
+            }
 
             // Fetch Confluence
             let pageId = confluenceUrl.trim();
@@ -327,73 +475,133 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
 
             // Generate scenarios from BOTH sources
             const specFileName = path.basename(openApiPath, path.extname(openApiPath));
-            const openApiScenarios = generator.generateFromOpenAPI(endpoints, specFileName).scenarios;
+            const openApiScenarios = generator.generateFromOpenAPI(endpoints, specFileName, scenarioTypes).scenarios;
             const confluenceScenarios = this.createScenariosFromConfluence(testData);
-
-            // Merge: Confluence requirements first, then the rest of the API surface
             const mergedScenarios = [...confluenceScenarios, ...openApiScenarios];
 
-            const feature = {
-                name: `${specFileName} - ${page.title}`,
-                description: `Combined AI tests: OpenAPI (${specFileName}) + Confluence (${page.title})`,
-                scenarios: mergedScenarios,
-                background: generator.generateBackground()
-            };
+            const strategy = ConfigManager.getStructuringStrategy();
+            const outputPath = FileUtils.resolveOutputPath();
+            const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
 
-            let featureContent = generator.featureToString(feature as any);
+            if (strategy !== 'flat') {
+                // Structured output: domain-grouped files with combined naming
+                const options: StructuringOptions = {
+                    strategy,
+                    autoTag: ConfigManager.isAutoTagEnabled(),
+                    outputRoot: outputPath
+                };
 
-            // Copilot enhancement
-            if (useCopilot) {
-                this.sendProgress('Enhancing with GitHub Copilot...', 80);
-                const { CopilotService } = await import('../services/copilotService');
-                const isAvailable = await CopilotService.isCopilotAvailable();
+                const structured = FeatureStructurer.structureCombined(
+                    mergedScenarios, endpoints, confluenceContent, options
+                );
 
-                if (isAvailable) {
-                    let tempUri: vscode.Uri | null = null;
-                    try {
-                        const files: vscode.Uri[] = [];
-                        const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
-                        const context = `Generate comprehensive Karate API tests combining OpenAPI specification with Confluence documentation: ${specFileName} + ${page.title}.`;
+                const createdFiles: string[] = [];
+                for (const file of structured.files) {
+                    let content = file.content;
 
-                        // Attach OpenAPI spec file
-                        files.push(CopilotService.createFileUri(openApiPath));
+                    if (useCopilot) {
+                        this.sendProgress(`Enhancing ${file.featureName} with Copilot...`, 80);
+                        const { CopilotService } = await import('../services/copilotService');
+                        const isAvailable = await CopilotService.isCopilotAvailable();
 
-                        // Create temp file for Confluence content
-                        tempUri = await CopilotService.createTempFile(confluenceContent, '.html');
-                        files.push(tempUri);
+                        if (isAvailable) {
+                            let tempUri: vscode.Uri | null = null;
+                            try {
+                                const files: vscode.Uri[] = [CopilotService.createFileUri(openApiPath)];
+                                tempUri = await CopilotService.createTempFile(confluenceContent, '.html');
+                                files.push(tempUri);
 
-                        featureContent = await CopilotService.enhanceTestWithFileContext(
-                            featureContent,
-                            context,
-                            'confluence',
-                            files
-                        );
-                    } finally {
-                        if (tempUri) {
-                            await CopilotService.cleanupTempFiles();
+                                const typesStr = scenarioTypes?.length ? ` Scenario types: ${scenarioTypes.join(', ')}.` : '';
+                                const instrStr = customInstruction ? ` Custom instruction: ${customInstruction}` : '';
+                                const methodsStr = httpMethods?.length ? ` HTTP methods: ${httpMethods.join(', ').toUpperCase()}.` : '';
+                                const context = `Enhance Karate API tests for ${file.featureName} combining OpenAPI + Confluence: ${specFileName} + ${page.title}.${methodsStr}${typesStr}${instrStr}`;
+                                content = await CopilotService.enhanceTestWithFileContext(
+                                    content, context, 'combined', files
+                                );
+                            } finally {
+                                if (tempUri) { await CopilotService.cleanupTempFiles(); }
+                            }
+                        }
+                    }
+
+                    const outputFile = path.join(outputPath, file.relativePath);
+                    const uniqueFile = FileUtils.getUniqueFilename(outputFile);
+                    content = this.applyReusability(content, uniqueFile);
+                    FileUtils.writeFile(uniqueFile, content);
+                    createdFiles.push(uniqueFile);
+                }
+
+                const firstFile = createdFiles[0] || outputPath;
+                const firstContent = structured.files[0]?.content || '';
+                this.sendSuccess(
+                    `Generated ${mergedScenarios.length} combined scenarios across ${createdFiles.length} domain files`,
+                    firstFile,
+                    firstContent
+                );
+                logger.info(`Generated structured combined tests: ${createdFiles.join(', ')}`);
+
+                await this._historyManager.addToHistory({
+                    type: 'combined',
+                    source: openApiPath,
+                    secondarySource: confluenceUrl,
+                    outputPath: firstFile,
+                    template: ConfigManager.getTestTemplate()
+                });
+                await this.sendHistory();
+
+            } else {
+                // Flat strategy: original single-file behavior
+                const feature = {
+                    name: `${specFileName} - ${page.title}`,
+                    description: `Combined AI tests: OpenAPI (${specFileName}) + Confluence (${page.title})`,
+                    scenarios: mergedScenarios,
+                    background: generator.generateBackground()
+                };
+
+                let featureContent = generator.featureToString(feature as any);
+
+                if (useCopilot) {
+                    this.sendProgress('Enhancing with GitHub Copilot...', 80);
+                    const { CopilotService } = await import('../services/copilotService');
+                    const isAvailable = await CopilotService.isCopilotAvailable();
+
+                    if (isAvailable) {
+                        let tempUri: vscode.Uri | null = null;
+                        try {
+                            const files: vscode.Uri[] = [CopilotService.createFileUri(openApiPath)];
+                            tempUri = await CopilotService.createTempFile(confluenceContent, '.html');
+                            files.push(tempUri);
+
+                            const typesStr = scenarioTypes?.length ? ` Scenario types: ${scenarioTypes.join(', ')}.` : '';
+                            const instrStr = customInstruction ? ` Custom instruction: ${customInstruction}` : '';
+                            const methodsStr = httpMethods?.length ? ` HTTP methods: ${httpMethods.join(', ').toUpperCase()}.` : '';
+                            const context = `Generate comprehensive Karate API tests combining OpenAPI specification with Confluence documentation: ${specFileName} + ${page.title}.${methodsStr}${typesStr}${instrStr}`;
+                            featureContent = await CopilotService.enhanceTestWithFileContext(
+                                featureContent, context, 'confluence', files
+                            );
+                        } finally {
+                            if (tempUri) { await CopilotService.cleanupTempFiles(); }
                         }
                     }
                 }
+
+                const outputFile = path.join(outputPath, `${specFileName}_combined.feature`);
+                const uniqueFile = FileUtils.getUniqueFilename(outputFile);
+                featureContent = this.applyReusability(featureContent, uniqueFile);
+                FileUtils.writeFile(uniqueFile, featureContent);
+
+                this.sendSuccess(`Generated ${mergedScenarios.length} combined test scenarios`, uniqueFile, featureContent);
+                logger.info(`Generated combined tests: ${uniqueFile}`);
+
+                await this._historyManager.addToHistory({
+                    type: 'combined',
+                    source: openApiPath,
+                    secondarySource: confluenceUrl,
+                    outputPath: uniqueFile,
+                    template: ConfigManager.getTestTemplate()
+                });
+                await this.sendHistory();
             }
-
-            // Save file
-            const outputPath = FileUtils.resolveOutputPath();
-            const outputFile = path.join(outputPath, `${specFileName}_combined.feature`);
-            const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-            FileUtils.writeFile(uniqueFile, featureContent);
-
-            this.sendSuccess(`Generated ${mergedScenarios.length} combined test scenarios`, uniqueFile, featureContent);
-            logger.info(`Generated combined tests: ${uniqueFile}`);
-
-            // Record history
-            await this._historyManager.addToHistory({
-                type: 'combined',
-                source: openApiPath,
-                secondarySource: confluenceUrl,
-                outputPath: uniqueFile,
-                template: ConfigManager.getTestTemplate()
-            });
-            await this.sendHistory();
 
         } catch (error) {
             this.sendError((error as Error).message);
@@ -715,6 +923,29 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                         <span>🤖 AI Enhancement (Copilot)</span>
                     </label>
                 </div>
+                <div class="form-group">
+                    <label class="control-section-label">Scenario Types</label>
+                    <div class="checkbox-grid">
+                        <label class="checkbox-label compact"><input type="checkbox" id="openapi-type-positive" checked><span>✅ Positive</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="openapi-type-negative" checked><span>❌ Negative</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="openapi-type-edge" checked><span>🔲 Edge Cases</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="openapi-type-security"><span>🔒 Security</span></label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="control-section-label">HTTP Methods</label>
+                    <div class="checkbox-grid">
+                        <label class="checkbox-label compact"><input type="checkbox" id="openapi-method-get" checked><span>GET</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="openapi-method-post" checked><span>POST</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="openapi-method-put" checked><span>PUT</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="openapi-method-delete" checked><span>DELETE</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="openapi-method-patch" checked><span>PATCH</span></label>
+                    </div>
+                </div>
+                <div class="form-group copilot-only-section">
+                    <label class="control-section-label">Custom Instruction <span class="badge-small">Copilot</span></label>
+                    <textarea id="openapi-custom-instruction" rows="2" placeholder="e.g., Focus on payment retry scenarios"></textarea>
+                </div>
             </div>
 
             <button class="primary-button" id="generate-openapi-btn">
@@ -804,6 +1035,29 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                         <span>🤖 AI Enhancement (Copilot)</span>
                     </label>
                 </div>
+                <div class="form-group">
+                    <label class="control-section-label">Scenario Types</label>
+                    <div class="checkbox-grid">
+                        <label class="checkbox-label compact"><input type="checkbox" id="combined-type-positive" checked><span>✅ Positive</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="combined-type-negative" checked><span>❌ Negative</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="combined-type-edge" checked><span>🔲 Edge Cases</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="combined-type-security"><span>🔒 Security</span></label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="control-section-label">HTTP Methods</label>
+                    <div class="checkbox-grid">
+                        <label class="checkbox-label compact"><input type="checkbox" id="combined-method-get" checked><span>GET</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="combined-method-post" checked><span>POST</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="combined-method-put" checked><span>PUT</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="combined-method-delete" checked><span>DELETE</span></label>
+                        <label class="checkbox-label compact"><input type="checkbox" id="combined-method-patch" checked><span>PATCH</span></label>
+                    </div>
+                </div>
+                <div class="form-group copilot-only-section">
+                    <label class="control-section-label">Custom Instruction <span class="badge-small">Copilot</span></label>
+                    <textarea id="combined-custom-instruction" rows="2" placeholder="e.g., Include validation for business rules"></textarea>
+                </div>
             </div>
 
             <button class="primary-button" id="generate-combined-btn">
@@ -815,17 +1069,68 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         <div class="tab-content" id="help-tab">
             <div class="card">
                 <div class="card-header">
+                    <span class="card-icon">🧪</span>
+                    <span class="card-title">Running Tests</span>
+                </div>
+                <div class="help-section">
+                    <p><strong>Run directly from the editor:</strong></p>
+                    <ul>
+                        <li><strong>▶ Run Feature:</strong> Click the CodeLens above any <code>Feature:</code> line to run the entire feature.</li>
+                        <li><strong>▶ Run Scenario:</strong> Click the CodeLens above any <code>Scenario:</code> line to run a single scenario.</li>
+                        <li><strong>Testing Sidebar:</strong> All <code>.feature</code> files appear in the VS Code Testing tab. Run any combination from there.</li>
+                        <li><strong>Run Folder / Tags:</strong> Use Command Palette → <code>Karate: Run Folder</code> or <code>Karate: Run by Tags</code>.</li>
+                    </ul>
+                    <p><strong>Build Tools:</strong> Supports <code>CLI</code> (standalone JAR), <code>Maven</code>, and <code>Gradle</code>. Set via <code>karateDsl.execution.defaultBuildTool</code>.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">⚙️</span>
+                    <span class="card-title">Custom Execution Parameters</span>
+                </div>
+                <div class="help-section">
+                    <p>Control how tests run via VS Code Settings (<code>Cmd+,</code>):</p>
+                    <ul>
+                        <li><strong>System Properties:</strong> <code>karateDsl.execution.systemProperties</code> — pass <code>-D</code> flags like <code>{"karate.env": "local"}</code></li>
+                        <li><strong>JVM Args:</strong> <code>karateDsl.execution.jvmArgs</code> — e.g., <code>["-Xmx1g"]</code></li>
+                        <li><strong>Karate Args:</strong> <code>karateDsl.execution.karateArgs</code> — e.g., <code>["--threads", "5"]</code></li>
+                    </ul>
+                    <p><strong>Priority:</strong> Your <code>systemProperties</code> always override auto-detected defaults.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🔍</span>
+                    <span class="card-title">Config Discovery</span>
+                </div>
+                <div class="help-section">
+                    <p>The extension automatically discovers your project setup:</p>
+                    <ul>
+                        <li><strong>karate-config.js:</strong> Found via workspace-wide search — no hardcoded paths needed.</li>
+                        <li><strong>Runner Classes:</strong> Java test runners are auto-detected for classpath.</li>
+                        <li><strong>LLM Suggestions:</strong> Copilot analyzes your project and suggests optimal classpath and JVM args.</li>
+                        <li><strong>Manual Override:</strong> Use <code>karateDsl.execution.configPath</code> to set an explicit path.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
                     <span class="card-icon">🤖</span>
                     <span class="card-title">Copilot Integration</span>
                 </div>
                 <div class="help-section">
-                    <p><strong>Available Features:</strong></p>
+                    <p><strong>AI-enhanced features:</strong></p>
                     <ul>
-                        <li><strong>Enhance Tests:</strong> Select "AI Enhancement" before generating to get improved assertions, negative scenarios, and better data.</li>
-                        <li><strong>Coverage Dashboard:</strong> Use AI to analyze coverage and suggest missing tests.</li>
-                        <li><strong>Postman Import:</strong> Intelligent conversion of scripts to Karate assertions.</li>
+                        <li><strong>Enhance Tests:</strong> Select "AI Enhancement" before generating for smarter assertions, edge cases, and realistic data.</li>
+                        <li><strong>Coverage Dashboard:</strong> AI analyzes coverage gaps and suggests missing test scenarios.</li>
+                        <li><strong>Postman Import:</strong> Intelligent conversion of pre-request scripts to Karate assertions.</li>
+                        <li><strong>HAR Import:</strong> AI enriches imported traffic with schema validation and error scenarios.</li>
+                        <li><strong>Select Model:</strong> Command Palette → <code>Karate: Select Copilot Model</code> to choose your preferred model.</li>
                     </ul>
-                    <p><strong>Note:</strong> Copilot requires an active subscription and the VS Code Copilot extension.</p>
+                    <p><strong>Note:</strong> Requires an active GitHub Copilot subscription and the VS Code Copilot extension.</p>
                 </div>
             </div>
 
@@ -835,9 +1140,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     <span class="card-title">OpenAPI Generation</span>
                 </div>
                 <div class="help-section">
-                    <p>1. Go to the <strong>OpenAPI</strong> tab.</p>
-                    <p>2. Select your <code>.json</code> or <code>.yaml</code> spec file.</p>
-                    <p>3. (Optional) Check "AI Enhancement" for smarter tests.</p>
+                    <p>1. Go to the <strong>OpenAPI</strong> tab or right-click a spec file in the Explorer.</p>
+                    <p>2. Select your <code>.json</code>, <code>.yaml</code>, or <code>.yml</code> spec file.</p>
+                    <p>3. (Optional) Check "AI Enhancement" for Copilot-powered tests.</p>
                     <p>4. Click <strong>Generate Tests</strong>.</p>
                 </div>
             </div>
@@ -863,10 +1168,25 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     <span class="card-title">Postman Import</span>
                 </div>
                 <div class="help-section">
-                    <p>Convert collections directly from the explorer:</p>
-                    <p>1. Right-click a <code>.json</code> Postman collection.</p>
+                    <p>Convert Postman collections to Karate feature files:</p>
+                    <p>1. Right-click a <code>.json</code> Postman collection in the Explorer.</p>
                     <p>2. Select <strong>Karate: Import Postman Collection</strong>.</p>
-                    <p>3. If an environment file exists nearby, it will be auto-detected.</p>
+                    <p>3. Environment files nearby are auto-detected.</p>
+                    <p>Variables, pre-request scripts, and test assertions are all converted.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📥</span>
+                    <span class="card-title">HAR File Import</span>
+                </div>
+                <div class="help-section">
+                    <p>Convert real API traffic into Karate tests:</p>
+                    <p>1. Export a <code>.har</code> file from Chrome/Firefox DevTools (Network tab → Export HAR).</p>
+                    <p>2. Command Palette → <strong>Karate: Import HAR File</strong>.</p>
+                    <p>3. Select requests to convert — filter by domain, method, or status code.</p>
+                    <p>Copilot adds assertions, schema checks, and error scenarios automatically.</p>
                 </div>
             </div>
 
@@ -877,22 +1197,22 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 </div>
                 <div class="help-section">
                     <p>The extension watches your OpenAPI files for changes.</p>
-                    <p>When you save a change to a spec, a notification will appear offering to <strong>Update with Copilot</strong>. This preserves your custom logic while adding new fields/endpoints.</p>
+                    <p>When you save a change to a spec, a notification will appear offering to <strong>Update with Copilot</strong>. This preserves your custom logic while adding new endpoints and fields.</p>
                 </div>
             </div>
 
             <div class="card">
                 <div class="card-header">
-                    <span class="card-icon">⚙️</span>
-                    <span class="card-title">Settings Configuration</span>
+                    <span class="card-icon">🩺</span>
+                    <span class="card-title">Project Health Doctor</span>
                 </div>
                 <div class="help-section">
-                    <p>Customize the extension behavior in the <strong>Settings</strong> tab:</p>
+                    <p>Real-time code quality analysis for your Karate project:</p>
                     <ul>
-                        <li><strong>Output Path:</strong> Destination folder for generated tests (default: <code>src/test/java/karate</code>).</li>
-                        <li><strong>Test Template:</strong> Choose between standard or custom templates.</li>
-                        <li><strong>Confluence:</strong> Set Base URL, Email, and API Token for docs integration.</li>
-                        <li><strong>Copilot:</strong> Enable/Disable Copilot globally.</li>
+                        <li><strong>Linter:</strong> Catches hardcoded URLs, duplicate scenarios, indentation issues as you type.</li>
+                        <li><strong>Security Scanner:</strong> Detects missing auth tests and hardcoded secrets.</li>
+                        <li><strong>Quick Fixes:</strong> One-click auto-fixes for common issues.</li>
+                        <li><strong>Health Dashboard:</strong> Visualize project structure and dependencies.</li>
                     </ul>
                 </div>
             </div>
@@ -900,15 +1220,30 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             <div class="card">
                 <div class="card-header">
                     <span class="card-icon">⚡</span>
-                    <span class="card-title">Quick Imports</span>
+                    <span class="card-title">Quick Actions</span>
                 </div>
                 <div class="help-section">
-                    <p><strong>From Explorer:</strong> Right-click any file to see options:</p>
+                    <p><strong>From Explorer:</strong> Right-click any file to see available actions:</p>
                     <ul>
                         <li><code>.json/.yaml</code> (OpenAPI): Generate Karate Tests</li>
                         <li><code>.json</code> (Postman): Import Postman Collection</li>
+                        <li><code>.har</code>: Import HAR File</li>
                         <li><code>.feature</code>: Learn Style from File</li>
                     </ul>
+                    <p><strong>From Command Palette:</strong> <code>Cmd+Shift+P</code> → type "Karate" to see all commands.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🏗️</span>
+                    <span class="card-title">Enterprise Features (v1.4.0)</span>
+                </div>
+                <div class="help-section">
+                    <p><strong>Precision Controls:</strong> In OpenAPI & Combined tabs, use checkboxes to filter by scenario type (positive, negative, edge, security) and HTTP method (GET, POST, PUT, DELETE, PATCH). Add free-text instructions for Copilot.</p>
+                    <p><strong>Structuring Strategies:</strong> Set <code>karateDsl.generation.structuringStrategy</code> to <code>domain</code> (default — groups by API domain), <code>flat</code> (single file), or <code>method</code> (groups by HTTP verb).</p>
+                    <p><strong>Smart Reusability:</strong> Generated tests are auto-analyzed for repeated patterns (auth, setup, headers). Common steps are extracted to <code>common/</code> feature files with <code>call</code>/<code>callonce</code>.</p>
+                    <p><strong>Agent Skills:</strong> Copilot prompts are hardened with 4 skill files for Karate DSL expertise, preventing hallucinations and enforcing best practices.</p>
                 </div>
             </div>
         </div>

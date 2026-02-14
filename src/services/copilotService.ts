@@ -382,46 +382,38 @@ Process the rest of the request and provide the Karate test code.`;
                 }
             }
 
-            // Comprehensive instruction prompt
-            const instructionPrompt = `${contextInfo}
+            // Get skill knowledge base
+            const contextType = fullContext?.type || 'general';
+            const skillContext = await AgentSkillsService.buildSkillContextForPrompt(contextType);
+
+            // Hardened instruction prompt
+            const instructionPrompt = `${contextInfo}${skillContext}
 
 OBJECTIVE: Transform the Karate test above into a RELIABLE, QA-FOCUSED test suite.
 
-STRICT GUIDELINES:
-1. **NO HALLUCINATIONS**: Do NOT invent fields, endpoints, or data not present in the content provided.
-2. **SAFE VALIDATION ONLY**: Focus on standard functional testing. Do NOT include "attack" vectors, "injection" tests, or "penetration" testing patterns.
+CRITICAL RULES — STRICT COMPLIANCE REQUIRED:
+1. **ZERO HALLUCINATION**: Use ONLY endpoints, fields, and data types present in the provided spec/docs. Any field NOT in the input MUST NOT appear in the output.
+2. **KARATE DSL ONLY**: Use correct Karate syntax — match, def, call, callonce, read, #() expressions, type markers (#string, #number, #boolean, #present, #null).
+3. **REUSABILITY**: If auth/setup steps repeat across scenarios, extract to callonce read('common/auth.feature'). Use Background for shared URL, auth, and headers.
+4. **NO ATTACK PATTERNS**: No SQL injection, XSS, or penetration testing patterns. Use functional negative testing only (empty values, missing fields, boundary values).
 
 REQUIREMENTS:
+1. **Background**: url, auth (callonce), common headers — 3-5 lines max.
+2. **Status Codes**: Assert every request with Then status <code>.
+3. **Schema Validation**: match response == { field: '#type' } using spec-defined fields only.
+4. **Negative Scenarios**: Missing required fields, invalid formats, boundary values.
+5. **Tags**: @positive, @negative, @edge on each scenario.
+6. **Descriptive Names**: "GET /orders returns paginated list" not "Test 1".
+7. **Scenario Outline**: Use for data-driven variations with Examples table.
 
-1. **Variable Management**:
-   - Extract reusable values to variables.
-   - Use proper #(varName) syntax.
-   - Define base URLs and common headers.
+BEFORE RETURNING, VERIFY:
+- Every endpoint path exists in the provided spec
+- Every response field matches the spec schema
+- No duplicate auth/setup blocks (use call/callonce)
+- All scenarios have descriptive names
+- Status code assertions are present in every scenario
 
-2. **Core Validations**:
-   - Status codes: Standard success (2xx) and error (4xx/5xx) checks.
-   - Schema validation: Match response structure.
-   - Type checks: #string, #number, #boolean.
-
-3. **Data Integrity**:
-   - Null/presence validation: #present, #null.
-   - Basic pattern matching: Email formats, dates.
-   - Array validations: Length checks, iteration.
-
-4. **Negative Scenarios (Functional)**:
-   - Invalid data formats (e.g., text in number fields).
-   - Missing required fields.
-   - Boundary values (min/max).
-
-5. **Best Practices**:
-   - Descriptive scenario names.
-   - Proper indentation.
-   - Scenario Outlines for data-driven tests.
-
-OUTPUT FORMAT:
-- Return the COMPLETE enhanced Karate feature file.
-- NO explanations, NO markdown code blocks.
-- Just the pure Karate DSL content.
+OUTPUT: Return the COMPLETE enhanced Karate feature file. NO explanations, NO markdown code blocks. Pure Karate DSL only.
 
 Enhance the test now:`;
 
@@ -464,7 +456,7 @@ Enhance the test now:`;
 
     /**
      * Enhance Karate test with comprehensive Copilot suggestions
-     * Includes edge cases, corner cases, race conditions, and proper formatting
+     * Includes edge cases, corner cases, and proper formatting
      */
     static async enhanceKarateTestComprehensive(
         featureContent: string,
@@ -500,67 +492,73 @@ Enhance the test now:`;
                 }
             }
 
-            // Ultra-comprehensive instruction prompt
-            const instructionPrompt = `${contextInfo}
+            // Get skill knowledge base
+            const contextType = fullContext?.type || 'general';
+            const skillContext = await AgentSkillsService.buildSkillContextForPrompt(contextType);
+
+            // Hardened comprehensive instruction prompt
+            const instructionPrompt = `${contextInfo}${skillContext}
 
 OBJECTIVE: Transform the Karate test above into an ENTERPRISE-GRADE, PRODUCTION-READY test suite.
 
-STRICT ANTI-HALLUCINATION RULES:
-1. **Adhere to Context**: Use ONLY endpoints, fields, and data structures present in the provided Open API spec / Documentation.
-2. **No Invention**: Do NOT create new API paths or fictitious response fields.
+CRITICAL RULES — ABSOLUTE COMPLIANCE:
+1. **ZERO HALLUCINATION**: Use ONLY endpoints, paths, fields, and schemas from the provided spec/docs. Do NOT invent ANY endpoint, field, or data structure.
+2. **KARATE DSL PRECISION**: Use correct syntax — match (not assert for JSON), def, call, callonce, embedded expressions #(), type markers #string/#number/#boolean/#present/#null.
+3. **REUSABILITY FIRST**: Extract auth to callonce read('common/auth.feature'). Shared headers/config in Background. No duplicate setup across scenarios.
+4. **NO ATTACK PATTERNS**: Functional negative testing only — empty values, missing fields, boundary values. No SQLi/XSS.
 
 COMPREHENSIVE REQUIREMENTS:
 
 1. **Test Architecture**:
-   - Use Background for setup.
-   - Proper tagging (@smoke, @regression).
-   - Scenario Outlines for data variations.
+   - Background: url, auth (callonce), common headers — minimal, 3-5 lines
+   - Tags: @positive, @negative, @edge, @boundary, @smoke on each scenario
+   - Scenario Outlines with Examples tables for data-driven variations
 
-2. **HTTP Status Coverage**:
-   - Success (2xx) and Standard Error (4xx/5xx) scenarios.
-   - Validate strict status codes.
+2. **Status Code Coverage**:
+   - Every request MUST have Then status <code>
+   - Success (2xx), Client Error (4xx), Server Error (5xx) scenarios
 
-3. **Deep Schema Validation**:
-   - Complete structure matching: And match response == { ... }
-   - Strict type enforcement: #string, #number.
-   - Optional vs Mandatory field checks.
+3. **Schema Validation (spec-grounded)**:
+   - match response == { ... } using ONLY fields from spec schema
+   - Type markers: #string, #number, #boolean, ##string (optional)
+   - Array validation: #[] #object, match each
 
 4. **Data Validation**:
-   - Value constraints (min, max).
-   - Regex patterns for standard formats (UUID, Date, Email).
-   - Enum validation where known.
+   - Boundary values (min/max from spec constraints)
+   - Regex for documented formats (UUID, date, email)
+   - Enum validation using #? _ == 'val1' || _ == 'val2'
 
 5. **Business Logic & Workflow**:
-   - State transitions (if documented).
-   - CRUD lifecycle where applicable.
-   - Data dependencies (creating parent before child).
+   - CRUD lifecycle (create → read → update → delete → verify deleted)
+   - Data dependencies (create parent before child)
 
 6. **Edge Cases**:
-   - Empty collections/arrays.
-   - Boundary values (0, empty strings).
-   - Special characters handling (UTF-8).
-   - Null value handling.
+   - Empty arrays/collections
+   - Boundary values (0, empty string, max length)
+   - Null handling with ##type markers
 
-7. **Safe Negative Testing**:
-   - Malformed data formats.
-   - Missing headers/required params.
-   - Invalid IDs.
-   - NOTE: Do NOT provoke security alerts (avoid SQLi/XSS patterns).
+7. **Negative Testing (Functional)**:
+   - Missing required fields → 400
+   - Invalid data formats → 400
+   - Non-existent resource IDs → 404
+   - Unauthorized access → 401/403
 
-8. **Performance**:
-   - Reasonable response time assertions.
+8. **Performance**: assert responseTime < 3000
 
-9. **Quality & Maintainability**:
-   - Clear, intent-based scenario names.
-   - Reusable functions for repeated logic.
-   - Readable formatting (4-space indent).
+9. **Quality**:
+   - Descriptive scenario names: "POST /orders with missing product name returns 400"
+   - 4-space indentation, clean formatting
+   - callonce for auth/setup, call for per-scenario helpers
 
-CRITICAL OUTPUT FORMAT:
-- Return COMPLETE enhanced Karate feature file.
-- Start with Feature: [description].
-- Multiple comprehensive Scenario blocks.
-- NO explanations, NO markdown blocks.
-- Pure Karate DSL only.
+BEFORE RETURNING, VERIFY:
+- Every endpoint path exists in the provided spec
+- Every response field matches the spec schema exactly
+- No duplicate auth/setup blocks (use callonce in Background)
+- All scenarios have intent-based descriptive names
+- Status code assertions present in every scenario
+- Tags (@positive/@negative/@edge) on every scenario
+
+OUTPUT: Return COMPLETE enhanced Karate feature file. Start with Feature: [description]. NO explanations, NO markdown blocks. Pure Karate DSL only.
 
 Transform the test now:`;
 
@@ -630,9 +628,12 @@ Transform the test now:`;
                 ? `\n\nAdditional Requirements:\n${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}`
                 : '';
 
+            // Get skill knowledge base for grounded generation
+            const skillContext = await AgentSkillsService.buildSkillContextForPrompt('general');
+
             const messages = [
                 vscode.LanguageModelChatMessage.User(
-                    `You are an expert in API testing with Karate DSL. 
+                    `You are an expert in API testing with Karate DSL.${skillContext}
 
 API Endpoint: ${apiEndpoint}
 
@@ -641,14 +642,21 @@ Existing Test:
 ${existingFeature}
 \`\`\`${requirementsText}
 
-Generate 3-5 additional test scenarios that cover:
-- Edge cases (empty values, null, invalid data)
-- Error handling (404, 400, 500 responses)
-- Auth scenarios (authentication, authorization)
-- Performance considerations
-- Data validation
+CRITICAL RULES:
+1. ZERO HALLUCINATION: Only use the endpoint path, fields, and schemas visible in the existing test above. Do NOT invent new endpoints or response fields.
+2. Use correct Karate DSL syntax: match, def, #string, #number, #boolean, #present, #null.
+3. Add @negative, @edge, @boundary tags to each scenario.
+4. Use descriptive scenario names: "POST ${apiEndpoint} with missing required field returns 400".
+5. Do NOT include SQL injection, XSS, or attack patterns. Use functional negative testing only.
 
-Return ONLY the Scenario blocks (not the full feature file), one per line, in Karate DSL format.`
+Generate 3-5 additional test scenarios covering:
+- Negative cases: missing required fields, invalid data formats → 400
+- Edge cases: empty values, boundary values (0, max length) → 400
+- Not found: non-existent resource IDs → 404
+- Unauthorized: missing/invalid auth → 401/403
+- Data validation: type mismatches, enum violations
+
+Return ONLY the Scenario blocks (not the full feature file) in pure Karate DSL format. No markdown, no explanations.`
                 )
             ];
 
@@ -796,7 +804,7 @@ Return suggestions as a numbered list, one per line.`
     static async enhanceTestWithFileContext(
         featureContent: string,
         context: string,
-        contextType: 'openapi' | 'postman' | 'confluence' | 'coverage' | 'general',
+        contextType: 'openapi' | 'postman' | 'confluence' | 'combined' | 'coverage' | 'general',
         files: vscode.Uri[] = []
     ): Promise<string> {
         try {
@@ -808,19 +816,10 @@ Return suggestions as a numbered list, one per line.`
 
             logger.info(`Enhancing test with file-based context (${contextType}) and Agent Skills`);
 
+            // Build comprehensive skill context
+            const fullSkillContext = await AgentSkillsService.buildSkillContextForPrompt(contextType);
+
             const messages: vscode.LanguageModelChatMessage[] = [];
-
-            // Build Agent Skills context
-            const skillsAvailable = await AgentSkillsService.isAgentSkillsAvailable();
-            let skillContext = '';
-
-            if (skillsAvailable) {
-                const relevantSkills = await AgentSkillsService.suggestRelevantSkills({ type: contextType });
-                if (relevantSkills.length > 0) {
-                    skillContext = AgentSkillsService.buildSkillContext(relevantSkills);
-                    logger.info(`Using Agent Skills: ${relevantSkills.join(', ')}`);
-                }
-            }
 
             // Check total file size to determine approach
             let totalSizeKB = 0;
@@ -849,7 +848,7 @@ Return suggestions as a numbered list, one per line.`
 
             if (USE_MULTIPART) {
                 logger.info(`Large file size detected (${totalSizeKB.toFixed(1)}KB) - using multi-part approach`);
-                return await this.enhanceWithMultiPart(featureContent, context, fileContents, skillContext, contextType);
+                return await this.enhanceWithMultiPart(featureContent, context, fileContents, fullSkillContext, contextType);
             }
 
             // Small files: Single request approach
@@ -860,7 +859,7 @@ Return suggestions as a numbered list, one per line.`
 
             // Include file contents
             if (fileContents.length > 0) {
-                promptText += '=== ATTACHED FILES ===\n\n';
+                promptText += '=== SOURCE FILES (use ONLY these for generation) ===\n\n';
 
                 for (const file of fileContents) {
                     promptText += `📄 File: ${file.fileName} (${file.sizeKB.toFixed(1)}KB)\n`;
@@ -869,15 +868,14 @@ Return suggestions as a numbered list, one per line.`
                     promptText += '\n```\n\n';
                 }
 
-                promptText += '=== END OF ATTACHED FILES ===\n\n';
+                promptText += '=== END SOURCE FILES ===\n\n';
             }
 
-            if (skillContext) {
-                promptText += skillContext + '\n';
+            if (fullSkillContext) {
+                promptText += fullSkillContext + '\n';
             }
 
-            promptText += `Karate Test to Enhance:\n${featureContent}\n\n`;
-            promptText += 'OUTPUT: Return the COMPLETE enhanced Karate feature file. NO explanations, NO markdown blocks.';
+            promptText += `Karate Test to Enhance:\n${featureContent}\n\nCRITICAL: Use ONLY endpoints, fields, and schemas from the source files above. Do NOT invent any endpoint or field not present in the source. Use correct Karate DSL: match, def, call, callonce, #string, #number, #boolean. Extract repeated auth/setup to callonce. Add @positive/@negative/@edge tags.\n\nBEFORE RETURNING, VERIFY: Every endpoint and field exists in the source files. No duplicate auth blocks. Status assertions in every scenario.\n\nOUTPUT: Return the COMPLETE enhanced Karate feature file. NO explanations, NO markdown blocks.`;
 
             messages.push(vscode.LanguageModelChatMessage.User(promptText));
 
@@ -933,24 +931,29 @@ Return suggestions as a numbered list, one per line.`
         try {
             const messages: vscode.LanguageModelChatMessage[] = [];
 
-            // Turn 1: Send context and Agent Skills
+            // Turn 1: Send context, skill knowledge, and rules
             let turn1 = `${context}\n\n`;
             if (skillContext) {
                 turn1 += skillContext + '\n\n';
             }
-            turn1 += 'I will send you file contents in the next messages. Please analyze them.';
+            turn1 += 'CRITICAL RULES for this session:\n';
+            turn1 += '1. ZERO HALLUCINATION: Use ONLY endpoints, fields, and schemas from the files I will send. Do NOT invent anything.\n';
+            turn1 += '2. KARATE DSL: Use correct syntax — match, def, call, callonce, #string, #number, #boolean, #present, #null.\n';
+            turn1 += '3. REUSABILITY: Extract auth to callonce, shared config in Background.\n';
+            turn1 += '4. TAGS: @positive, @negative, @edge on each scenario.\n\n';
+            turn1 += 'I will send you source files in the next messages. Analyze them for endpoints, schemas, and fields.';
             messages.push(vscode.LanguageModelChatMessage.User(turn1));
-            messages.push(vscode.LanguageModelChatMessage.Assistant('I understand. Please send the file contents.'));
+            messages.push(vscode.LanguageModelChatMessage.Assistant('I understand the rules. I will use ONLY the endpoints, fields, and schemas from your files. I will use correct Karate DSL syntax with proper tags and reusability. Please send the files.'));
 
             // Turn 2+: Send file contents (chunk if multiple files)
             for (const file of fileContents) {
-                const fileMessage = `📄 File: ${file.fileName} (${file.sizeKB.toFixed(1)}KB)\n\`\`\`\n${file.content}\n\`\`\``;
+                const fileMessage = `📄 Source File: ${file.fileName} (${file.sizeKB.toFixed(1)}KB) — use this as the ONLY source of truth for endpoints and schemas:\n\`\`\`\n${file.content}\n\`\`\``;
                 messages.push(vscode.LanguageModelChatMessage.User(fileMessage));
-                messages.push(vscode.LanguageModelChatMessage.Assistant('File content received and analyzed.'));
+                messages.push(vscode.LanguageModelChatMessage.Assistant('File content received. I have identified the endpoints, request/response schemas, and field types from this file. I will only use these in the enhanced test.'));
             }
 
-            // Final turn: Send test to enhance
-            const finalPrompt = `Based on the files provided, enhance this Karate test:\n\n${featureContent}\n\nOUTPUT: Return the COMPLETE enhanced Karate feature file. NO explanations, NO markdown blocks.`;
+            // Final turn: Send test to enhance with verification checklist
+            const finalPrompt = `Based on the source files provided, enhance this Karate test:\n\n${featureContent}\n\nBEFORE RETURNING, VERIFY:\n- Every endpoint path exists in the source files\n- Every response field matches the source schema\n- No duplicate auth/setup (use callonce in Background)\n- Descriptive scenario names\n- Status code assertions in every scenario\n- @positive/@negative/@edge tags on every scenario\n\nOUTPUT: Return the COMPLETE enhanced Karate feature file. NO explanations, NO markdown blocks. Pure Karate DSL only.`;
             messages.push(vscode.LanguageModelChatMessage.User(finalPrompt));
 
             // Send multi-turn request

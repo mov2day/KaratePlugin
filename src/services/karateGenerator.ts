@@ -1,6 +1,7 @@
 import { KarateFeature, KarateScenario, KarateStep, OpenAPIEndpoint } from '../types';
 import { ConfigManager } from '../utils/configManager';
 import { OpenAPIParser } from './openApiParser';
+import { FeatureStructurer, StructuringOptions, StructuredOutput } from './FeatureStructurer';
 
 export class KarateGenerator {
     private openApiParser: OpenAPIParser;
@@ -26,18 +27,52 @@ export class KarateGenerator {
     /**
      * Generate Karate feature from OpenAPI endpoints
      */
-    generateFromOpenAPI(endpoints: OpenAPIEndpoint[], featureName: string): KarateFeature {
-        const scenarios: KarateScenario[] = [];
-
-        for (const endpoint of endpoints) {
-            scenarios.push(this.createScenarioFromEndpoint(endpoint));
-        }
+    generateFromOpenAPI(endpoints: OpenAPIEndpoint[], featureName: string, scenarioTypes?: string[]): KarateFeature {
+        const scenarios = this.createScenariosForEndpoints(endpoints, scenarioTypes);
 
         return {
             name: featureName,
             description: 'Auto-generated Karate tests from OpenAPI specification',
             scenarios
         };
+    }
+
+    /**
+     * Generate structured multi-file output from OpenAPI endpoints
+     * Groups scenarios by domain, classifies them, and injects tags
+     */
+    generateStructured(endpoints: OpenAPIEndpoint[], options: StructuringOptions, scenarioTypes?: string[]): StructuredOutput {
+        const scenarios = this.createScenariosForEndpoints(endpoints, scenarioTypes);
+        return FeatureStructurer.structure(scenarios, endpoints, options);
+    }
+
+    /**
+     * Create all requested scenario types for a set of endpoints.
+     * If scenarioTypes is empty or undefined, generates all types.
+     */
+    private createScenariosForEndpoints(endpoints: OpenAPIEndpoint[], scenarioTypes?: string[]): KarateScenario[] {
+        const types = scenarioTypes && scenarioTypes.length > 0
+            ? scenarioTypes
+            : ['positive', 'negative', 'edge', 'security'];
+
+        const scenarios: KarateScenario[] = [];
+
+        for (const endpoint of endpoints) {
+            if (types.includes('positive')) {
+                scenarios.push(this.createScenarioFromEndpoint(endpoint));
+            }
+            if (types.includes('negative')) {
+                scenarios.push(...this.createNegativeScenarios(endpoint));
+            }
+            if (types.includes('edge')) {
+                scenarios.push(...this.createEdgeScenarios(endpoint));
+            }
+            if (types.includes('security')) {
+                scenarios.push(...this.createSecurityScenarios(endpoint));
+            }
+        }
+
+        return scenarios;
     }
 
     /**
@@ -143,8 +178,159 @@ export class KarateGenerator {
             name: scenarioName,
             description: endpoint.description,
             steps,
-            tags: endpoint.tags
+            tags: endpoint.tags,
+            domain: FeatureStructurer.detectDomain(endpoint),
+            category: 'positive'
         };
+    }
+
+    /**
+     * Create negative test scenarios for an endpoint.
+     * Tests expected error responses (400, 401, 404, 405).
+     */
+    private createNegativeScenarios(endpoint: OpenAPIEndpoint): KarateScenario[] {
+        const scenarios: KarateScenario[] = [];
+        const baseName = endpoint.summary || endpoint.operationId || `${endpoint.method} ${endpoint.path}`;
+        const domain = FeatureStructurer.detectDomain(endpoint);
+
+        // 400 Bad Request — invalid body for POST/PUT/PATCH
+        if (['POST', 'PUT', 'PATCH'].includes(endpoint.method) && endpoint.requestBody) {
+            scenarios.push({
+                name: `${baseName} - Invalid Request Body`,
+                description: 'Verify 400 when request body is invalid',
+                steps: [
+                    { keyword: 'Given', text: `path '${endpoint.path}'` },
+                    { keyword: 'And', text: 'request { invalid: true }' },
+                    { keyword: 'When', text: `method ${endpoint.method.toUpperCase()}` },
+                    { keyword: 'Then', text: 'status 400' },
+                ],
+                tags: endpoint.tags,
+                domain,
+                category: 'negative'
+            });
+        }
+
+        // 404 Not Found — non-existent resource for single-resource paths
+        if (endpoint.path.includes('{')) {
+            scenarios.push({
+                name: `${baseName} - Not Found`,
+                description: 'Verify 404 for non-existent resource',
+                steps: [
+                    { keyword: 'Given', text: `path '${endpoint.path.replace(/\{[^}]+\}/g, '99999999')}'` },
+                    { keyword: 'When', text: `method ${endpoint.method.toUpperCase()}` },
+                    { keyword: 'Then', text: 'status 404' },
+                ],
+                tags: endpoint.tags,
+                domain,
+                category: 'negative'
+            });
+        }
+
+        // 405 Method Not Allowed — wrong HTTP method
+        const wrongMethod = endpoint.method === 'GET' ? 'DELETE' : 'GET';
+        scenarios.push({
+            name: `${baseName} - Method Not Allowed`,
+            description: `Verify 405 when using wrong HTTP method (${wrongMethod})`,
+            steps: [
+                { keyword: 'Given', text: `path '${endpoint.path}'` },
+                { keyword: 'When', text: `method ${wrongMethod}` },
+                { keyword: 'Then', text: 'status 405' },
+            ],
+            tags: endpoint.tags,
+            domain,
+            category: 'negative'
+        });
+
+        return scenarios;
+    }
+
+    /**
+     * Create edge case scenarios for an endpoint.
+     * Tests boundary conditions: empty payloads, missing params, large values.
+     */
+    private createEdgeScenarios(endpoint: OpenAPIEndpoint): KarateScenario[] {
+        const scenarios: KarateScenario[] = [];
+        const baseName = endpoint.summary || endpoint.operationId || `${endpoint.method} ${endpoint.path}`;
+        const domain = FeatureStructurer.detectDomain(endpoint);
+
+        // Empty body for POST/PUT/PATCH
+        if (['POST', 'PUT', 'PATCH'].includes(endpoint.method) && endpoint.requestBody) {
+            scenarios.push({
+                name: `${baseName} - Empty Request Body`,
+                description: 'Verify behavior with empty request body',
+                steps: [
+                    { keyword: 'Given', text: `path '${endpoint.path}'` },
+                    { keyword: 'And', text: 'request {}' },
+                    { keyword: 'When', text: `method ${endpoint.method.toUpperCase()}` },
+                    { keyword: 'Then', text: "assert responseStatus == 400 || responseStatus == 422" },
+                ],
+                tags: endpoint.tags,
+                domain,
+                category: 'edge'
+            });
+        }
+
+        // Missing required query parameters
+        const requiredParams = endpoint.parameters?.filter(p => p.required && p.in === 'query') || [];
+        if (requiredParams.length > 0) {
+            scenarios.push({
+                name: `${baseName} - Missing Required Parameters`,
+                description: `Verify error when required query params are omitted`,
+                steps: [
+                    { keyword: 'Given', text: `path '${endpoint.path}'` },
+                    { keyword: 'When', text: `method ${endpoint.method.toUpperCase()}` },
+                    { keyword: 'Then', text: "assert responseStatus == 400 || responseStatus == 422" },
+                ],
+                tags: endpoint.tags,
+                domain,
+                category: 'edge'
+            });
+        }
+
+        return scenarios;
+    }
+
+    /**
+     * Create security test scenarios for an endpoint.
+     * Tests authentication, authorization, and injection patterns.
+     */
+    private createSecurityScenarios(endpoint: OpenAPIEndpoint): KarateScenario[] {
+        const scenarios: KarateScenario[] = [];
+        const baseName = endpoint.summary || endpoint.operationId || `${endpoint.method} ${endpoint.path}`;
+        const domain = FeatureStructurer.detectDomain(endpoint);
+
+        // 401 Unauthorized — no auth header
+        scenarios.push({
+            name: `${baseName} - Unauthorized Access`,
+            description: 'Verify 401 when no authentication is provided',
+            steps: [
+                { keyword: 'Given', text: `path '${endpoint.path}'` },
+                { keyword: 'And', text: "header Authorization = ''" },
+                { keyword: 'When', text: `method ${endpoint.method.toUpperCase()}` },
+                { keyword: 'Then', text: 'status 401' },
+            ],
+            tags: endpoint.tags,
+            domain,
+            category: 'security'
+        });
+
+        // SQL injection in path params
+        if (endpoint.path.includes('{')) {
+            scenarios.push({
+                name: `${baseName} - SQL Injection in Path`,
+                description: 'Verify protection against SQL injection in path parameters',
+                steps: [
+                    { keyword: 'Given', text: `path '${endpoint.path.replace(/\{[^}]+\}/g, "1' OR '1'='1")}'` },
+                    { keyword: 'When', text: `method ${endpoint.method.toUpperCase()}` },
+                    { keyword: 'Then', text: "assert responseStatus == 400 || responseStatus == 404" },
+                ],
+                tags: endpoint.tags,
+                domain,
+                category: 'security'
+            });
+        }
+
+        return scenarios;
     }
 
     /**

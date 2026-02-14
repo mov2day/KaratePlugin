@@ -187,15 +187,47 @@ export class KarateCliExecutor {
         // Ensure JAR is available
         const jarPath = await this.ensureKarateJar(extensionPath);
 
-        // Build command arguments
-        const args = ['-jar', jarPath];
-
-        // Add classpath for karate-config.js if exists
+        // Use ConfigDiscovery for comprehensive classpath handling
         const workingDir = options.workingDirectory || '';
-        const configPath = path.join(workingDir, 'src', 'test', 'java');
-        if (fs.existsSync(configPath)) {
-            args.push('-cp', configPath);
+
+        // Import ConfigDiscovery dynamically to avoid circular dependencies
+        const { ConfigDiscovery } = await import('./ConfigDiscovery');
+
+        // Use async discovery for comprehensive workspace search
+        const karateConfig = await ConfigDiscovery.discoverAsync(workingDir);
+
+        // Log discovered config
+        logger.info(`Config discovery: configJs=${karateConfig.configJsPath}, runners=${karateConfig.runnerClasses.length}, classpath=${karateConfig.classpathEntries.length}`);
+
+        // Get LLM-powered execution suggestions for optimal parameters
+        const featurePath = typeof options.target === 'string' ? options.target : (options.target as string[])[0] || '';
+        let executionParams = {
+            classpath: karateConfig.classpathEntries,
+            javaArgs: [] as string[],
+            karateArgs: [] as string[]
+        };
+
+        try {
+            executionParams = await ConfigDiscovery.suggestExecutionParams(workingDir, featurePath, karateConfig);
+            logger.info(`LLM suggested ${executionParams.javaArgs.length} Java args, ${executionParams.karateArgs.length} Karate args`);
+        } catch (error) {
+            logger.warn('LLM suggestion failed, using default params', error as Error);
         }
+
+        // Build command arguments - classpath MUST come before main class
+        const args: string[] = [];
+
+        // Add LLM-suggested Java args
+        args.push(...executionParams.javaArgs);
+
+        // Build classpath: include JAR and all discovered/suggested entries
+        const classpathEntries = [jarPath, ...executionParams.classpath];
+        const classpathStr = classpathEntries.join(path.delimiter);
+        args.push('-cp', classpathStr);
+        logger.info(`Using classpath: ${classpathStr}`);
+
+        // Use Karate CLI main class
+        args.push('com.intuit.karate.Main');
 
         // Add features/paths based on execution type
         switch (options.type) {
@@ -235,14 +267,49 @@ export class KarateCliExecutor {
             args.push('--threads', options.parallel.toString());
         }
 
-        // Add environment
-        if (options.environment) {
+        // Add user-configured parameters from settings
+        const execConfig = vscode.workspace.getConfiguration('karateDsl.execution');
+
+        // User system properties - ALL go as -D JVM flags (including karate.env)
+        const systemProperties = execConfig.get<Record<string, string>>('systemProperties', {});
+        for (const [key, value] of Object.entries(systemProperties)) {
+            args.unshift(`-D${key}=${value}`);
+        }
+        if (Object.keys(systemProperties).length > 0) {
+            logger.info(`User system properties: ${Object.entries(systemProperties).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+        }
+
+        // Add environment: user systemProperties karate.env takes priority
+        // Also pass as --env flag for Karate CLI compatibility
+        if (systemProperties['karate.env']) {
+            args.push('--env', systemProperties['karate.env']);
+            logger.info(`Using user-configured karate.env: ${systemProperties['karate.env']}`);
+        } else if (options.environment) {
             args.push('--env', options.environment);
         }
 
         // Add output directory
         const outputDir = path.join(workingDir, 'target', 'karate-reports');
         args.push('--output', outputDir);
+
+        // Add LLM-suggested Karate args
+        if (executionParams.karateArgs.length > 0) {
+            args.push(...executionParams.karateArgs);
+        }
+
+        // User JVM args (insert before -cp)
+        const userJvmArgs = execConfig.get<string[]>('jvmArgs', []);
+        if (userJvmArgs.length > 0) {
+            args.unshift(...userJvmArgs);
+            logger.info(`User JVM args: ${userJvmArgs.join(' ')}`);
+        }
+
+        // User Karate CLI args (append at the end)
+        const userKarateArgs = execConfig.get<string[]>('karateArgs', []);
+        if (userKarateArgs.length > 0) {
+            args.push(...userKarateArgs);
+            logger.info(`User Karate args: ${userKarateArgs.join(' ')}`);
+        }
 
         logger.info(`Karate output directory: ${outputDir}`);
         logger.info(`Executing Karate CLI: java ${args.join(' ')}`);

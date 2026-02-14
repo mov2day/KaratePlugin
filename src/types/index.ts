@@ -14,6 +14,8 @@ export interface KarateScenario {
     description?: string;
     steps: KarateStep[];
     tags?: string[];
+    category?: 'positive' | 'negative' | 'edge' | 'boundary' | 'security';
+    domain?: string;
 }
 
 export interface KarateStep {

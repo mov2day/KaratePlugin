@@ -27,9 +27,13 @@ import { TestCodeLensProvider } from './services/execution/TestCodeLensProvider'
 import { TestStatusDecorationProvider } from './services/execution/TestStatusDecorationProvider';
 import { KarateCliExecutor } from './services/execution/KarateCliExecutor';
 import { KarateTestController } from './services/execution/KarateTestController';
+import { AgentSkillsService } from './services/agentSkillsService';
 
 export function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
+
+    // Initialize Agent Skills with extension path for bundled skills
+    AgentSkillsService.setExtensionPath(context.extensionPath);
 
     // Initialize Services
     const linter = new KarateLinter();
@@ -899,6 +903,186 @@ export function activate(context: vscode.ExtensionContext) {
         }
     );
 
+    // Session Recording Commands
+    const startRecordingCommand = vscode.commands.registerCommand(
+        'karate-dsl.startRecording',
+        async () => {
+            try {
+                const { SessionRecorderService } = await import('./services/session/SessionRecorderService');
+                const recorder = SessionRecorderService.getInstance();
+
+                if (recorder.isRecording()) {
+                    vscode.window.showWarningMessage('A recording session is already active');
+                    return;
+                }
+
+                await recorder.startRecording();
+            } catch (error) {
+                logger.error('Failed to start recording', error as Error);
+                vscode.window.showErrorMessage(`Failed to start recording: ${error}`);
+            }
+        }
+    );
+
+    const stopRecordingCommand = vscode.commands.registerCommand(
+        'karate-dsl.stopRecording',
+        async () => {
+            try {
+                const { SessionRecorderService } = await import('./services/session/SessionRecorderService');
+                const recorder = SessionRecorderService.getInstance();
+
+                if (!recorder.isRecording()) {
+                    vscode.window.showWarningMessage('No active recording session');
+                    return;
+                }
+
+                const requests = await recorder.stopRecording();
+
+                if (requests.length > 0) {
+                    // Trigger synthesis
+                    vscode.commands.executeCommand('karate-dsl.synthesizeSession');
+                }
+            } catch (error) {
+                logger.error('Failed to stop recording', error as Error);
+                vscode.window.showErrorMessage(`Failed to stop recording: ${error}`);
+            }
+        }
+    );
+
+    const importHarCommand = vscode.commands.registerCommand(
+        'karate-dsl.importHar',
+        async () => {
+            try {
+                const { SessionRecorderService } = await import('./services/session/SessionRecorderService');
+                const recorder = SessionRecorderService.getInstance();
+
+                const requests = await recorder.importHarFile();
+
+                if (requests.length > 0) {
+                    // Offer to synthesize immediately
+                    vscode.commands.executeCommand('karate-dsl.synthesizeSession');
+                }
+            } catch (error) {
+                logger.error('Failed to import HAR file', error as Error);
+                vscode.window.showErrorMessage(`Failed to import HAR file: ${error}`);
+            }
+        }
+    );
+
+    const synthesizeSessionCommand = vscode.commands.registerCommand(
+        'karate-dsl.synthesizeSession',
+        async () => {
+            try {
+                const { SessionRecorderService } = await import('./services/session/SessionRecorderService');
+                const { ResourceLifecycleAnalyzer } = await import('./services/synthesis/ResourceLifecycleAnalyzer');
+                const { CopilotService } = await import('./services/copilotService');
+                const { FileUtils } = await import('./utils/fileUtils');
+
+                const recorder = SessionRecorderService.getInstance();
+                const requests = recorder.getSessionRequests();
+
+                if (requests.length === 0) {
+                    vscode.window.showWarningMessage('No requests to synthesize. Start recording or import a HAR file first.');
+                    return;
+                }
+
+                // Ask if user wants to enhance with Copilot
+                const useCopilot = await vscode.window.showQuickPick([
+                    { label: '$(sparkle) Enhance with AI (Copilot)', value: true, description: 'Add validations, assertions, and comprehensive tests' },
+                    { label: '$(file-code) Basic Generation', value: false, description: 'Generate simple request/response tests' }
+                ], {
+                    placeHolder: `Generate Karate tests from ${requests.length} requests`
+                });
+
+                if (!useCopilot) {
+                    return;
+                }
+
+                await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'Synthesizing Karate tests...',
+                    cancellable: true
+                }, async (progress, token) => {
+                    progress.report({ increment: 20, message: 'Analyzing resource lifecycles...' });
+
+                    // Analyze for chained scenarios
+                    const lifecycles = ResourceLifecycleAnalyzer.analyze(requests);
+
+                    progress.report({ increment: 40, message: 'Generating base Karate DSL...' });
+
+                    // Generate base Karate feature
+                    let karateContent = ResourceLifecycleAnalyzer.generateKarate(requests, lifecycles);
+
+                    // Enhance with Copilot if selected
+                    if (useCopilot.value) {
+                        progress.report({ increment: 60, message: 'Enhancing with AI validations...' });
+
+                        // Build request summary for Copilot context
+                        const requestSummary = requests.map(r => {
+                            const respPreview = r.response?.body?.substring(0, 500) || '';
+                            return `${r.method} ${r.path}\nStatus: ${r.response?.status}\nRequest Body: ${r.body?.substring(0, 200) || 'none'}\nResponse: ${respPreview}`;
+                        }).join('\n---\n');
+
+                        const enhancementPrompt = `
+The following is a Karate feature file generated from recorded HTTP requests.
+
+CAPTURED REQUESTS SUMMARY:
+${requestSummary}
+
+REQUIREMENTS - Add comprehensive enhancements:
+1. **Status Code Validations**: Verify correct status codes
+2. **Response Schema Validation**: Match response structure using Karate's 'match' syntax
+3. **Field Type Checks**: Add #string, #number, #boolean, #array, #object checks
+4. **Required Field Validation**: Use #present for mandatory fields
+5. **Business Logic**: Add assertions for relationships between requests (e.g., created ID used in subsequent GET)
+6. **Error Scenarios**: Add commented suggestions for negative tests
+7. **Performance Assertions**: Add reasonable responseTime checks
+
+OUTPUT: Return the COMPLETE enhanced Karate feature file.
+Do NOT add markdown code blocks. Pure Karate DSL only.`;
+
+                        try {
+                            karateContent = await CopilotService.enhanceKarateTest(
+                                karateContent,
+                                'Session recording synthesis',
+                                {
+                                    type: 'postman', // Closest match for request/response data
+                                    postmanCollection: requestSummary
+                                }
+                            );
+                            logger.info('Successfully enhanced session with Copilot');
+                        } catch (copilotError) {
+                            logger.warn('Copilot enhancement failed, using basic generation', copilotError as Error);
+                            vscode.window.showWarningMessage('AI enhancement failed. Using basic generation.');
+                        }
+                    }
+
+                    progress.report({ increment: 80, message: 'Saving feature file...' });
+
+                    // Save to file
+                    const outputPath = FileUtils.resolveOutputPath();
+                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+                    const outputFile = path.join(outputPath, `recorded-session-${timestamp}.feature`);
+                    FileUtils.writeFile(outputFile, karateContent);
+
+                    progress.report({ increment: 100 });
+
+                    // Open the generated file
+                    const doc = await vscode.workspace.openTextDocument(outputFile);
+                    await vscode.window.showTextDocument(doc);
+
+                    const enhancedLabel = useCopilot.value ? ' (AI Enhanced)' : '';
+                    vscode.window.showInformationMessage(
+                        `✅ Generated Karate feature from ${requests.length} requests (${lifecycles.length} resource lifecycles)${enhancedLabel}`
+                    );
+                });
+            } catch (error) {
+                logger.error('Failed to synthesize session', error as Error);
+                vscode.window.showErrorMessage(`Failed to synthesize session: ${error}`);
+            }
+        }
+    );
+
     context.subscriptions.push(
         openApiCommand,
         confluenceCommand,
@@ -922,7 +1106,11 @@ export function activate(context: vscode.ExtensionContext) {
         runByTagsCommand,
         showExecutionReportCommand,
         showTestHistoryCommand,
-        clearKarateCacheCommand
+        clearKarateCacheCommand,
+        startRecordingCommand,
+        stopRecordingCommand,
+        importHarCommand,
+        synthesizeSessionCommand
     );
 }
 

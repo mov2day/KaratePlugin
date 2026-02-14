@@ -26,7 +26,17 @@ export class TestExecutor {
         logger.info(`Starting test execution: ${executionId}`);
         logger.info(`Execution type: ${options.type}`);
         logger.info(`Target: ${JSON.stringify(options.target)}`);
+        logger.info(`Build tool: ${options.buildTool}`);
 
+        // Debug: log user configuration
+        const execConfig = vscode.workspace.getConfiguration('karateDsl.execution');
+        const systemProps = execConfig.get<Record<string, string>>('systemProperties', {});
+        const userJvmArgs = execConfig.get<string[]>('jvmArgs', []);
+        const userKarateArgs = execConfig.get<string[]>('karateArgs', []);
+        logger.info(`[DEBUG] User systemProperties: ${JSON.stringify(systemProps)}`);
+        logger.info(`[DEBUG] User jvmArgs: ${JSON.stringify(userJvmArgs)}`);
+        logger.info(`[DEBUG] User karateArgs: ${JSON.stringify(userKarateArgs)}`);
+        logger.info(`[DEBUG] options.environment: ${options.environment || '(not set)'}`);
         try {
             // Determine working directory
             const workingDirectory = options.workingDirectory || this.getWorkspaceRoot();

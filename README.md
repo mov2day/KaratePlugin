@@ -1,133 +1,69 @@
 # Karate API Test Generator for VS Code
 
-AI-powered **Karate API testing** extension that generates and maintains
-**Karate DSL tests from OpenAPI specifications and Confluence documentation**.
+> **The complete Karate DSL toolkit** — Generate, execute, maintain, and analyze API tests with AI assistance.
 
-Generate comprehensive API tests from OpenAPI specifications, Confluence documentation, or both combined. Automatically maintain tests when your API evolves with intelligent AI assistance.
+Transform OpenAPI specs, Postman collections, and Confluence docs into production-ready Karate tests in seconds. Run them from your editor, track coverage, and let AI keep everything in sync as your API evolves.
 
-**Keywords**: Karate API testing, OpenAPI test generation, API automation,
-Karate DSL tests, REST API testing, BDD API tests, QA automation, contract testing, Postman to Karate, Postman to Karate converter, Postman migration to Karate,postman
-
-[![Version](https://img.shields.io/badge/version-1.3.2-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.3.4-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-brightgreen.svg)](https://code.visualstudio.com/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-
-### Why Karate API Test Generator?
-Unlike generic API test generators, this extension is **built specifically for Karate DSL**
-and supports **automatic test maintenance when OpenAPI specs evolve**.
-Works with: Karate DSL, OpenAPI 3.x, Swagger, REST APIs
+**Keywords**: Karate API testing, OpenAPI test generation, API automation, Karate DSL, REST API testing, BDD API tests, QA automation, contract testing, Postman to Karate converter
 
 ---
 
-## 🆕 What's New in v1.3.2
+## 🆕 What's New in v1.3.4
 
-### 🧪 Native Test Executor
-Now you can run Karate tests directly from the **VS Code Testing Tab**!
+### 🧠 Agent Skills & Prompt Hardening
+- **Grounded AI Generation**: Copilot now uses a dedicated knowledge base of Karate best practices to generate code.
+- **Zero Hallucination**: Strict scoping rules ensure AI **only** uses endpoints and fields that actually exist in your API spec.
+- **4 Bundled Skills**: Includes guides for `karate-dsl-reference`, `test-patterns`, `anti-patterns`, and `reusability`.
 
-#### 1. Native Test Explorer Support
-- **Auto-Discovery**: Automatically finds all `.feature` files in your workspace.
-- **Granular Execution**: Run individual **Scenarios** or entire **Features** with a single click.
-- **Inline Results**: View pass/fail status directly in the editor gutter.
+### 🎯 Precision Controls UI
+- **Fine-Grained Filtering**: Select exactly which **Scenario Types** (Positive, Negative, Edge, Security) and **HTTP Methods** you want to generate.
+- **Custom Instructions**: Provide free-text guidance to Copilot for specific requirements (e.g., "Use tenantId header for all requests").
 
-#### 2. Seamless Integration
-- **Run & Debug**: Trigger runs from the Testing sidebar or CodeLenses.
-- **Instant Reporting**: Automatically opens the new Premium Dashboard upon completion.
-- **Deep Linking**: Click a failure in the report to jump straight to the code.
+### 🏗️ Feature Structuring Engine
+- **Domain-Driven Organization**: Automatically groups tests into separate feature files based on your API's domain or tags.
+- **3 Structuring Strategies**:
+  - `Domain` (default): Group by tag/resource (e.g., `orders.feature`, `users.feature`).
+  - `Flat`: All scenarios in one file.
+  - `Method`: Group by HTTP method.
 
-### 📊 Premium Execution Dashboard
-Completely overhauled execution report with an modern design.
-
-#### 1. Modern Dashboard Overview
-Get a high-level view of your test execution with beautiful visual metrics.
-![Dashboard Overview](https://github.com/mov2day/Docs/blob/main/dashboard-overview.png?raw=true)
-
-#### 2. Detailed Feature Breakdown
-Drill down into specific features with sorting and filtering capabilities.
-![Feature List](https://github.com/mov2day/Docs/blob/main/dashboard-feature.png?raw=true)
-
-#### 3. Step-Level Details
-Inspect HTTP requests, responses, and logs with syntax highlighting.
-![Step Details](https://github.com/mov2day/Docs/blob/main/dashboard-detail.png?raw=true)
-
-#### 4. Interactive History Trend
-Track your test stability over time with the new history chart.
-
-### ✨ Key Features
-- **Sidebar Navigation**: Switch context instantly.
-- **Visual Analytics**: Charts for pass rates and execution duration.
-- **Dark Mode**: Fully supports VS Code themes.
-- **Search & Filter**: Find failing tests in seconds.
-
-### ✅ Generator Improvements
-- **100% Executable Tests**: All generated tests run without modification
-- **Fixed Syntax**: Proper URL/path construction, correct matchers, uppercase HTTP methods
-- **No Manual Fixes**: Tests are production-ready from generation
-- **Validation Layer**: Built-in syntax checking prevents common errors
-
-### 🔄 Enhanced Generation Commands
-- **OpenAPI**: Smart file handling with multi-part support for large specs
-- **Postman**: Dual file support - collection + environment files  
-- **Confluence**: Temporary HTML files with automatic cleanup
-- **Coverage**: Uses existing features as style reference for consistency
-
-### 📋 Supported on VS Code 1.108+
-- Agent Skills require VS Code 1.108 or higher
-- Gracefully degrades on earlier versions (1.104+)
-- Enable/disable via `karateDsl.agentSkills.enabled` setting
-
-**Upgrade from v1.2.x**: Seamless - all existing features work as before with added AI intelligence!
+### ♻️ Smart Reusability Engine
+- **Auto-Extraction**: Detects repeated patterns (auth, setup, headers) and extracts them into reusable `common/` feature files.
+- **Intelligent Stubs**: Auto-creates `common/setup.feature`, `common/auth.feature` etc. with functional defaults if they don't exist.
 
 ---
 
-## 🆕 What's New in v1.2.12
+## 🚀 Previously in v1.3.3
 
-### 📊 Enhanced Coverage Dashboard
-- **Add Tests to Existing Files**: You can now append AI-generated tests to existing feature files directly from the dashboard.
-- **Context-Aware Generation**: Copilot reads your existing file's `Background` and style to generate scenarios that fit perfectly without manual edits.
-- **Smart Selection**: Choose to create a new file or append to any file currently selected in the dashboard filter.
+### 🔍 Universal Config Discovery
+- **Workspace-Wide Search**: Automatically finds `karate-config.js` and runner classes anywhere in your project — no more hardcoded paths.
+- **LLM-Powered Suggestions**: Copilot suggests optimal classpath and JVM args based on your project structure.
 
-### 🎯 Copilot Model Selection
-- **Dynamic Model Picker**: New command "Karate: Select Copilot Model" shows all available models from your GitHub Copilot subscription
-- **Settings Dropdown**: Choose from 6 predefined models (gpt-5-mini, gpt-5.2-codex, claude-sonnet-4.5, etc.)
-- **Auto-Refresh**: Changing model in settings instantly re-initializes Copilot
+### ⚙️ Custom Execution Parameters
+Three new settings let you control exactly how tests run:
 
-### ⚡️ Performance & fixes
-- **Zero Latency**: All Copilot operations now use cached model object (instant startup)
-- **Notification Reliability**: All progress notifications now properly auto-dismiss in error cases
-- **Invalid Spec Handling**: Auto-untrack specs with formatting errors to prevent notification spam
+| Setting | Example | Purpose |
+|:--------|:--------|:--------|
+| `systemProperties` | `{"karate.env": "staging"}` | `-D` flags for every run |
+| `jvmArgs` | `["-Xmx1g"]` | JVM tuning flags |
+| `karateArgs` | `["--threads", "5"]` | Karate CLI arguments |
 
-## 🆕 What's New in v1.2.10
-### 🩺 Project Health Doctor
-- **Real-time Linter**: Instant feedback on bad practices (Hardcoded URLs, Duplicate Scenarios, Indentation).
-- **Health Dashboard**: Visualize your project structure and dependencies with an interactive graph.
-- **Security Scanner**: Detects missing authentication tests and hardcoded secrets.
-- **Quick Fixes**: Auto-fix formatting issues and more.
+### 📥 HAR File Import
+- **One-Click Import**: Convert `.har` files from browser DevTools into Karate feature files.
+- **AI Enhancement**: Copilot enriches imported requests with assertions and error scenarios.
 
-## 🆕 What's New in v1.2.9
+---
 
-### 🛡️ Enhanced Copilot Reliability
-- **Smart Retries**: Automatically handles "Sorry, I can't assist" responses by retrying with optimized prompts.
-- **Context Fidelity**: Fixed issue where large inputs dropped context - now 100% of large specs/collections are preserved.
-- **Strict Accuracy**: New anti-hallucination guardrails ensure generated tests match your actual API.
+## ⚡ Why Karate API Test Generator?
 
+Stop wasting hours manually writing Boilerplate Gherkin. Let AI handle the structure so you can focus on business logic.
 
-### 📄 Enhanced Confluence Integration
-- **Auth Type Selection**: Support for both Cloud (Basic Auth) and Data Center/Server (Bearer Token) controlled via settings Option
-- **Plain Text Content**: Now fetches clean plain text from Confluence API
-- **Better Error Messages**: Clear guidance for authentication issues
-
-### 📊 Comprehensive Test Generation
-- **Production-Ready Tests**: 7-category enhancement for immediate use
-- **Smart Prompts**: Structured requirements for edge cases, security, performance
-- **Content Policy Safe**: Updated terminology for reliable Copilot responses
-
-## ⚡️ The Karate Generator Advantage
-
-Stop wasting hours manually writing Boilerplate Gherkin. Let AI handle the structure so you can focus on the business logic.
-
-| Feature | Manual Typing | Karate Generator + Copilot |
-| :--- | :---: | :---: |
-| **New Test Creation** | 15-30 mins | **< 30 seconds** |
+| Workflow | Manual | With This Extension |
+|:---------|:------:|:-------------------:|
+| **New Test Creation** | 15–30 min | **< 30 seconds** |
 | **OpenAPI Sync** | Manual tracking | **Auto-detect & Update** |
 | **Postman Migration** | Rewrite everything | **One-click Import** |
 | **Test Quality** | Peer review needed | **Copilot Optimized** |
@@ -135,271 +71,221 @@ Stop wasting hours manually writing Boilerplate Gherkin. Let AI handle the struc
 
 ---
 
-## 🛠 Functionality Details
-
-### 📦 Postman Collection Import (v1.2.3)
-- **Zero-Effort Migration**: Convert entire Postman collections to Karate DSL in seconds.
-- **Environment Smart**: Automatically handles variables and environments.
-- **AI-Enhanced**: Uses Copilot to intelligently convert Postman scripts into robust Karate assertions.
-
-### 🤖 AI-Powered Maintenance (v1.2.1)
-- **Automatic Sync**: Detects changes in your OpenAPI specs.
-- **Smart Updates**: Copilot suggests updates to existing tests, preserving your custom logic.
-- **Change Analysis**: See exactly what changed before applying AI fixes.
-
----
-
-## 🤖 AI-Powered Excellence with GitHub Copilot
-
-This extension is designed to work hand-in-hand with GitHub Copilot to provide:
-
-*   **Smart Assertions**: AI automatically generates complex JSONPath/Match statements based on schema logic.
-*   **Edge Case Detection**: Automatically suggests scenarios for 400, 401, 404, and 500 status codes.
-*   **Realistic Data**: Instead of `foo/bar`, Copilot generates realistic names, emails, and UUIDs.
-*   **Test Maintenance**: When your spec changes, AI intelligently decides whether to update, delete, or add scenarios.
-
----
-
-## ✨ Features
+## ✨ Features at a Glance
 
 ### 🤖 AI-Powered Test Generation
-- **GitHub Copilot Integration** - Enhance generated tests with AI suggestions
-- **Smart Test Scenarios** - Automatically generate positive and negative test cases
-- **Intelligent Assertions** - AI-powered validation based on your API schema
+Generate tests from **three input sources**, each enhanced by GitHub Copilot:
 
-### 📋 Multiple Input Sources
+- **OpenAPI / Swagger** — Right-click any `.json`, `.yaml`, or `.yml` spec → *Generate Tests Now*
+- **Confluence Documentation** — Pull API docs from Confluence pages and generate tests
+- **Combined (OpenAPI + Confluence)** — Merge spec structure with documentation context for the richest tests
 
-#### OpenAPI Specifications
-- **Instant Test Generation** - Right-click any OpenAPI file → "Generate Tests Now"
-- **Multiple Formats** - Supports JSON, YAML, and YML specifications
-- **Complete Coverage** - Generates tests for all endpoints automatically
+Copilot adds: smart assertions, realistic test data, edge-case scenarios (400, 401, 404, 500), and performance tests.
 
-#### Confluence Documentation
-- **Documentation-Driven Tests** - Generate tests from Confluence API documentation
-- **Flexible Input** - Supports Confluence pages with API specifications
-- **Team Collaboration** - Perfect for teams using Confluence for API docs
+### 🧪 Native Test Executor
+Run Karate tests directly from VS Code — no terminal required.
 
-#### Combined Generation
-- **Best of Both Worlds** - Combine OpenAPI specs with Confluence documentation
-- **Enhanced Context** - Uses spec structure + documentation details
-- **Richer Tests** - More comprehensive test scenarios with business context
+- **CodeLens Actions**: Click **▶ Run Feature** or **▶ Run Scenario** inline in `.feature` files
+- **Testing Sidebar**: All features and scenarios appear in the VS Code Testing tab
+- **Auto-Discovery**: Every `.feature` file in your workspace is detected automatically
+- **Build Tool Support**: CLI (standalone JAR), Maven, or Gradle — auto-detected or configurable
+
+### 📊 Premium Execution Dashboard
+A modern, interactive dashboard replaces plain-text reports.
+
+![Dashboard Overview](https://github.com/mov2day/Docs/blob/main/dashboard-overview.png?raw=true)
+
+- **Visual Analytics**: Donut charts for pass/fail rates, bar charts for duration
+- **Feature Drill-Down**: Expand any feature to inspect scenarios and step-level details
+- **Search & Filter**: Find failing tests instantly
+- **Dark Mode**: Full VS Code theme support with glassmorphism effects
+
+![Feature Breakdown](https://github.com/mov2day/Docs/blob/main/dashboard-feature.png?raw=true)
+
+![Step-Level Details](https://github.com/mov2day/Docs/blob/main/dashboard-detail.png?raw=true)
+
+### 📈 Visual Test Coverage
+Track which API endpoints have tests and which don't.
+
+- **Coverage Dashboard**: See tested vs untested endpoints at a glance
+- **Gap Analysis**: Identify missing test scenarios per endpoint
+- **Generate Missing Tests**: Click to generate tests for uncovered endpoints
+- **Append to Existing Files**: Add AI-generated scenarios to existing feature files with matching style
+
+### 📦 Postman Collection Import
+Migrate from Postman to Karate in one click.
+
+- **Full Collection Conversion**: Collections + environments → Karate feature files
+- **Variable Translation**: Postman `{{variables}}` become Karate `karate.properties`
+- **Script Conversion**: Pre-request scripts and test assertions converted via Copilot
+
+### 📥 HAR File Import
+Convert real API traffic into Karate tests.
+
+- **Browser DevTools**: Export a `.har` file from Chrome/Firefox DevTools → import into the extension
+- **AI Enhancement**: Copilot analyzes requests and generates assertions, schema checks, and error scenarios
+- **Selective Import**: Choose which requests to convert — filter by domain, method, or status code
 
 ### 🔄 Automatic Test Maintenance
-- **Spec Change Detection** - Monitors OpenAPI files for changes
-- **AI-Powered Updates** - Use Copilot to intelligently update affected tests
-- **Zero Notification Spam** - Smart debouncing prevents duplicate alerts
+When your OpenAPI spec changes, the extension keeps tests in sync.
+
+1. **Detects changes** when you save the spec
+2. **Analyzes impact** on existing test files
+3. **Uses Copilot** to intelligently update affected tests
+4. **Preserves custom logic** you've added manually
+
+### 🩺 Project Health Doctor
+Real-time code quality analysis for Karate projects.
+
+- **Linter**: Catches errors as you type — hardcoded URLs, duplicate scenarios, indentation issues
+- **Security Scanner**: Detects missing auth tests and hardcoded secrets
+- **Quick Fixes**: One-click auto-fixes for common issues
+- **Health Dashboard**: Visualize project structure and dependencies
 
 ### 🎨 Style Learning
-- **Learn from Examples** - Right-click existing tests → "Learn Style Now"
-- **Consistent Formatting** - Maintains your team's coding standards
-  - **Custom Templates** - Save and reuse your preferred test patterns
+Maintain consistency across your team's tests.
 
-### 🩺 Project Health & Quality
-- **Real-Time Linter** - Catches errors as you type
-- **Dependency Graph** - Visualize feature file connections
-- **Security Audit** - Automated check for common security gaps
-- **DRY Analysis** - Identify unused files and duplicate code
+- **Learn from Examples**: Right-click a well-formatted `.feature` file → *Learn Style Now*
+- **Future Consistency**: All generated tests match your team's patterns
+- **Template System**: Save and reuse preferred test structures
 
-### 🎯 Modern UI
-- **Activity Bar Panel** - Quick access to all features
-- **Recent Generations** - Track your test generation history
-- **Template Management** - Save and organize test templates
+### 🛡️ Copilot Transparency & Privacy
+Full visibility into AI interactions.
+
+- **Activity Log**: View every prompt and response (`Cmd+Shift+P` → *Show Copilot Activity Log*)
+- **Privacy**: Sensitive data (API keys, tokens) is automatically redacted
+- **Performance Metrics**: See response times and token usage
+
+---
 
 ## 🚀 Quick Start
 
-### 1. Install the Extension
-Search for "Karate Test Generator" in VS Code Extensions marketplace.
+### 1. Install
+Search for **"Karate Test Generator"** in the VS Code Extensions marketplace, or install from the [Marketplace page](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator).
 
 ### 2. Generate Your First Test
 
-**Option A: Right-Click Menu**
-```
-1. Right-click any OpenAPI file (.json, .yaml, .yml)
-2. Select "Karate: Generate Tests Now"
-3. Click "Open File" to view generated tests
-```
+**Option A — Right-Click Menu** (fastest):
+1. Right-click any OpenAPI spec file (`.json`, `.yaml`, `.yml`)
+2. Select **Karate: Generate Tests Now**
+3. Click **Open File** to view the generated `.feature` file
 
-**Option B: Extension Panel**
-```
-1. Click the Karate icon in Activity Bar
-2. Navigate to "OpenAPI" tab
-3. Select your spec file
-4. Click "Generate Tests"
-```
+**Option B — Extension Panel**:
+1. Click the **Karate icon** in the Activity Bar
+2. Navigate to the **OpenAPI** tab
+3. Select your spec file and click **Generate Tests**
 
-### 3. Enable AI Enhancement (Optional)
-```
-1. Install GitHub Copilot extension
-2. Generate tests as usual
-3. Tests will be automatically enhanced with AI suggestions
-```
+### 3. Run Tests
+- Click **▶ Run Feature** above the `Feature:` line in any `.feature` file
+- Or open the **Testing** sidebar and click the play button
+
+### 4. Enable AI Enhancement (optional)
+1. Install the **GitHub Copilot** extension
+2. Generate tests as usual — Copilot automatically enhances them with richer assertions and edge cases
+
+---
 
 ## 📖 Usage Guide
 
-### Generating Tests from OpenAPI
+### Generating from OpenAPI
 
-**Direct Generation** (Fastest):
 ```
-Right-click spec.yaml → "Generate Tests Now"
-```
-
-**With Copilot Enhancement**:
-```
-1. Open Extension Panel
-2. Select OpenAPI tab
-3. Choose spec file
-4. Enable "Use Copilot" toggle
-5. Click "Generate Tests"
+Right-click spec.yaml → "Karate: Generate Tests Now"
 ```
 
-### Generating from Confluence Documentation
+Or use the Extension Panel → **OpenAPI** tab with the Copilot toggle for AI-enhanced output.
 
-**Access Confluence Tab**:
-```
-1. Open Extension Panel
-2. Navigate to "Confluence" tab
-3. Enter Confluence page URL
-4. Provide credentials (if required)
-5. Click "Generate Tests"
-```
+### Generating from Confluence
 
-**What gets extracted**:
-- API endpoint descriptions
-- Request/response examples
-- Business logic documentation
-- Edge cases mentioned in docs
+1. Open the Extension Panel → **Confluence** tab
+2. Enter the Confluence page URL
+3. Provide credentials (see [Configuration](#-configuration) below)
+4. Click **Generate Tests**
+
+**Extracted content**: API endpoint descriptions, request/response examples, business logic, edge cases.
 
 ### Combined Generation (OpenAPI + Confluence)
 
-**Best of both worlds**:
-```
-1. Open Extension Panel
-2. Navigate to "Combined" tab
-3. Select OpenAPI spec file
-4. Enter Confluence documentation URL
-5. Click "Generate Tests"
-```
+1. Open the Extension Panel → **Combined** tab
+2. Select the OpenAPI spec file
+3. Enter the Confluence documentation URL
+4. Click **Generate Tests**
 
-**Benefits**:
-- ✅ **Structure** from OpenAPI spec
-- ✅ **Context** from Confluence docs
-- ✅ **Business Logic** from documentation
-- ✅ **Complete Coverage** from both sources
+**Result**: Tests combine the **structure** from your OpenAPI spec with the **business context** from your documentation.
 
-### Learning Style from Existing Tests
+### Importing Postman Collections
 
-**To maintain consistency**:
 ```
-1. Right-click your well-formatted .feature file
-2. Select "Karate: Learn Style Now"
-3. Future generations will match this style
+Cmd+Shift+P → "Karate: Import Postman Collection"
 ```
 
-### ⚙️ Configuration Guide
+Select your Postman collection file (`.json`) and optionally an environment file.
 
-**Accessing Settings**:
-- **Mac**: Press `Cmd+,`
-- **Windows / Linux**: Press `Ctrl+,`
+### Running Tests
 
-**Confluence Setup**:
-1. Search for `karateDsl.confluence`
-2. **Base URL**: Your Confluence URL (e.g., `https://confluence.company.com`)
-3. **Email**: Your email (Cloud) or empty (Data Center)
-4. **API Token**: Your Atlassian Token (Cloud) or PAT (Data Center)
-5. **Auth Type** (New): 
-   - Select `basic` for Cloud
-   - Select `bearer` for Data Center/Server (PAT)
+| Method | Where | Scope |
+|:-------|:------|:------|
+| **▶ Run Feature** (CodeLens) | Above `Feature:` line | Entire feature |
+| **▶ Run Scenario** (CodeLens) | Above each `Scenario:` | Single scenario |
+| **Testing Sidebar** | VS Code Testing tab | Any combination |
+| **Run Folder** | Command palette | All features in folder |
+| **Run by Tags** | Command palette | Tag-filtered execution |
 
-### Automatic Test Maintenance
+### Learning Style
 
-**When your API evolves**:
 ```
-1. Modify your OpenAPI spec
-2. Save the file
-3. Notification appears: "spec.yaml has changed"
-4. Click "Update with Copilot"
-5. AI intelligently updates your tests
+Right-click your best .feature file → "Karate: Learn Style Now"
 ```
 
-**What gets updated**:
-- ✅ New endpoints → New test scenarios added
-- ✅ Modified parameters → Tests updated automatically
-- ✅ Removed endpoints → Marked as deprecated
-- ✅ Breaking changes → AI detects and fixes
+All future generations will match this file's formatting, naming, and assertion patterns.
 
-## 🎯 Key Features Explained
-
-### AI-Powered Test Updates
-
-When your OpenAPI spec changes, the extension:
-1. **Detects changes** automatically (every 5 seconds)
-2. **Analyzes impact** on existing tests
-3. **Uses Copilot** to intelligently update tests
-4. **Preserves custom logic** you've added
-5. **Adds new test cases** for new parameters
-
-**Example**:
-```
-Spec Change: Added optional parameter "includeOwner"
-AI Action: Adds two test scenarios:
-  - Test with includeOwner=true
-  - Test with includeOwner=false
-```
-
-### 🛡️ Copilot Transparency & Privacy
-
-We believe in full transparency when AI is involved. The extension includes a dedicated **Copilot Activity Log** so you always know what's happening.
-
-**Features:**
-- 📊 **Activity Log**: View every prompt sent to Copilot and the response received (`Cmd+Shift+P` -> "Karate: Show Copilot Activity Log")
-- 🔒 **Privacy First**: Sensitive data (API keys, tokens, passwords) is automatically redacted from logs
-- ⏱️ **Performance Metrics**: See how long each AI request takes
-- 🔍 **Full Visibility**: Verify exactly what context is being shared with the AI
-
-**Configuration:**
-- `karate.copilot.logging.enabled`: Toggle logging on/off
-- `karate.copilot.logging.redactSensitiveData`: Enable/disable automatic redaction
-- `karate.copilot.logging.showTokenUsage`: Display token consumption stats
-
-### Smart Notification System
-
-- **No Spam**: Maximum one notification per 30 seconds
-- **Processing Aware**: No notifications while Copilot is running
-- **Auto-Dismiss**: Hash updated after fixes prevent re-notification
-
-### Template System
-
-**Save your patterns**:
-```
-1. Generate a test you like
-2. Click "Save as Template"
-3. Name it (e.g., "REST API Standard")
-4. Reuse for future generations
-```
+---
 
 ## ⚙️ Configuration
 
-Access settings via: `Preferences → Settings → Karate Test Generator`
+Access settings via **Preferences → Settings** and search for `karateDsl`.
 
-**Available Options**:
-- `karateGenerator.outputPath` - Where to save generated tests
-- `karateGenerator.testTemplate` - Default template to use
-- `karateGenerator.enableCopilot` - Enable/disable AI enhancement
-- `karateGenerator.autoSync` - Enable automatic test maintenance
+### Execution Settings
 
-## 🔧 Requirements
+| Setting | Default | Description |
+|:--------|:--------|:------------|
+| `karateDsl.execution.defaultBuildTool` | `cli` | Build tool: `cli`, `maven`, or `gradle` |
+| `karateDsl.execution.parallelThreads` | `1` | Number of parallel threads |
+| `karateDsl.execution.configPath` | `""` | Custom path to `karate-config.js` or runner class |
+| `karateDsl.execution.additionalClasspath` | `[]` | Extra classpath entries |
+| `karateDsl.execution.systemProperties` | `{}` | System properties as `-D` flags (e.g., `{"karate.env": "local"}`) |
+| `karateDsl.execution.jvmArgs` | `[]` | JVM arguments (e.g., `["-Xmx512m"]`) |
+| `karateDsl.execution.karateArgs` | `[]` | Karate CLI arguments (e.g., `["--threads", "5"]`) |
+| `karateDsl.execution.autoOpenReport` | `true` | Auto-open execution report after runs |
+| `karateDsl.execution.historyLimit` | `20` | Max execution history entries |
 
-- **VS Code**: Version 1.104.0 or higher (basic features)
-- **VS Code**: Version 1.108.0 or higher (for Agent Skills - recommended)
-- **GitHub Copilot** (Optional): For AI-powered features
-- **Node.js**: Version 14.x or higher (for extension development)
+### Confluence Settings
+
+| Setting | Description |
+|:--------|:------------|
+| `karateDsl.confluence.baseUrl` | Confluence URL (e.g., `https://confluence.company.com`) |
+| `karateDsl.confluence.email` | Your email (Cloud) or leave empty (Data Center) |
+| `karateDsl.confluence.apiToken` | Atlassian API Token (Cloud) or PAT (Data Center) |
+| `karateDsl.confluence.authType` | `basic` for Cloud, `bearer` for Data Center |
+
+### Copilot Settings
+
+| Setting | Default | Description |
+|:--------|:--------|:------------|
+| `karate.copilot.logging.enabled` | `true` | Toggle AI activity logging |
+| `karate.copilot.logging.redactSensitiveData` | `true` | Auto-redact secrets from logs |
+| `karate.copilot.logging.showTokenUsage` | `false` | Show token consumption stats |
 
 ### Agent Skills (VS Code 1.108+)
-Agent Skills provide Karate-specific domain knowledge to GitHub Copilot:
-- Automatically enabled on VS Code 1.108+
-- Falls back gracefully on older versions
-- Configure via: `karateDsl.agentSkills.enabled`
-- No manual skill setup required - works automatically!
+
+| Setting | Default | Description |
+|:--------|:--------|:------------|
+| `karateDsl.agentSkills.enabled` | `true` | Enable Karate-specific skills for Copilot |
+| `karateDsl.agentSkills.autoSuggest` | `true` | Auto-suggest relevant skills |
+
+Agent Skills provide Karate-specific domain knowledge (syntax patterns, API testing best practices, conversion rules) to GitHub Copilot. Automatically enabled on VS Code 1.108+; gracefully disabled on earlier versions.
+
+---
 
 ## 📝 Example Output
 
@@ -426,47 +312,49 @@ Feature: Pet API Tests
     Then status 404
 ```
 
-## 🤝 GitHub Copilot Integration
+---
 
-**What Copilot Enhances**:
-- ✅ More realistic test data
-- ✅ Additional edge case scenarios
-- ✅ Better assertion coverage
-- ✅ Improved error handling tests
-- ✅ Documentation comments
+## 🔧 Requirements
 
-**How to Enable**:
-1. Install GitHub Copilot extension
-2. Ensure Copilot is activated
-3. Use "Update with Copilot" when prompted
-4. Or toggle "Use Copilot" in generation panel
+| Requirement | Version | Notes |
+|:------------|:--------|:------|
+| **VS Code** | 1.108.0+ | Recommended. Basic features work on 1.104+ |
+| **Java** | 8+ | Required for running Karate tests |
+| **GitHub Copilot** | Latest | Optional, for AI-enhanced features |
+
+---
 
 ## 🐛 Troubleshooting
 
 **Tests not generating?**
-- Check that file is valid OpenAPI spec
-- Ensure output directory is writable
-- Check Output panel for errors
+- Verify the file is a valid OpenAPI spec (JSON/YAML)
+- Check the Output panel → **Karate Test Generator** for errors
 
 **Copilot not working?**
-- Verify GitHub Copilot extension is installed
-- Check Copilot is activated (bottom status bar)
-- Ensure you have an active Copilot subscription
+- Ensure GitHub Copilot extension is installed and activated (check status bar)
+- Verify you have an active Copilot subscription
 
-**Notifications not appearing?**
-- Check that spec file is tracked (generate tests first)
-- Verify file watcher is enabled
-- Look for logs in Output → Karate Generator
+**karate.env not being applied?**
+- Set it in `systemProperties`, not as a separate environment setting:
+  ```json
+  "karateDsl.execution.systemProperties": { "karate.env": "local" }
+  ```
+- Check Output panel for `[DEBUG] User systemProperties:` to confirm it's read
+
+**Config file not found?**
+- The extension searches your entire workspace. Check Output panel for discovery logs.
+- Use `karateDsl.execution.configPath` to set an explicit path.
+
+---
 
 ## 📚 Documentation
 
 - [Copilot Integration Guide](docs/COPILOT_GUIDE.md)
 - [Development Setup](DEVELOPMENT.md)
-- [Contributing Guidelines](CONTRIBUTING.md)
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details
+MIT License — see [LICENSE](LICENSE) for details.
 
 ## 🙏 Acknowledgments
 
@@ -476,9 +364,9 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## 💬 Feedback & Support
 
-- 🐛 [Report Issues](https://github.com/your-repo/issues)
-- 💡 [Request Features](https://github.com/your-repo/issues/new)
-- ⭐ [Star on GitHub](https://github.com/your-repo)
+- 🐛 [Report Issues](https://github.com/mov2day/KaratePlugin/issues)
+- 💡 [Request Features](https://github.com/mov2day/KaratePlugin/issues/new)
+- ⭐ [Star on GitHub](https://github.com/mov2day/KaratePlugin)
 
 ---
 

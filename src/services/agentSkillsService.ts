@@ -11,11 +11,21 @@ export interface SkillMetadata {
 
 /**
  * Service to manage Agent Skills integration
- * Detects, loads, and provides context about available Karate skills
+ * Loads bundled skills from extension's skills/ directory and workspace .github/skills/
  */
 export class AgentSkillsService {
     private static skillsCache: SkillMetadata[] | null = null;
+    private static skillContentCache: Map<string, string> = new Map();
     private static isSupported: boolean | null = null;
+    private static extensionPath: string = '';
+
+    /**
+     * Set the extension path (called once during activation)
+     */
+    static setExtensionPath(extPath: string): void {
+        this.extensionPath = extPath;
+        logger.info(`AgentSkillsService: extension path set to ${extPath}`);
+    }
 
     /**
      * Check if Agent Skills are supported and enabled
@@ -27,16 +37,6 @@ export class AgentSkillsService {
         }
 
         try {
-            // Check VS Code version (requires 1.108+)
-            const vscodeVersion = vscode.version;
-            const [major, minor] = vscodeVersion.split('.').map(Number);
-
-            if (major < 1 || (major === 1 && minor < 108)) {
-                logger.info('Agent Skills require VS Code 1.108+, current version: ' + vscodeVersion);
-                this.isSupported = false;
-                return false;
-            }
-
             // Check if user has enabled Agent Skills in extension settings
             const config = vscode.workspace.getConfiguration('karateDsl');
             const enabled = config.get<boolean>('agentSkills.enabled', true);
@@ -47,9 +47,18 @@ export class AgentSkillsService {
                 return false;
             }
 
-            // Check if skills directory exists
-            const skillsExist = await this.skillsDirectoryExists();
+            // Bundled skills are always available if extension path is set
+            if (this.extensionPath) {
+                const bundledPath = path.join(this.extensionPath, 'skills');
+                if (fs.existsSync(bundledPath)) {
+                    this.isSupported = true;
+                    logger.info('Agent Skills available (bundled skills found)');
+                    return true;
+                }
+            }
 
+            // Fallback: check workspace .github/skills
+            const skillsExist = await this.skillsDirectoryExists();
             this.isSupported = skillsExist;
             logger.info(`Agent Skills available: ${this.isSupported}`);
             return this.isSupported;
@@ -62,7 +71,7 @@ export class AgentSkillsService {
     }
 
     /**
-     * Check if .github/skills directory exists
+     * Check if .github/skills directory exists in workspace
      */
     private static async skillsDirectoryExists(): Promise<boolean> {
         const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -75,7 +84,7 @@ export class AgentSkillsService {
     }
 
     /**
-     * Get all available Agent Skills
+     * Get all available Agent Skills (bundled + workspace)
      */
     static async getAvailableSkills(): Promise<SkillMetadata[]> {
         // Return cached skills if available
@@ -86,39 +95,35 @@ export class AgentSkillsService {
         const skills: SkillMetadata[] = [];
 
         try {
+            // 1. Load bundled skills from extension's skills/ directory
+            if (this.extensionPath) {
+                const bundledPath = path.join(this.extensionPath, 'skills');
+                if (fs.existsSync(bundledPath)) {
+                    const bundledSkills = await this.loadSkillsFromDirectory(bundledPath);
+                    skills.push(...bundledSkills);
+                    logger.info(`Loaded ${bundledSkills.length} bundled skills`);
+                }
+            }
+
+            // 2. Load workspace skills from .github/skills/
             const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || workspaceFolders.length === 0) {
-                return skills;
-            }
-
-            const skillsPath = path.join(workspaceFolders[0].uri.fsPath, '.github', 'skills');
-
-            if (!fs.existsSync(skillsPath)) {
-                return skills;
-            }
-
-            // Read all subdirectories in .github/skills
-            const entries = fs.readdirSync(skillsPath, { withFileTypes: true });
-
-            for (const entry of entries) {
-                if (entry.isDirectory()) {
-                    const skillPath = path.join(skillsPath, entry.name);
-                    const skillFile = path.join(skillPath, 'SKILL.md');
-
-                    if (fs.existsSync(skillFile)) {
-                        const metadata = await this.parseSkillMetadata(skillFile);
-                        if (metadata) {
-                            skills.push({
-                                ...metadata,
-                                path: skillFile
-                            });
+            if (workspaceFolders && workspaceFolders.length > 0) {
+                const workspaceSkillsPath = path.join(workspaceFolders[0].uri.fsPath, '.github', 'skills');
+                if (fs.existsSync(workspaceSkillsPath)) {
+                    const workspaceSkills = await this.loadSkillsFromDirectory(workspaceSkillsPath);
+                    // Only add workspace skills that don't overlap with bundled ones
+                    const bundledNames = new Set(skills.map(s => s.name));
+                    for (const ws of workspaceSkills) {
+                        if (!bundledNames.has(ws.name)) {
+                            skills.push(ws);
                         }
                     }
+                    logger.info(`Loaded ${workspaceSkills.length} workspace skills`);
                 }
             }
 
             this.skillsCache = skills;
-            logger.info(`Found ${skills.length} Agent Skills`);
+            logger.info(`Total Agent Skills available: ${skills.length}`);
             return skills;
 
         } catch (error) {
@@ -128,7 +133,37 @@ export class AgentSkillsService {
     }
 
     /**
-     * Parse SKILL.md frontmatter to extract metadata
+     * Load skills from a directory — supports both flat .md files and subdirectories with SKILL.md
+     */
+    private static async loadSkillsFromDirectory(dirPath: string): Promise<SkillMetadata[]> {
+        const skills: SkillMetadata[] = [];
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                // Subdirectory: look for SKILL.md
+                const skillFile = path.join(dirPath, entry.name, 'SKILL.md');
+                if (fs.existsSync(skillFile)) {
+                    const metadata = await this.parseSkillMetadata(skillFile);
+                    if (metadata) {
+                        skills.push({ ...metadata, path: skillFile });
+                    }
+                }
+            } else if (entry.isFile() && entry.name.endsWith('.md')) {
+                // Flat .md file: parse frontmatter directly
+                const skillFile = path.join(dirPath, entry.name);
+                const metadata = await this.parseSkillMetadata(skillFile);
+                if (metadata) {
+                    skills.push({ ...metadata, path: skillFile });
+                }
+            }
+        }
+
+        return skills;
+    }
+
+    /**
+     * Parse skill file frontmatter to extract metadata
      */
     private static async parseSkillMetadata(skillPath: string): Promise<SkillMetadata | null> {
         try {
@@ -161,41 +196,81 @@ export class AgentSkillsService {
     }
 
     /**
+     * Read the full content of a skill file (cached)
+     */
+    static readSkillContent(skillPath: string): string {
+        if (this.skillContentCache.has(skillPath)) {
+            return this.skillContentCache.get(skillPath)!;
+        }
+
+        try {
+            const content = fs.readFileSync(skillPath, 'utf-8');
+            // Strip frontmatter, return body only
+            const body = content.replace(/^---\s*\n[\s\S]*?\n---\s*\n/, '').trim();
+            this.skillContentCache.set(skillPath, body);
+            return body;
+        } catch (error) {
+            logger.error(`Error reading skill content from ${skillPath}`, error as Error);
+            return '';
+        }
+    }
+
+    /**
      * Get relevant skills based on operation context
      */
     static async suggestRelevantSkills(context: {
-        type: 'openapi' | 'postman' | 'confluence' | 'coverage' | 'general';
+        type: 'openapi' | 'postman' | 'confluence' | 'combined' | 'coverage' | 'general';
         hasSpec?: boolean;
         hasCollection?: boolean;
     }): Promise<string[]> {
         const skills = await this.getAvailableSkills();
-        const relevant: string[] = [];
-
-        switch (context.type) {
-            case 'openapi':
-                relevant.push('karate-test-generation', 'karate-api-testing', 'openapi-to-karate', 'karate-formatting-style');
-                break;
-            case 'postman':
-                relevant.push('karate-test-generation', 'karate-api-testing', 'postman-to-karate', 'karate-formatting-style');
-                break;
-            case 'confluence':
-                relevant.push('karate-test-generation', 'karate-api-testing', 'karate-formatting-style');
-                break;
-            case 'coverage':
-                relevant.push('karate-test-generation', 'karate-api-testing', 'karate-advanced-patterns', 'karate-formatting-style');
-                break;
-            case 'general':
-                relevant.push('karate-test-generation', 'karate-api-testing', 'karate-formatting-style');
-                break;
-        }
+        // All bundled skills are relevant for all contexts
+        const bundledSkillNames = [
+            'karate-dsl-reference',
+            'karate-test-patterns',
+            'karate-anti-patterns',
+            'karate-reusability'
+        ];
 
         // Filter to only include skills that actually exist
         const existingSkills = skills.map(s => s.name);
-        return relevant.filter(name => existingSkills.includes(name));
+        return bundledSkillNames.filter(name => existingSkills.includes(name));
     }
 
     /**
-     * Build skill context string for Copilot prompt
+     * Build comprehensive skill context string for Copilot prompts
+     * Includes actual skill content for precise, grounded generation
+     */
+    static async buildSkillContextForPrompt(contextType: 'openapi' | 'postman' | 'confluence' | 'combined' | 'coverage' | 'general'): Promise<string> {
+        const skills = await this.getAvailableSkills();
+        if (skills.length === 0) {
+            return '';
+        }
+
+        const relevantSkillNames = await this.suggestRelevantSkills({ type: contextType });
+        const relevantSkills = skills.filter(s => relevantSkillNames.includes(s.name));
+
+        if (relevantSkills.length === 0) {
+            return '';
+        }
+
+        let context = '\n\n=== KARATE DSL KNOWLEDGE BASE ===\n';
+        context += 'Use the following reference material for accurate Karate test generation.\n\n';
+
+        for (const skill of relevantSkills) {
+            const content = this.readSkillContent(skill.path);
+            if (content) {
+                context += `--- ${skill.name} ---\n`;
+                context += content + '\n\n';
+            }
+        }
+
+        context += '=== END KNOWLEDGE BASE ===\n';
+        return context;
+    }
+
+    /**
+     * Build skill context string for Copilot prompt (legacy – returns reference-only)
      */
     static buildSkillContext(skillNames: string[]): string {
         if (skillNames.length === 0) {
@@ -206,9 +281,9 @@ export class AgentSkillsService {
 
 AVAILABLE AGENT SKILLS:
 You have access to specialized knowledge about Karate testing through the following skills:
-${skillNames.map(name => `- ${name}: Refer to .github/skills/${name}/SKILL.md for guidance`).join('\n')}
+${skillNames.map(name => `- ${name}`).join('\n')}
 
-Use these skills to generate accurate, best-practice Karate tests based on official documentation.
+Use these skills to generate accurate, best-practice Karate tests.
 `;
     }
 
@@ -224,6 +299,7 @@ Use these skills to generate accurate, best-practice Karate tests based on offic
      */
     static clearCache(): void {
         this.skillsCache = null;
+        this.skillContentCache.clear();
         this.isSupported = null;
         logger.info('Agent Skills cache cleared');
     }

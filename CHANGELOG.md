@@ -5,6 +5,71 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2026-02-13
+
+### Added
+- **Agent Skills & Prompt Hardening**
+  - 4 bundled skill files (karate-dsl-reference, test-patterns, anti-patterns, reusability)
+  - All 5 Copilot prompts rewritten with anti-hallucination guardrails and skill injection
+  - Strict scope anchoring: AI only uses data from provided spec/docs
+
+- **Feature Structuring Engine**
+  - Domain-based auto-organization of generated tests (via OpenAPI tags or path prefixes)
+  - Scenario classification: positive, negative, edge, boundary, security
+  - 3 structuring strategies: `domain` (default), `flat`, `method`
+  - New settings: `karateDsl.generation.structuringStrategy`, `karateDsl.generation.autoTag`
+
+- **Precision Controls UI**
+  - Scenario type checkboxes (Positive, Negative, Edge Case, Security) in OpenAPI & Combined tabs
+  - HTTP method filter checkboxes (GET, POST, PUT, DELETE, PATCH)
+  - Custom instruction textarea for Copilot-only free-text guidance
+  - All controls flow through to both deterministic generator and Copilot prompts
+
+- **Smart Reusability Engine**
+  - Deterministic extraction of repeated patterns (auth, setup, headers, data, cleanup)
+  - Auto-generates `common/` feature files with `call`/`callonce` injections
+  - Hooked into all generation sources: OpenAPI, Combined, Confluence, Postman
+
+### Changed
+- **Version**: Bumped to 1.4.0
+
+## [1.3.3] - 2026-02-10
+
+### Added
+- **Universal Config Discovery**
+  - Workspace-wide search for `karate-config.js` and runner classes using VS Code `findFiles` API
+  - Recursive directory scanning as fallback for non-workspace environments
+  - Async discovery methods with caching for performance
+  - LLM-powered execution parameter suggestions via Copilot
+
+- **Custom Execution Parameters** (3 new settings)
+  - `karateDsl.execution.systemProperties` — Pass `-D` system properties (e.g., `karate.env`) to every test run
+  - `karateDsl.execution.jvmArgs` — Custom JVM arguments (e.g., `-Xmx1g`)
+  - `karateDsl.execution.karateArgs` — Custom Karate CLI arguments (e.g., `--threads 5`)
+  - User `systemProperties` always take priority over auto-detected defaults
+
+- **HAR File Import with AI Enhancement**
+  - Import `.har` files from browser DevTools or proxy tools
+  - AI-enhanced test synthesis from imported requests via Copilot
+  - Selective request filtering by domain, method, or status code
+
+- **Debug Logging**
+  - Execution entry-point logging shows build tool, settings, and environment values
+  - Full command-line logged before execution for troubleshooting
+
+### Fixed
+- **Classpath Ordering**: `-cp` argument now correctly precedes `-jar` / main class in CLI executor
+- **Environment Override**: User `karate.env` in `systemProperties` now correctly overrides auto-detected environment across CLI, Maven, and Gradle executors
+- **Dual Flag Passing**: `karate.env` is passed as both `-D` JVM property and `--env` CLI flag for complete coverage
+
+### Changed
+- **README**: Complete professional rewrite with clear feature documentation, settings tables, and organized screenshots
+- **Help Tab**: Expanded in-extension help with 11 sections covering test execution, config discovery, custom parameters, HAR import, and Project Health Doctor
+- **Version**: Bumped to 1.3.3
+
+---
+
+
 ## [1.3.2] - 2026-02-07
 ### Added
 - **Native Test Executor**
@@ -164,7 +229,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[1.3.0]: https://github.com/your-repo/compare/v1.2.12...v1.3.0
+[1.3.3]: https://github.com/mov2day/KaratePlugin/compare/v1.3.2...v1.3.3
+[1.3.2]: https://github.com/mov2day/KaratePlugin/compare/v1.3.0...v1.3.2
+[1.3.0]: https://github.com/mov2day/KaratePlugin/compare/v1.2.12...v1.3.0
 [1.2.12]: https://github.com/your-repo/compare/v1.2.10...v1.2.12
 [1.2.10]: https://github.com/your-repo/compare/v1.2.9...v1.2.10
 [1.2.9]: https://github.com/your-repo/compare/v1.2.3...v1.2.9
