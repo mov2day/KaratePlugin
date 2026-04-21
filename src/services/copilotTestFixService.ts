@@ -24,7 +24,7 @@ export class CopilotTestFixService {
         // Check if Copilot is available
         const isAvailable = await CopilotService.isCopilotAvailable();
         if (!isAvailable) {
-            throw new Error('GitHub Copilot is not available. Please ensure it is installed and activated.');
+            throw new Error('No AI provider available. Please check your settings.');
         }
 
         // Read both specs
@@ -162,7 +162,7 @@ Provide the complete updated Karate test file with all necessary changes applied
     ): Promise<string> {
         const isAvailable = await CopilotService.isCopilotAvailable();
         if (!isAvailable) {
-            throw new Error('GitHub Copilot is not available');
+            throw new Error('No AI provider available');
         }
 
         const testContent = fs.readFileSync(testFilePath, 'utf-8');

@@ -4,7 +4,7 @@
 
 Transform OpenAPI specs, Postman collections, and Confluence docs into production-ready Karate tests in seconds. Run them from your editor, track coverage, and let AI keep everything in sync as your API evolves.
 
-[![Version](https://img.shields.io/badge/version-1.3.5-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-brightgreen.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -12,33 +12,36 @@ Transform OpenAPI specs, Postman collections, and Confluence docs into productio
 
 ---
 
-## 🆕 What's New in v1.3.5
+## 🆕 What's New in v1.4.0
 
-### 🧠 Agent Skills & Prompt Hardening
-- **Grounded AI Generation**: Copilot now uses a dedicated knowledge base of Karate best practices to generate code.
-- **Zero Hallucination**: Strict scoping rules ensure AI **only** uses endpoints and fields that actually exist in your API spec.
-- **4 Bundled Skills**: Includes guides for `karate-dsl-reference`, `test-patterns`, `anti-patterns`, and `reusability`.
+### 🤖 Multi-AI Backend (Ollama, Claude API, Copilot)
+- **Pluggable Architecture**: Support for local inference (Ollama), Claude API, and GitHub Copilot.
+- **Secure Configuration**: Uses VS Code SecretStorage for Claude API keys. 
 
-### 🎯 Precision Controls UI
-- **Fine-Grained Filtering**: Select exactly which **Scenario Types** (Positive, Negative, Edge, Security) and **HTTP Methods** you want to generate.
-- **Custom Instructions**: Provide free-text guidance to Copilot for specific requirements (e.g., "Use tenantId header for all requests").
+### 🛠️ AI-native CI Test Repair
+- **CI Webhook**: Listens for CI failure payloads on localhost (Port 47392).
+- **Test Repair**: AI-powered repair suggestions with diff view, auto-apply, and backup-before-repair modes.
 
-### 🏗️ Feature Structuring Engine
-- **Domain-Driven Organization**: Automatically groups tests into separate feature files based on your API's domain or tags.
-- **3 Structuring Strategies**:
-  - `Domain` (default): Group by tag/resource (e.g., `orders.feature`, `users.feature`).
-  - `Flat`: All scenarios in one file.
-  - `Method`: Group by HTTP method.
+### 🔎 Flaky Test Detector
+- **FlakinessAnalyzer**: Detects unstable scenarios and provides AI-powered stabilization suggestions.
+- **Trend Detection**: Tracks scenario stability across runs (improving/stable/degrading).
 
-### ♻️ Smart Reusability Engine
-- **Auto-Extraction**: Detects repeated patterns (auth, setup, headers) and extracts them into reusable `common/` feature files.
-- **Intelligent Stubs**: Auto-creates `common/setup.feature`, `common/auth.feature` etc. with functional defaults if they don't exist.
+### 🗃️ Smart Test Data Engine
+- **Field-Aware Generation**: Meaningful data based on field names (email, phone, UUID, dates) and OpenAPI boundaries.
+- **Scenario Outline Builder**: Generates data-driven outlines mapping positive, negative (400), and boundary cases.
 
-- Internal code quality improvements, security hardening, and test infrastructure updates.
+### 🌐 GraphQL Support
+- **SDL & Introspection API**: Generate tests from `.graphql` files or live server introspection.
+- **Operation Coverage**: Automatically covers operations with positive and negative testing.
+
+### 📂 Batch Generation & Jira Integration
+- **Batch Processing**: Recursive generation from a folder containing multiple OpenAPI files.
+- **Jira Automation**: Automatically construct Karate acceptance criteria from Jira issues.
+- **Semantic Path Matching**: Upgraded 3-tier semantic matching system with AI judgement avoiding false coverage positives.
 
 ---
 
-## 🚀 Previously in v1.3.3
+## 🚀 Previously in v1.3.5
 
 ### 🔍 Universal Config Discovery
 - **Workspace-Wide Search**: Automatically finds `karate-config.js` and runner classes anywhere in your project — no more hardcoded paths.

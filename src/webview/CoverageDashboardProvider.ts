@@ -298,16 +298,39 @@ export class CoverageDashboardProvider {
                 cancellable: false
             }, async (progress) => {
                 try {
-                    progress.report({ increment: 10, message: 'Checking Copilot availability...' });
+                    progress.report({ increment: 10, message: 'Checking AI provider availability...' });
 
-                    const { CopilotService } = await import('../services/copilotService');
-                    const isAvailable = await CopilotService.isCopilotAvailable();
+                    // Use registry directly — triggers interactive notification when provider unavailable
+                    // Reset session skip: user explicitly clicked "Generate with AI", always ask
+                    let aiProvider: any = null;
+                    let useAI = true;
+                    try {
+                        const { AIProviderRegistry } = await import('../services/ai/AIProviderRegistry');
+                        const registry = AIProviderRegistry.getInstance();
+                        registry.resetSessionSkip(); // Explicit user action — always prompt if needed
+                        aiProvider = await registry.getProvider();
+                    } catch (e: any) {
+                        if (e?.name === 'AISkippedError') {
+                            // User chose "Continue without AI" or dismissed
+                            logger.info('User chose to skip AI for test generation');
+                            useAI = false;
+                        } else {
+                            // Registry unavailable — try CopilotService as fallback
+                            const { CopilotService } = await import('../services/copilotService');
+                            const isAvailable = await CopilotService.isCopilotAvailable();
+                            if (!isAvailable) {
+                                useAI = false;
+                            }
+                        }
+                    }
 
-                    if (!isAvailable) {
-                        vscode.window.showWarningMessage('GitHub Copilot is not available. Generating basic test instead.');
+                    if (!useAI) {
+                        vscode.window.showInformationMessage('Generating basic test without AI enhancement.');
                         await this.handleGenerateTest(endpoint, targetFile ? [targetFile] : undefined);
                         return;
                     }
+
+                    const { CopilotService } = await import('../services/copilotService');
 
                     if (targetFile) {
                         // APPEND MODE (AI)
@@ -331,7 +354,7 @@ export class CoverageDashboardProvider {
 
                             vscode.window.showInformationMessage(`AI appended ${newScenarios.length} scenarios to ${path.basename(targetFile)}`);
                         } else {
-                            vscode.window.showWarningMessage('Copilot did not return valid scenarios');
+                            vscode.window.showWarningMessage('AI did not return valid scenarios');
                         }
 
                     } else {
@@ -684,7 +707,7 @@ export class CoverageDashboardProvider {
         <div class="control-row">
             <label class="checkbox-label">
                 <input type="checkbox" id="use-copilot">
-                <span>🤖 Use GitHub Copilot for enhanced analysis</span>
+                <span>🤖 Use AI for enhanced analysis</span>
             </label>
         </div>
 

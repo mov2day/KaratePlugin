@@ -58,7 +58,7 @@ export async function generateFromOpenAPI(context: vscode.ExtensionContext): Pro
             const useCopilot = config.get<boolean>('useCopilot', false);
 
             if (useCopilot) {
-                progress.report({ increment: 20, message: 'Enhancing with GitHub Copilot...' });
+                progress.report({ increment: 20, message: 'Enhancing with AI...' });
 
                 const { CopilotService } = await import('../services/copilotService');
                 const isAvailable = await CopilotService.isCopilotAvailable();
@@ -87,11 +87,11 @@ STRICT REQUIREMENTS:
 
                         logger.info('Enhanced tests with Copilot using file-based context and Agent Skills');
                     } catch (error) {
-                        logger.warn('Copilot enhancement failed, using original tests', error as Error);
-                        vscode.window.showWarningMessage('Copilot enhancement failed. Using original tests.');
+                        logger.warn('AI enhancement failed, using original tests', error as Error);
+                        vscode.window.showWarningMessage('AI enhancement failed. Using original tests.');
                     }
                 } else {
-                    vscode.window.showWarningMessage('GitHub Copilot is not available. Please check your subscription.');
+                    vscode.window.showWarningMessage('No AI provider available. Using basic test generation.');
                 }
             }
 

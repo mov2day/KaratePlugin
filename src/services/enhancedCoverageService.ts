@@ -39,7 +39,7 @@ export class EnhancedCoverageService {
         const reports: CoverageReport[] = [];
         for (const specPath of specPaths) {
             // Use the selected feature files instead of auto-discovering
-            const report = await this.analyzer.analyzeCoverageWithFiles(specPath, featureFiles);
+            const report = await this.analyzer.analyzeCoverageWithFiles(specPath, featureFiles, useCopilot);
             reports.push(report);
         }
 

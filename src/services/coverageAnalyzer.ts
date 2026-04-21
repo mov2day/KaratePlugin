@@ -51,7 +51,7 @@ export class CoverageAnalyzer {
             const methodBreakdown = new Map<string, { total: number; covered: number }>();
 
             for (const endpoint of endpoints) {
-                const coverage = await this.analyzeEndpoint(endpoint, featureFiles);
+                const coverage = await this.analyzeEndpoint(endpoint, featureFiles, false);
                 endpointCoverages.push(coverage);
 
                 // Update method breakdown
@@ -93,7 +93,7 @@ export class CoverageAnalyzer {
     /**
      * Analyze coverage for an OpenAPI spec with specific feature files
      */
-    public async analyzeCoverageWithFiles(specPath: string, featureFiles: string[]): Promise<CoverageReport> {
+    public async analyzeCoverageWithFiles(specPath: string, featureFiles: string[], useAI: boolean = false): Promise<CoverageReport> {
         try {
             logger.info(`Analyzing coverage for ${specPath} with ${featureFiles.length} selected feature files`);
 
@@ -108,7 +108,7 @@ export class CoverageAnalyzer {
             const methodBreakdown = new Map<string, { total: number; covered: number }>();
 
             for (const endpoint of endpoints) {
-                const coverage = await this.analyzeEndpoint(endpoint, featureFiles);
+                const coverage = await this.analyzeEndpoint(endpoint, featureFiles, useAI);
                 endpointCoverages.push(coverage);
 
                 // Update method breakdown
@@ -159,7 +159,7 @@ export class CoverageAnalyzer {
     /**
      * Analyze coverage for a single endpoint using Copilot
      */
-    private async analyzeEndpoint(endpoint: any, featureFiles: string[]): Promise<EndpointCoverage> {
+    private async analyzeEndpoint(endpoint: any, featureFiles: string[], useAI: boolean = false): Promise<EndpointCoverage> {
         const coverage: EndpointCoverage = {
             path: endpoint.path,
             method: endpoint.method.toUpperCase(),
@@ -170,9 +170,8 @@ export class CoverageAnalyzer {
             missingTests: []
         };
 
-        // Search for tests matching this endpoint
         for (const featureFile of featureFiles) {
-            const scenarios = await this.findMatchingScenarios(endpoint, featureFile);
+            const scenarios = await this.findMatchingScenarios(endpoint, featureFile, useAI);
             if (scenarios.length > 0) {
                 coverage.covered = true;
                 coverage.testFiles.push(featureFile);
@@ -180,14 +179,14 @@ export class CoverageAnalyzer {
             }
         }
 
-        // Use Copilot to analyze what tests are missing
-        if (!coverage.covered || coverage.scenarios.length < 2) {
+        // Use AI to analyze what tests are missing — only when AI opted in
+        if (useAI && (!coverage.covered || coverage.scenarios.length < 2)) {
             try {
                 const { CopilotService } = await import('./copilotService');
                 const isAvailable = await CopilotService.isCopilotAvailable();
 
                 if (isAvailable) {
-                    const missingTests = await this.analyzeMissingTestsWithCopilot(endpoint, coverage);
+                    const missingTests = await this.analyzeMissingTestsWithAI(endpoint, coverage);
                     coverage.missingTests = missingTests;
                 }
             } catch (error) {
@@ -198,18 +197,25 @@ export class CoverageAnalyzer {
                     coverage.missingTests.push('Authentication test');
                 }
             }
+        } else if (!useAI && (!coverage.covered || coverage.scenarios.length < 2)) {
+            // Static suggestions when AI not requested
+            if (!coverage.covered) {
+                coverage.missingTests.push('Basic success test (200 OK)');
+                coverage.missingTests.push('Error handling test (404, 400, 500)');
+                coverage.missingTests.push('Authentication test');
+            } else {
+                coverage.missingTests.push('Additional negative test cases');
+                coverage.missingTests.push('Edge case scenarios');
+            }
         }
 
         return coverage;
     }
 
     /**
-     * Use Copilot to analyze what tests are missing for an endpoint
+     * Use AI (respecting user's provider setting) to analyze missing tests for an endpoint.
      */
-    private async analyzeMissingTestsWithCopilot(endpoint: any, coverage: EndpointCoverage): Promise<string[]> {
-        const { CopilotService } = await import('./copilotService');
-        const { ContextBuilder } = await import('../utils/contextBuilder');
-
+    private async analyzeMissingTestsWithAI(endpoint: any, coverage: EndpointCoverage): Promise<string[]> {
         const prompt = `Analyze this API endpoint and identify missing test scenarios:
 
 Endpoint: ${endpoint.method.toUpperCase()} ${endpoint.path}
@@ -231,27 +237,49 @@ Focus on:
 - Authentication tests`;
 
         try {
-            // NEW: Get existing feature files as style reference
+            // Try AIProviderRegistry first (respects user's provider setting)
+            const { AIProviderRegistry } = await import('./ai/AIProviderRegistry');
+            const registry = AIProviderRegistry.getInstance();
+            const response = await registry.complete(prompt, { maxTokens: 2048, temperature: 0.3 });
+
+            if (response) {
+                const scenarios = response
+                    .split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line && !line.startsWith('#') && !line.startsWith('//'))
+                    .slice(0, 10);
+                return scenarios.length > 0 ? scenarios : ['Comprehensive test coverage needed'];
+            }
+        } catch (error: any) {
+            if (error?.name === 'AISkippedError') {
+                logger.info('AI skipped for coverage analysis');
+                return ['Basic success test', 'Error handling test'];
+            }
+            // Fall through to CopilotService as backup
+        }
+
+        try {
+            const { CopilotService } = await import('./copilotService');
+            const { ContextBuilder } = await import('../utils/contextBuilder');
             const workspace = await ContextBuilder.buildWorkspaceContext();
-            const existingFeatures = workspace.featureFiles.slice(0, 2); // Max 2 examples for style
+            const existingFeatures = workspace.featureFiles.slice(0, 2);
 
             const response = await CopilotService.enhanceTestWithFileContext(
                 '',
                 prompt,
                 'coverage',
-                existingFeatures  // Include existing features for coding style
+                existingFeatures
             );
 
-            // Parse response into array of test scenarios
             const scenarios = response
                 .split('\n')
                 .map(line => line.trim())
                 .filter(line => line && !line.startsWith('#') && !line.startsWith('//'))
-                .slice(0, 10); // Limit to 10 suggestions
+                .slice(0, 10);
 
             return scenarios.length > 0 ? scenarios : ['Comprehensive test coverage needed'];
         } catch (error) {
-            logger.error('Copilot analysis failed', error as Error);
+            logger.error('AI analysis failed for coverage', error as Error);
             return ['Basic success test', 'Error handling test'];
         }
     }
@@ -260,7 +288,7 @@ Focus on:
      * Find scenarios in a feature file that test the given endpoint
      * Enhanced with better matching logic
      */
-    private async findMatchingScenarios(endpoint: any, featureFile: string): Promise<string[]> {
+    private async findMatchingScenarios(endpoint: any, featureFile: string, useAI: boolean): Promise<string[]> {
         try {
             const content = fs.readFileSync(featureFile, 'utf-8');
             const scenarios: string[] = [];
@@ -283,7 +311,7 @@ Focus on:
                     : content.substring(scenarioIndex);
 
                 // Check if scenario tests this endpoint
-                if (await this.scenarioMatchesEndpoint(scenarioContent, endpoint, pathSegments, method)) {
+                if (await this.scenarioMatchesEndpoint(scenarioContent, endpoint, pathSegments, method, useAI)) {
                     scenarios.push(scenarioName);
                 }
             }
@@ -296,37 +324,22 @@ Focus on:
     }
 
     /**
-     * Check if a scenario tests the given endpoint
-     * Enhanced matching logic
+     * Check if a scenario tests the given endpoint — 3-tier matching strategy.
+     *
+     * Tier 1: operationId match in scenario name or comments
+     * Tier 2: method + ALL non-parameter path segments match
+     * Tier 3: AI-assisted match (gated on AI availability, cached per session)
      */
+    private aiMatchCache = new Map<string, boolean>();
+
     private async scenarioMatchesEndpoint(
         scenarioContent: string,
         endpoint: any,
         pathSegments: string[],
-        method: string
+        method: string,
+        useAI: boolean
     ): Promise<boolean> {
-        // Check for method match
-        const methodMatch = new RegExp(`method\\s+${method}`, 'i').test(scenarioContent);
-        if (!methodMatch) {
-            return false;
-        }
-
-        // Check for path segments (more lenient matching)
-        let pathMatchCount = 0;
-        for (const segment of pathSegments) {
-            // Match segment or its variations
-            const segmentRegex = new RegExp(segment, 'i');
-            if (segmentRegex.test(scenarioContent)) {
-                pathMatchCount++;
-            }
-        }
-
-        // Consider it a match if at least one path segment matches
-        if (pathMatchCount > 0) {
-            return true;
-        }
-
-        // Check for operation ID match
+        // Tier 1 — operationId match (highest confidence)
         if (endpoint.operationId) {
             const opIdRegex = new RegExp(endpoint.operationId, 'i');
             if (opIdRegex.test(scenarioContent)) {
@@ -334,15 +347,71 @@ Focus on:
             }
         }
 
-        // Check for path parameter patterns
-        const pathParamMatches = endpoint.path.match(/\{([^}]+)\}/g);
-        if (pathParamMatches) {
-            for (const param of pathParamMatches) {
-                const paramName = param.replace(/[{}]/g, '');
-                if (scenarioContent.includes(paramName)) {
-                    return true;
+        // Check for method match (required for Tier 2)
+        const methodMatch = new RegExp(`method\\s+${method}`, 'i').test(scenarioContent);
+
+        // Tier 2 — method + ALL non-parameter path segments
+        if (methodMatch && pathSegments.length > 0) {
+            let allMatch = true;
+            for (const segment of pathSegments) {
+                const segmentRegex = new RegExp(segment, 'i');
+                if (!segmentRegex.test(scenarioContent)) {
+                    allMatch = false;
+                    break;
                 }
             }
+            if (allMatch) {
+                return true;
+            }
+        }
+
+        // Also check path parameter names as partial evidence
+        if (methodMatch) {
+            const pathParamMatches = endpoint.path.match(/\{([^}]+)\}/g);
+            if (pathParamMatches) {
+                for (const param of pathParamMatches) {
+                    const paramName = param.replace(/[{}]/g, '');
+                    if (scenarioContent.includes(paramName)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Tier 3 — AI-assisted match (optional, cached)
+        if (!useAI) {
+            return false;
+        }
+
+        const cacheKey = `${method}:${endpoint.path}:${scenarioContent.substring(0, 100)}`;
+        if (this.aiMatchCache.has(cacheKey)) {
+            return this.aiMatchCache.get(cacheKey)!;
+        }
+
+        try {
+            const { AIProviderRegistry } = await import('./ai/AIProviderRegistry');
+            const registry = AIProviderRegistry.getInstance();
+            const isAvailable = await registry.isAnyAvailable();
+
+            if (isAvailable) {
+                const prompt = `Does this Karate test scenario test the endpoint ${method} ${endpoint.path}?
+
+Scenario content (first 300 chars):
+${scenarioContent.substring(0, 300)}
+
+Answer ONLY "yes" or "no".`;
+
+                const response = await registry.complete(prompt, {
+                    maxTokens: 10,
+                    temperature: 0
+                });
+
+                const isMatch = response.trim().toLowerCase().startsWith('yes');
+                this.aiMatchCache.set(cacheKey, isMatch);
+                return isMatch;
+            }
+        } catch {
+            // AI unavailable — fall through
         }
 
         return false;

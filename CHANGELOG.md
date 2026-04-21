@@ -5,6 +5,90 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-04-21
+
+### Theme: From Generator to QA Intelligence Platform
+
+### Added
+- **Multi-AI Backend**
+  - `AIProvider` interface with pluggable provider architecture
+  - `AIProviderRegistry` singleton with automatic fallback chain
+  - `CopilotProvider` — wraps existing GitHub Copilot integration (zero breaking change)
+  - `ClaudeAPIProvider` — direct Anthropic API calls with SecretStorage key management
+  - `OllamaProvider` — local inference via Ollama (no API key needed)
+  - New setting: `karateDsl.ai.provider` with auto/copilot/claude-api/ollama modes
+  - Command: "Karate: Set Claude API Key" for secure key storage
+
+- **AI-native CI Test Repair**
+  - `CIFailureIngestor` — localhost webhook server for CI failure payloads (port 47392)
+  - `TestRepairService` — AI-powered test repair with stratified prompts
+  - Backup-before-repair and auto-apply modes
+  - Diff view for manual approval of AI fixes
+  - `CIBridgeScripts` — copy-paste integration snippets for GitHub Actions, Jenkins
+  - Bundled GitHub Action (`.github/actions/karate-report/action.yml`)
+  - 4 new settings: `karateDsl.ciRepair.*`
+
+- **Flaky Test Detector**
+  - `FlakinessAnalyzer` — parabolic scoring: f(x) = 1 − (2x−1)²
+  - Per-scenario trend detection (improving/stable/degrading)
+  - `FlakinessFixService` — AI-powered stabilisation suggestions
+  - Ranked report sorted by flakiness score
+  - 4 new settings: `karateDsl.flakiness.*`
+
+- **Smart Test Data Engine**
+  - `SmartValueGenerator` — field-name-aware heuristics (email, phone, UUID, dates, etc.)
+  - Format-aware generation (uuid, date-time, ipv4, etc.)
+  - Respects `minimum`/`maximum` constraints from OpenAPI specs
+  - `ScenarioOutlineBuilder` — auto-generates data-driven Scenario Outline tables
+  - 3 rows per outline: valid (positive), missing-required (negative/400), boundary (edge)
+  - 2 new settings: `karateDsl.generation.smartTestData`, `karateDsl.generation.scenarioOutlineThreshold`
+
+- **GraphQL Support** (Quick Win)
+  - `GraphQLParser` — parses SDL files and introspection JSON
+  - `GraphQLKarateGenerator` — generates Karate tests with `path('graphql')` pattern
+  - Auto-generates positive and negative scenarios per operation
+  - File picker for `.graphql`/`.gql` or URL input for live introspection
+  - Explorer context menu for GraphQL files
+  - New command: "Karate: Generate Tests from GraphQL"
+
+- **Batch Generation** (Quick Win)
+  - Recursive folder scan for OpenAPI spec files (.json, .yaml, .yml)
+  - Multi-spec validation and generation with progress notification
+  - Detailed summary report (success/failure per file)
+  - Explorer context menu for folders
+  - New command: "Karate: Generate Tests from Directory"
+
+- **Jira Integration** (Quick Win)
+  - `JiraClient` — REST API v3 with Cloud and Data Center auth
+  - `JiraParser` — ADF (Atlassian Document Format) to text converter
+  - Acceptance criteria extraction from description sections and custom fields
+  - Optional AI enhancement of generated scenarios
+  - 3 new settings: `karateDsl.jira.*`
+  - New command: "Karate: Generate Tests from Jira"
+
+### Changed
+- **Semantic Coverage Matching** (Quick Win)
+  - Upgraded `scenarioMatchesEndpoint()` to 3-tier strategy:
+    - Tier 1: operationId match (highest confidence)
+    - Tier 2: method + ALL non-parameter path segments
+    - Tier 3: AI-assisted binary judgement (cached per session)
+  - Eliminates false positives from single-segment matches
+
+- **Input Sanitizer**
+  - Added `sanitizeGraphQL()` — strips unsafe directives and prompt injection in SDL
+  - Added `sanitizeJiraContent()` — strips @mentions, media refs, ADF markup, colour/panel tags
+
+- **OpenAPI Parser**
+  - `getExampleValue()` now delegates to `SmartValueGenerator` for realistic values
+
+### Technical
+- 20 new files, 9 modified files
+- 17 new VS Code settings under `karateDsl.*`
+- 5 new commands registered in extension activation
+- All AI features route through `AIProviderRegistry` for provider abstraction
+
+---
+
 ## [1.3.5] - 2026-02-14
 
 ### Added

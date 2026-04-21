@@ -146,14 +146,30 @@ export class CopilotService {
     }
 
     /**
-     * Check if Copilot is available
+     * Check if any AI provider is available (respects karateDsl.ai.provider setting).
+     * Falls back to checking Copilot directly for backward compat.
      */
     static async isCopilotAvailable(): Promise<boolean> {
+        try {
+            // Check AIProviderRegistry first (respects user's provider setting)
+            const { AIProviderRegistry, AISkippedError } = require('./ai/AIProviderRegistry');
+            const registry = AIProviderRegistry.getInstance();
+            const available = await registry.isAnyAvailable();
+            if (available) {
+                return true;
+            }
+        } catch (e: any) {
+            if (e?.name === 'AISkippedError') {
+                return false;
+            }
+            // Registry not initialized — fall through to direct Copilot check
+        }
+
         try {
             const models = await vscode.lm.selectChatModels(await this.getChatModelSelector());
             return models.length > 0;
         } catch (error) {
-            logger.error('Error checking Copilot availability', error as Error);
+            logger.error('Error checking AI provider availability', error as Error);
             return false;
         }
     }
@@ -173,6 +189,42 @@ export class CopilotService {
         isRetry: boolean = false,
         token?: vscode.CancellationToken
     ): Promise<string> {
+        // ===== v1.4.0: Route through AIProviderRegistry when non-Copilot provider active =====
+        try {
+            const { AIProviderRegistry, AISkippedError } = require('./ai/AIProviderRegistry');
+            const registry = AIProviderRegistry.getInstance();
+            const provider = await registry.getProvider();
+
+            if (provider.id !== 'copilot') {
+                // Non-Copilot provider: build flat prompt (no multi-turn chat API)
+                logger.info(`Routing AI request through ${provider.name} (non-Copilot path)`);
+
+                let flatPrompt = '';
+                if (fullContext?.openApiSpec) {
+                    flatPrompt += `OpenAPI Specification:\n${InputSanitizer.sanitizeSpec(fullContext.openApiSpec)}\n\n`;
+                }
+                if (fullContext?.confluencePage) {
+                    flatPrompt += `Confluence Documentation:\n${this.getPlainTextFromConfluence(fullContext.confluencePage)}\n\n`;
+                }
+                if (fullContext?.postmanCollection) {
+                    flatPrompt += `Postman Collection:\n${InputSanitizer.sanitizeSpec(fullContext.postmanCollection)}\n\n`;
+                }
+                flatPrompt += `${content}\n\n${instructionPrompt}`;
+
+                return await provider.complete(flatPrompt, {
+                    maxTokens: 4096,
+                    temperature: 0.3
+                });
+            }
+        } catch (e: any) {
+            if (e?.name === 'AISkippedError') {
+                logger.info('AI skipped — returning original content');
+                return content;
+            }
+            // Registry unavailable — fall through to direct Copilot path
+            logger.info('AIProviderRegistry unavailable, using direct Copilot path');
+        }
+
         const messages: vscode.LanguageModelChatMessage[] = [];
 
         // Check if context also needs chunking
@@ -357,7 +409,7 @@ Process the rest of the request and provide the Karate test code.`;
         try {
             const isAvailable = await this.isCopilotAvailable();
             if (!isAvailable) {
-                logger.warn('Copilot is not available, returning original feature');
+                logger.warn('AI provider not available, returning original feature');
                 return featureContent;
             }
 
@@ -461,7 +513,7 @@ Enhance the test now:`;
         try {
             const isAvailable = await this.isCopilotAvailable();
             if (!isAvailable) {
-                logger.warn('Copilot not available for comprehensive enhancement');
+                logger.warn('AI provider not available for comprehensive enhancement');
                 return featureContent;
             }
 
@@ -616,7 +668,7 @@ Transform the test now:`;
             }
 
             if (!model) {
-                throw new Error('GitHub Copilot is not available');
+                throw new Error('No AI provider available');
             }
 
             const requirementsText = requirements && requirements.length > 0
@@ -664,6 +716,28 @@ Return ONLY the Scenario blocks (not the full feature file) in pure Karate DSL f
             );
 
             const startTime = Date.now();
+
+            // ===== v1.4.0: Route through registry for non-Copilot providers =====
+            try {
+                const { AIProviderRegistry } = require('./ai/AIProviderRegistry');
+                const registry = AIProviderRegistry.getInstance();
+                const provider = await registry.getProvider();
+
+                if (provider.id !== 'copilot') {
+                    logger.info(`Routing additional scenarios request through ${provider.name}`);
+                    const result = await provider.complete(promptText, { maxTokens: 4096, temperature: 0.3 });
+                    const duration = Date.now() - startTime;
+                    CopilotLogger.logResponse('Generate Additional Scenarios', result, duration);
+                    return this.extractScenarios(this.cleanCopilotResponse(result));
+                }
+            } catch (e: any) {
+                if (e?.name === 'AISkippedError') {
+                    logger.info('AI skipped — returning empty scenarios');
+                    return [];
+                }
+                // Registry unavailable — fall through
+            }
+
             const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
 
             let scenariosText = '';
@@ -722,6 +796,30 @@ ${featureContent}
 Return suggestions as a numbered list, one per line.`
                 )
             ];
+
+            // ===== v1.4.0: Route through registry for non-Copilot providers =====
+            try {
+                const { AIProviderRegistry } = require('./ai/AIProviderRegistry');
+                const registry = AIProviderRegistry.getInstance();
+                const provider = await registry.getProvider();
+
+                if (provider.id !== 'copilot') {
+                    logger.info(`Routing suggestions request through ${provider.name}`);
+                    const promptText = messages[0].content.toString();
+                    const result = await provider.complete(promptText, { maxTokens: 2048, temperature: 0.3 });
+                    return result
+                        .split('\n')
+                        .filter((line: string) => /^\d+\./.test(line.trim()))
+                        .map((line: string) => line.replace(/^\d+\.\s*/, '').trim())
+                        .filter((s: string) => s.length > 0);
+                }
+            } catch (e: any) {
+                if (e?.name === 'AISkippedError') {
+                    logger.info('AI skipped — returning empty suggestions');
+                    return [];
+                }
+                // Registry unavailable — fall through
+            }
 
             const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
 
@@ -805,7 +903,7 @@ Return suggestions as a numbered list, one per line.`
         try {
             const isAvailable = await this.isCopilotAvailable();
             if (!isAvailable) {
-                logger.warn('Copilot is not available, returning original feature');
+                logger.warn('AI provider not available, returning original feature');
                 return featureContent;
             }
 
@@ -874,7 +972,35 @@ Return suggestions as a numbered list, one per line.`
 
             messages.push(vscode.LanguageModelChatMessage.User(promptText));
 
-            // Send request
+            // ===== v1.4.0: Route through registry when non-Copilot provider active =====
+            try {
+                const { AIProviderRegistry } = require('./ai/AIProviderRegistry');
+                const registry = AIProviderRegistry.getInstance();
+                const provider = await registry.getProvider();
+
+                if (provider.id !== 'copilot') {
+                    logger.info(`Routing file-context request through ${provider.name}`);
+                    const result = await provider.complete(promptText, {
+                        maxTokens: 4096,
+                        temperature: 0.3
+                    });
+
+                    const cleanContent = this.cleanCopilotResponse(result);
+                    const fileNames = fileContents.map(f => f.fileName).join(', ');
+                    CopilotLogger.logRequest(`Enhance Test (${contextType}) via ${provider.name}`, context, `[Files: ${fileNames}]`);
+                    CopilotLogger.logResponse(`Enhance Test (${contextType})`, cleanContent, 0);
+                    logger.info(`Successfully enhanced test via ${provider.name}`);
+                    return cleanContent;
+                }
+            } catch (e: any) {
+                if (e?.name === 'AISkippedError') {
+                    logger.info('AI skipped — returning original feature content');
+                    return featureContent;
+                }
+                // Registry unavailable — fall through to Copilot
+            }
+
+            // Send request via Copilot
             let model = this.cachedModel;
             if (!model) {
                 const selector = await this.getChatModelSelector();
@@ -967,6 +1093,37 @@ Return suggestions as a numbered list, one per line.`
             }
 
             logger.info(`Sending multi-part request: ${messages.length} messages`);
+
+            // ===== v1.4.0: Route through registry for non-Copilot providers =====
+            try {
+                const { AIProviderRegistry } = require('./ai/AIProviderRegistry');
+                const registry = AIProviderRegistry.getInstance();
+                const provider = await registry.getProvider();
+
+                if (provider.id !== 'copilot') {
+                    // Non-Copilot: flatten multi-turn to single prompt
+                    logger.info(`Routing multi-part request through ${provider.name} (flattened)`);
+                    const flatPrompt = messages
+                        .filter(m => m.role === vscode.LanguageModelChatMessageRole.User)
+                        .map(m => m.content.toString())
+                        .join('\n\n');
+                    const result = await provider.complete(flatPrompt, { maxTokens: 4096, temperature: 0.3 });
+                    const cleanContent = this.cleanCopilotResponse(result);
+                    const fileNames = fileContents.map(f => f.fileName).join(', ');
+                    const totalSize = fileContents.reduce((sum, f) => sum + f.sizeKB, 0);
+                    CopilotLogger.logRequest(`Enhance Test (${contextType}) via ${provider.name}`, context, `[Files: ${fileNames}] Total: ${totalSize.toFixed(1)}KB`);
+                    CopilotLogger.logResponse(`Enhance Test (${contextType})`, cleanContent, 0);
+                    logger.info(`Successfully enhanced test via ${provider.name} (multi-part flattened)`);
+                    return cleanContent;
+                }
+            } catch (e: any) {
+                if (e?.name === 'AISkippedError') {
+                    logger.info('AI skipped — returning original feature content');
+                    return featureContent;
+                }
+                // Registry unavailable — fall through
+            }
+
             const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
 
             let result = '';

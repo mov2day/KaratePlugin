@@ -2,6 +2,7 @@ import SwaggerParser from '@apidevtools/swagger-parser';
 import * as fs from 'fs';
 import { OpenAPIEndpoint } from '../types';
 import { logger } from '../utils/logger';
+import { SmartValueGenerator } from './data/SmartValueGenerator';
 
 export class OpenAPIParser {
     /**
@@ -56,45 +57,14 @@ export class OpenAPIParser {
     }
 
     /**
-     * Get example value for a schema
+     * Get example value for a schema — delegates to SmartValueGenerator
+     * for field-aware realistic values. The fieldName parameter
+     * is optional for backward compatibility.
      */
-    getExampleValue(schema: any): any {
+    getExampleValue(schema: any, fieldName?: string): any {
         if (!schema) {
             return null;
         }
-
-        if (schema.example !== undefined) {
-            return schema.example;
-        }
-
-        if (schema.default !== undefined) {
-            return schema.default;
-        }
-
-        switch (schema.type) {
-            case 'string':
-                return schema.format === 'email' ? 'test@example.com' :
-                    schema.format === 'date' ? '2024-01-01' :
-                        schema.format === 'date-time' ? '2024-01-01T00:00:00Z' :
-                            'string';
-            case 'number':
-            case 'integer':
-                return 123;
-            case 'boolean':
-                return true;
-            case 'array':
-                return schema.items ? [this.getExampleValue(schema.items)] : [];
-            case 'object':
-                if (schema.properties) {
-                    const obj: any = {};
-                    for (const [key, value] of Object.entries(schema.properties)) {
-                        obj[key] = this.getExampleValue(value);
-                    }
-                    return obj;
-                }
-                return {};
-            default:
-                return null;
-        }
+        return SmartValueGenerator.generate(fieldName || '', schema);
     }
 }

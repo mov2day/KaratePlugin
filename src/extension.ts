@@ -1083,6 +1083,122 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         }
     );
 
+    // ===== v1.4.0: AI Provider Registry Initialization =====
+    try {
+        const { AIProviderRegistry } = require('./services/ai/AIProviderRegistry');
+        const registry = AIProviderRegistry.getInstance();
+        registry.initialize(context);
+        logger.info('AIProviderRegistry initialized');
+    } catch (error) {
+        logger.error('Failed to initialize AIProviderRegistry', error as Error);
+    }
+
+    // ===== v1.4.0: CI Failure Ingestor (conditional) =====
+    let ciIngestor: any = null;
+    const ciRepairEnabled = vscode.workspace.getConfiguration('karateDsl').get<boolean>('ciRepair.enabled');
+    if (ciRepairEnabled) {
+        try {
+            const { CIFailureIngestor } = require('./services/ci/CIFailureIngestor');
+            const { TestRepairService } = require('./services/ci/TestRepairService');
+            ciIngestor = new CIFailureIngestor();
+            const repairService = new TestRepairService();
+
+            ciIngestor.onFailureReceived(async (payload: any) => {
+                logger.info(`CI failure received: ${payload.scenarioName}`);
+                await repairService.repair(payload);
+            });
+
+            ciIngestor.start();
+            context.subscriptions.push({ dispose: () => ciIngestor?.dispose() });
+            logger.info('CI Failure Ingestor started');
+        } catch (error) {
+            logger.error('Failed to start CI Failure Ingestor', error as Error);
+        }
+    }
+
+    // ===== v1.4.0: New Commands =====
+    const generateFromGraphQLCommand = vscode.commands.registerCommand(
+        'karate-dsl.generateFromGraphQL',
+        async () => {
+            try {
+                const { generateFromGraphQL } = await import('./commands/generateFromGraphQL');
+                await generateFromGraphQL();
+            } catch (error) {
+                logger.error('GraphQL generation failed', error as Error);
+                vscode.window.showErrorMessage(`Failed to generate from GraphQL: ${error}`);
+            }
+        }
+    );
+
+    const generateFromDirectoryCommand = vscode.commands.registerCommand(
+        'karate-dsl.generateFromDirectory',
+        async (folderUri?: vscode.Uri) => {
+            try {
+                if (!folderUri) {
+                    const folders = await vscode.window.showOpenDialog({
+                        canSelectFolders: true,
+                        canSelectFiles: false,
+                        canSelectMany: false,
+                        title: 'Select folder containing OpenAPI specs'
+                    });
+                    if (!folders || folders.length === 0) return;
+                    folderUri = folders[0];
+                }
+
+                const { generateFromDirectory } = await import('./commands/generateFromDirectory');
+                await generateFromDirectory(folderUri);
+            } catch (error) {
+                logger.error('Directory generation failed', error as Error);
+                vscode.window.showErrorMessage(`Failed to generate from directory: ${error}`);
+            }
+        }
+    );
+
+    const generateFromJiraCommand = vscode.commands.registerCommand(
+        'karate-dsl.generateFromJira',
+        async () => {
+            try {
+                const { generateFromJira } = await import('./commands/generateFromJira');
+                await generateFromJira(context);
+            } catch (error) {
+                logger.error('Jira generation failed', error as Error);
+                vscode.window.showErrorMessage(`Failed to generate from Jira: ${error}`);
+            }
+        }
+    );
+
+    const setClaudeApiKeyCommand = vscode.commands.registerCommand(
+        'karate-dsl.setClaudeApiKey',
+        async () => {
+            try {
+                const { AIProviderRegistry } = await import('./services/ai/AIProviderRegistry');
+                const registry = AIProviderRegistry.getInstance();
+                const claude = registry.getClaudeProvider();
+
+                const key = await vscode.window.showInputBox({
+                    prompt: 'Enter your Anthropic API key',
+                    password: true,
+                    placeHolder: 'sk-ant-api03-...'
+                });
+
+                if (key) {
+                    await claude.setApiKey(key);
+                    vscode.window.showInformationMessage('✅ Claude API key stored securely');
+                }
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to set API key: ${error}`);
+            }
+        }
+    );
+
+    const showCIBridgeGuideCommand = vscode.commands.registerCommand(
+        'karate-dsl.showCIBridgeGuide',
+        async () => {
+            const { CIBridgeScripts } = await import('./services/ci/CIBridgeScripts');
+            await CIBridgeScripts.showIntegrationGuide();
+        }
+    );
+
     context.subscriptions.push(
         openApiCommand,
         confluenceCommand,
@@ -1110,7 +1226,12 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         startRecordingCommand,
         stopRecordingCommand,
         importHarCommand,
-        synthesizeSessionCommand
+        synthesizeSessionCommand,
+        generateFromGraphQLCommand,
+        generateFromDirectoryCommand,
+        generateFromJiraCommand,
+        setClaudeApiKeyCommand,
+        showCIBridgeGuideCommand
     );
 }
 

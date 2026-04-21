@@ -1,8 +1,8 @@
 {
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
-  "description": "Professional Karate Test Generator & Maintenance with AI - Transform OpenAPI, Postman, and Confluence into automated tests with GitHub Copilot",
-  "version": "1.3.5",
+  "description": "Professional Karate Test Generator & Maintenance with Multi-AI - Transform OpenAPI, Postman, Confluence, GraphQL, and Jira into automated tests",
+  "version": "1.4.0",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -171,6 +171,22 @@
       {
         "command": "karate-dsl.synthesizeSession",
         "title": "Karate: Synthesize Session to Karate"
+      },
+      {
+        "command": "karate-dsl.generateFromGraphQL",
+        "title": "Karate: Generate Tests from GraphQL"
+      },
+      {
+        "command": "karate-dsl.generateFromDirectory",
+        "title": "Karate: Generate Tests from Directory"
+      },
+      {
+        "command": "karate-dsl.generateFromJira",
+        "title": "Karate: Generate Tests from Jira"
+      },
+      {
+        "command": "karate-dsl.setClaudeApiKey",
+        "title": "Karate: Set Claude API Key"
       }
     ],
     "viewsContainers": {
@@ -203,6 +219,16 @@
           "command": "karate-dsl.learnStyleFromExplorer",
           "when": "resourceExtname == .feature",
           "group": "karate@4"
+        },
+        {
+          "command": "karate-dsl.generateFromDirectory",
+          "when": "explorerResourceIsFolder",
+          "group": "karate@5"
+        },
+        {
+          "command": "karate-dsl.generateFromGraphQL",
+          "when": "resourceExtname == .graphql || resourceExtname == .gql",
+          "group": "karate@6"
         }
       ],
       "editor/context": [
@@ -453,6 +479,111 @@
           "additionalProperties": {
             "type": "boolean"
           }
+        },
+        "karateDsl.ai.provider": {
+          "type": "string",
+          "enum": ["auto", "copilot", "claude-api", "ollama"],
+          "default": "auto",
+          "description": "Active AI provider: auto (try copilot first), copilot, claude-api, or ollama",
+          "enumDescriptions": [
+            "Auto: Try Copilot first, then Claude API, then Ollama",
+            "GitHub Copilot (requires Copilot subscription)",
+            "Claude API (requires Anthropic API key)",
+            "Ollama (local inference, requires Ollama running)"
+          ]
+        },
+        "karateDsl.ai.claudeApiModel": {
+          "type": "string",
+          "default": "claude-sonnet-4-6",
+          "description": "Model to use for Claude API calls"
+        },
+        "karateDsl.ai.ollamaEndpoint": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama inference server URL"
+        },
+        "karateDsl.ai.ollamaModel": {
+          "type": "string",
+          "default": "llama3",
+          "description": "Model name to use with Ollama"
+        },
+        "karateDsl.ciRepair.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable CI failure webhook listener for AI-assisted test repair"
+        },
+        "karateDsl.ciRepair.webhookPort": {
+          "type": "number",
+          "default": 47392,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "Local port for CI failure webhook"
+        },
+        "karateDsl.ciRepair.autoApply": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically apply AI repairs without showing diff first"
+        },
+        "karateDsl.ciRepair.backupBeforeRepair": {
+          "type": "boolean",
+          "default": true,
+          "description": "Create backup of feature file before applying AI repair"
+        },
+        "karateDsl.flakiness.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable flakiness detection and scoring"
+        },
+        "karateDsl.flakiness.windowSize": {
+          "type": "number",
+          "default": 20,
+          "minimum": 5,
+          "maximum": 100,
+          "description": "Number of historical runs to analyse for flakiness"
+        },
+        "karateDsl.flakiness.threshold": {
+          "type": "number",
+          "default": 0.15,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Flakiness score threshold (0.0–1.0). Scenarios above this are flagged as flaky"
+        },
+        "karateDsl.flakiness.showInStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show flaky test count in status bar"
+        },
+        "karateDsl.generation.smartTestData": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use realistic, field-aware test values instead of generic placeholders"
+        },
+        "karateDsl.generation.scenarioOutlineThreshold": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Minimum required fields to trigger Scenario Outline auto-generation"
+        },
+        "karateDsl.jira.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Jira instance base URL (e.g., https://yourcompany.atlassian.net)"
+        },
+        "karateDsl.jira.email": {
+          "type": "string",
+          "default": "",
+          "description": "Jira account email for Cloud authentication"
+        },
+        "karateDsl.jira.authType": {
+          "type": "string",
+          "enum": ["basic", "bearer"],
+          "default": "basic",
+          "description": "Jira authentication type: basic (Cloud email:token) or bearer (Data Center PAT)",
+          "enumDescriptions": [
+            "Basic Auth (Cloud): Uses email:token encoded as Base64",
+            "Bearer Token (Data Center/Server): Uses PAT token with Bearer scheme"
+          ]
         }
       }
     }

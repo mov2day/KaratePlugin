@@ -131,4 +131,79 @@ export class InputSanitizer {
 
         return redacted;
     }
+
+    /**
+     * Sanitize GraphQL SDL content.
+     * Strips inline directives that could embed instruction-injection vectors
+     * in field descriptions.
+     */
+    static sanitizeGraphQL(content: string): string {
+        if (!content) return '';
+
+        let sanitized = content;
+
+        // Remove potentially dangerous directives (custom directives with string args)
+        // Keep standard directives: @deprecated, @skip, @include, @specifiedBy
+        const safeDirectives = ['deprecated', 'skip', 'include', 'specifiedBy'];
+        sanitized = sanitized.replace(/@(\w+)(?:\((.*?)\))?/g, (match, name, args) => {
+            if (safeDirectives.includes(name)) {
+                return match;
+            }
+            // Strip unknown directives that might contain injection
+            return '';
+        });
+
+        // Remove string literals in descriptions that look like prompt injection
+        sanitized = sanitized.replace(/"""[\s\S]*?"""/g, (match) => {
+            if (match.toLowerCase().includes('ignore previous') ||
+                match.toLowerCase().includes('system prompt') ||
+                match.toLowerCase().includes('you are now')) {
+                return '"""[SANITIZED_DESCRIPTION]"""';
+            }
+            return match;
+        });
+
+        // Remove script-like content in descriptions
+        sanitized = sanitized.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gmi, '');
+
+        return sanitized.trim();
+    }
+
+    /**
+     * Sanitize Jira content (Atlassian Document Format markup).
+     * Strips @mention tokens, embedded media references, and ADF markup
+     * before passing to AI providers.
+     */
+    static sanitizeJiraContent(content: string): string {
+        if (!content) return '';
+
+        let sanitized = content;
+
+        // Remove @mention patterns (Jira Cloud format)
+        sanitized = sanitized.replace(/@[a-zA-Z0-9._-]+/g, '[USER]');
+
+        // Remove Jira user account IDs
+        sanitized = sanitized.replace(/\b[0-9a-f]{24}\b/g, '[ACCOUNT_ID]');
+
+        // Remove embedded media/attachment references
+        sanitized = sanitized.replace(/![\w.-]+\.(png|jpg|jpeg|gif|svg|pdf)\|?[^!]*!/g, '[MEDIA]');
+
+        // Remove Jira wiki markup image syntax
+        sanitized = sanitized.replace(/\[.*?\|.*?\.(png|jpg|jpeg|gif|svg)\]/g, '[MEDIA]');
+
+        // Remove JIRA-specific markup elements
+        sanitized = sanitized.replace(/\{color[:#][\w]+\}/g, '');
+        sanitized = sanitized.replace(/\{panel[^}]*\}/g, '');
+        sanitized = sanitized.replace(/\{code[^}]*\}/g, '');
+        sanitized = sanitized.replace(/\{noformat\}/g, '');
+
+        // Remove smart links / inline cards
+        sanitized = sanitized.replace(/\[([^\]]*)\|([^\]]*)\]/g, '$1');
+
+        // Strip excessive whitespace
+        sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
+
+        return sanitized.trim();
+    }
 }
+
