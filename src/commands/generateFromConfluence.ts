@@ -3,6 +3,7 @@ import * as path from 'path';
 import { ConfluenceClient } from '../services/confluenceClient';
 import { ConfluenceParser } from '../services/confluenceParser';
 import { KarateGenerator } from '../services/karateGenerator';
+import { SharedStyleService } from '../services/SharedStyleService';
 import { ConfigManager } from '../utils/configManager';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
@@ -112,6 +113,10 @@ export async function generateFromConfluence(context: vscode.ExtensionContext): 
 
             // Create feature
             const generator = new KarateGenerator();
+            const sharedStyle = SharedStyleService.loadSharedStyle();
+            if (sharedStyle) {
+                generator.setStyle(sharedStyle);
+            }
             const feature = {
                 name: page.title,
                 description: `Test scenarios from Confluence page ${pageId}`,

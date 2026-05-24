@@ -28,6 +28,12 @@ import { TestStatusDecorationProvider } from './services/execution/TestStatusDec
 import { KarateCliExecutor } from './services/execution/KarateCliExecutor';
 import { KarateTestController } from './services/execution/KarateTestController';
 import { AgentSkillsService } from './services/agentSkillsService';
+import { FlakinessAnalyzer, FlakinessTier } from './services/flakiness/FlakinessAnalyzer';
+import { CIFailureIngestor } from './services/ci/CIFailureIngestor';
+import { TestRepairService } from './services/ci/TestRepairService';
+import { GitHubActionsPullIngestor } from './services/ci/GitHubActionsPullIngestor';
+import { KarateMcpHostService } from './services/mcp/KarateMcpHostService';
+import { TestExecutionResult } from './types';
 
 export function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
@@ -112,6 +118,43 @@ export function activate(context: vscode.ExtensionContext) {
     if (workspaceRoot) {
         testHistoryService = new TestHistoryService(workspaceRoot);
     }
+
+    const flakinessAnalyzer = new FlakinessAnalyzer();
+    const attachFlakinessSummary = async (result: TestExecutionResult): Promise<void> => {
+        const config = vscode.workspace.getConfiguration('karateDsl');
+        const enabled = config.get<boolean>('flakiness.enabled', true);
+        if (!enabled || !testHistoryService) {
+            return;
+        }
+
+        try {
+            const windowSize = config.get<number>('flakiness.windowSize', 20);
+            const threshold = config.get<number>('flakiness.threshold', 0.15);
+            const history = await testHistoryService.getHistory(windowSize + 5);
+            const combinedHistory = [result, ...history.filter(h => h.id !== result.id)];
+            const report = flakinessAnalyzer.analyze(combinedHistory, windowSize, threshold);
+
+            const tierCounts: Record<FlakinessTier, number> = {
+                stable: 0,
+                watch: 0,
+                flaky: 0,
+                broken: 0
+            };
+            for (const scenario of report.scenarios) {
+                tierCounts[scenario.tier]++;
+            }
+
+            result.flakiness = {
+                threshold: report.threshold,
+                thresholds: report.thresholds,
+                totalScenarios: report.totalScenarios,
+                flaggedCount: report.flakyCount,
+                tierCounts
+            };
+        } catch (error) {
+            logger.warn('Failed to compute flakiness summary', error as Error);
+        }
+    };
 
     // Register CodeLens provider for feature files
     const codeLensProvider = new TestCodeLensProvider();
@@ -273,9 +316,14 @@ export function activate(context: vscode.ExtensionContext) {
                     const { OpenAPIParser } = await import('./services/openApiParser');
                     const { KarateGenerator } = await import('./services/karateGenerator');
                     const { FileUtils } = await import('./utils/fileUtils');
+                    const { SharedStyleService } = await import('./services/SharedStyleService');
 
                     const parser = new OpenAPIParser();
                     const generator = new KarateGenerator();
+                    const sharedStyle = SharedStyleService.loadSharedStyle();
+                    if (sharedStyle) {
+                        generator.setStyle(sharedStyle);
+                    }
 
                     // Parse spec
                     const endpoints = await parser.parseSpec(uri.fsPath);
@@ -461,9 +509,14 @@ export function activate(context: vscode.ExtensionContext) {
                 }, async (progress) => {
                     const { ManualDiffService } = await import('./services/manualDiffService');
                     const { KarateGenerator } = await import('./services/karateGenerator');
+                    const { SharedStyleService } = await import('./services/SharedStyleService');
 
                     const diffService = new ManualDiffService();
                     const generator = new KarateGenerator();
+                    const sharedStyle = SharedStyleService.loadSharedStyle();
+                    if (sharedStyle) {
+                        generator.setStyle(sharedStyle);
+                    }
 
                     progress.report({ increment: 20 });
                     const diff = await diffService.compareSpecs(oldFile[0].fsPath, newFile[0].fsPath);
@@ -669,6 +722,8 @@ export function activate(context: vscode.ExtensionContext) {
 
                     progress.report({ increment: 90, message: 'Execution complete' });
 
+                    await attachFlakinessSummary(result);
+
                     // Save to history
                     if (testHistoryService) {
                         await testHistoryService.saveResult(result);
@@ -681,13 +736,17 @@ export function activate(context: vscode.ExtensionContext) {
                     // Show report
                     await executionReportProvider.showReport(result);
 
+                    const flakySummary = result.flakiness
+                        ? ` | Tiers S:${result.flakiness.tierCounts.stable} W:${result.flakiness.tierCounts.watch} F:${result.flakiness.tierCounts.flaky} B:${result.flakiness.tierCounts.broken}`
+                        : '';
+
                     if (result.status === 'success') {
                         vscode.window.showInformationMessage(
-                            `✅ Tests passed: ${result.summary.passed}/${result.summary.totalScenarios}`
+                            `✅ Tests passed: ${result.summary.passed}/${result.summary.totalScenarios}${flakySummary}`
                         );
                     } else if (result.status === 'failed') {
                         vscode.window.showErrorMessage(
-                            `❌ Tests failed: ${result.summary.failed} failures, ${result.summary.passed} passed`
+                            `❌ Tests failed: ${result.summary.failed} failures, ${result.summary.passed} passed${flakySummary}`
                         );
                     }
                 });
@@ -752,6 +811,8 @@ export function activate(context: vscode.ExtensionContext) {
 
                     progress.report({ increment: 90, message: 'Execution complete' });
 
+                    await attachFlakinessSummary(result);
+
                     // Save and update
                     if (testHistoryService) await testHistoryService.saveResult(result);
                     codeLensProvider.updateResult(result);
@@ -761,9 +822,17 @@ export function activate(context: vscode.ExtensionContext) {
                     await executionReportProvider.showReport(result);
 
                     if (result.status === 'success') {
-                        vscode.window.showInformationMessage(`✅ Scenario "${displayName}" passed`);
+                        const watchCount = result.flakiness?.tierCounts.watch || 0;
+                        const flakyCount = result.flakiness?.tierCounts.flaky || 0;
+                        const brokenCount = result.flakiness?.tierCounts.broken || 0;
+                        const extra = result.flakiness ? ` (Watch:${watchCount} Flaky:${flakyCount} Broken:${brokenCount})` : '';
+                        vscode.window.showInformationMessage(`✅ Scenario "${displayName}" passed${extra}`);
                     } else if (result.status === 'failed') {
-                        vscode.window.showErrorMessage(`❌ Scenario "${displayName}" failed`);
+                        const watchCount = result.flakiness?.tierCounts.watch || 0;
+                        const flakyCount = result.flakiness?.tierCounts.flaky || 0;
+                        const brokenCount = result.flakiness?.tierCounts.broken || 0;
+                        const extra = result.flakiness ? ` (Watch:${watchCount} Flaky:${flakyCount} Broken:${brokenCount})` : '';
+                        vscode.window.showErrorMessage(`❌ Scenario "${displayName}" failed${extra}`);
                     } else if (result.status === 'error') {
                         // Error already shown in TestExecutor
                     }
@@ -798,13 +867,18 @@ export function activate(context: vscode.ExtensionContext) {
                         workingDirectory: workspaceRoot
                     }, token);
 
+                    await attachFlakinessSummary(result);
+
                     if (testHistoryService) await testHistoryService.saveResult(result);
                     codeLensProvider.updateResult(result);
                     decorationProvider.updateResult(result);
                     await executionReportProvider.showReport(result);
 
+                    const flakySummary = result.flakiness
+                        ? ` | Tiers S:${result.flakiness.tierCounts.stable} W:${result.flakiness.tierCounts.watch} F:${result.flakiness.tierCounts.flaky} B:${result.flakiness.tierCounts.broken}`
+                        : '';
                     vscode.window.showInformationMessage(
-                        `✅ Executed ${result.summary.totalScenarios} scenarios: ${result.summary.passed} passed, ${result.summary.failed} failed`
+                        `✅ Executed ${result.summary.totalScenarios} scenarios: ${result.summary.passed} passed, ${result.summary.failed} failed${flakySummary}`
                     );
                 });
             } catch (error) {
@@ -840,10 +914,19 @@ export function activate(context: vscode.ExtensionContext) {
                         workingDirectory: workspaceRoot
                     }, token);
 
+                    await attachFlakinessSummary(result);
+
                     if (testHistoryService) await testHistoryService.saveResult(result);
                     codeLensProvider.updateResult(result);
                     decorationProvider.updateResult(result);
                     await executionReportProvider.showReport(result);
+
+                    const flakySummary = result.flakiness
+                        ? ` | Tiers S:${result.flakiness.tierCounts.stable} W:${result.flakiness.tierCounts.watch} F:${result.flakiness.tierCounts.flaky} B:${result.flakiness.tierCounts.broken}`
+                        : '';
+                    vscode.window.showInformationMessage(
+                        `✅ Tag run complete: ${result.summary.passed}/${result.summary.totalScenarios} passed${flakySummary}`
+                    );
                 });
             } catch (error) {
                 logger.error('Tag-based execution failed', error as Error);
@@ -1093,28 +1176,70 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         logger.error('Failed to initialize AIProviderRegistry', error as Error);
     }
 
-    // ===== v1.4.0: CI Failure Ingestor (conditional) =====
-    let ciIngestor: any = null;
-    const ciRepairEnabled = vscode.workspace.getConfiguration('karateDsl').get<boolean>('ciRepair.enabled');
-    if (ciRepairEnabled) {
-        try {
-            const { CIFailureIngestor } = require('./services/ci/CIFailureIngestor');
-            const { TestRepairService } = require('./services/ci/TestRepairService');
-            ciIngestor = new CIFailureIngestor();
-            const repairService = new TestRepairService();
+    // ===== v1.4.0+: CI Repair Ingestors (pull/webhook/both) =====
+    let ciWebhookIngestor: CIFailureIngestor | undefined;
+    let ciPullIngestor: GitHubActionsPullIngestor | undefined;
+    const repairService = new TestRepairService();
 
-            ciIngestor.onFailureReceived(async (payload: any) => {
-                logger.info(`CI failure received: ${payload.scenarioName}`);
+    const disposeCiIngestors = () => {
+        ciWebhookIngestor?.dispose();
+        ciWebhookIngestor = undefined;
+        ciPullIngestor?.dispose();
+        ciPullIngestor = undefined;
+    };
+
+    const startCiIngestors = () => {
+        disposeCiIngestors();
+
+        const config = vscode.workspace.getConfiguration('karateDsl');
+        const enabled = config.get<boolean>('ciRepair.enabled', false);
+        if (!enabled) {
+            logger.info('CI Repair: disabled');
+            return;
+        }
+
+        const mode = config.get<'pull' | 'webhook' | 'both'>('ciRepair.mode', 'pull') || 'pull';
+        logger.info(`CI Repair: mode=${mode}`);
+
+        if (mode === 'webhook' || mode === 'both') {
+            ciWebhookIngestor = new CIFailureIngestor();
+            ciWebhookIngestor.onFailureReceived(async payload => {
+                logger.info(`CI webhook failure received: ${payload.scenarioName}`);
                 await repairService.repair(payload);
             });
-
-            ciIngestor.start();
-            context.subscriptions.push({ dispose: () => ciIngestor?.dispose() });
-            logger.info('CI Failure Ingestor started');
-        } catch (error) {
-            logger.error('Failed to start CI Failure Ingestor', error as Error);
+            ciWebhookIngestor.start();
         }
-    }
+
+        if (mode === 'pull' || mode === 'both') {
+            ciPullIngestor = new GitHubActionsPullIngestor(context);
+            ciPullIngestor.onFailureReceived(async payload => {
+                logger.info(`CI pull failure received: ${payload.scenarioName}`);
+                await repairService.repair(payload);
+            });
+            ciPullIngestor.start();
+        }
+    };
+
+    startCiIngestors();
+    context.subscriptions.push({
+        dispose: () => disposeCiIngestors()
+    });
+
+    // ===== v1.4.0+: Extension-managed MCP Host =====
+    const mcpHostService = new KarateMcpHostService(context, context.extensionPath);
+    void mcpHostService.startIfEnabled();
+    context.subscriptions.push(mcpHostService);
+
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('karateDsl.ciRepair')) {
+                startCiIngestors();
+            }
+            if (e.affectsConfiguration('karateDsl.mcp')) {
+                void mcpHostService.startIfEnabled();
+            }
+        })
+    );
 
     // ===== v1.4.0: New Commands =====
     const generateFromGraphQLCommand = vscode.commands.registerCommand(
@@ -1191,6 +1316,67 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         }
     );
 
+    const setGitHubTokenCommand = vscode.commands.registerCommand(
+        'karate-dsl.setGitHubToken',
+        async () => {
+            const token = await vscode.window.showInputBox({
+                prompt: 'Enter a GitHub Personal Access Token (Actions read access required)',
+                password: true,
+                ignoreFocusOut: true,
+                placeHolder: 'github_pat_...'
+            });
+
+            if (!token) {
+                return;
+            }
+
+            await context.secrets.store('karateDsl.github.token', token.trim());
+            vscode.window.showInformationMessage('✅ GitHub token stored securely for CI pull mode');
+
+            if (ciPullIngestor?.isRunning()) {
+                void ciPullIngestor.pollOnce();
+            }
+        }
+    );
+
+    const showMcpConnectionInfoCommand = vscode.commands.registerCommand(
+        'karate-dsl.showMcpConnectionInfo',
+        async () => {
+            try {
+                const snippet = await mcpHostService.getConnectionSnippet(true);
+                const doc = await vscode.workspace.openTextDocument({
+                    content: snippet,
+                    language: 'json'
+                });
+                await vscode.window.showTextDocument(doc, { preview: false });
+
+                const action = await vscode.window.showInformationMessage(
+                    'MCP connection snippet ready.',
+                    'Copy Snippet',
+                    'Rotate Token'
+                );
+
+                if (action === 'Copy Snippet') {
+                    await vscode.env.clipboard.writeText(snippet);
+                    vscode.window.showInformationMessage('MCP snippet copied to clipboard');
+                } else if (action === 'Rotate Token') {
+                    await mcpHostService.rotateToken();
+                    const updated = await mcpHostService.getConnectionSnippet(true);
+                    await vscode.env.clipboard.writeText(updated);
+                    const updatedDoc = await vscode.workspace.openTextDocument({
+                        content: updated,
+                        language: 'json'
+                    });
+                    await vscode.window.showTextDocument(updatedDoc, { preview: false });
+                    vscode.window.showInformationMessage('MCP token rotated and new snippet copied to clipboard');
+                }
+            } catch (error) {
+                logger.error('Failed to show MCP connection info', error as Error);
+                vscode.window.showErrorMessage(`Failed to show MCP connection info: ${(error as Error).message}`);
+            }
+        }
+    );
+
     const showCIBridgeGuideCommand = vscode.commands.registerCommand(
         'karate-dsl.showCIBridgeGuide',
         async () => {
@@ -1231,6 +1417,8 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         generateFromDirectoryCommand,
         generateFromJiraCommand,
         setClaudeApiKeyCommand,
+        setGitHubTokenCommand,
+        showMcpConnectionInfoCommand,
         showCIBridgeGuideCommand
     );
 }

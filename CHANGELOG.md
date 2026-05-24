@@ -5,6 +5,45 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-05-24
+
+### Theme: Reliability and Guidance Pass
+
+### Added
+- **In-Extension Help Refresh**
+  - New quick-start guidance in the Help tab for first-time users
+  - Added usage guidance for AI setup, coverage dashboard, flakiness tiers, shared style path, CI repair, and MCP setup
+  - Expanded quick actions coverage for GraphQL and directory flows
+- **Targeted Regression Coverage**
+  - Added tests for CI pull-mode dedupe / retry behavior
+  - Added MCP repair tests for dry-run, apply, `Scenario Outline`, and unmatched-scenario handling
+  - Added test coverage for flakiness thresholds and shared-style fallback behavior
+
+### Changed
+- **Shared Style Application**
+  - `karateDsl.generation.sharedStylePath` is now applied across OpenAPI, Confluence, Combined, Directory, explorer direct, sync, and coverage-generated test flows
+- **Execution Visibility**
+  - Execution report summaries now include flakiness tier counts
+  - User-facing run notifications now surface stability tier breakdowns when available
+- **README Release Notes**
+  - Added a dedicated v1.5.0 “What’s New” section focused on reliability and adoption improvements
+  - Expanded usage guidance for GraphQL, Jira, batch generation, CI repair, MCP setup, and team style workflows
+  - Kept v1.4.0 feature highlights as historical context
+- **Version Metadata**
+  - Bumped extension/package version to `1.5.0`
+  - Updated embedded service version strings for MCP host and CI webhook health response
+
+### Fixed
+- **CI Pull Repair Dedupe**
+  - `GitHubActionsPullIngestor` now marks a workflow run as processed only after a repair payload is successfully extracted and emitted
+  - Failed or inconclusive extraction attempts are retried on future poll cycles
+- **MCP Repair Accuracy**
+  - `repair_test` now matches both `Scenario:` and `Scenario Outline:` blocks
+  - `repair_test` now returns a failure instead of a false-positive success when no target scenario is replaced
+- **Docs / Packaging Alignment**
+  - README command names, setup guidance, and packaged image references now align with the current extension surface
+  - In-extension Help & Guide content now matches actual command titles and newly added feature areas
+
 ## [1.4.0] - 2026-04-21
 
 ### Theme: From Generator to QA Intelligence Platform
@@ -21,19 +60,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **AI-native CI Test Repair**
   - `CIFailureIngestor` — localhost webhook server for CI failure payloads (port 47392)
+  - `GitHubActionsPullIngestor` — background polling pull model for GitHub Actions failures
+  - `GitHubActionsClient` + `CiFailureExtractor` — failed-run filtering, artifact/log extraction, payload mapping
   - `TestRepairService` — AI-powered test repair with stratified prompts
   - Backup-before-repair and auto-apply modes
   - Diff view for manual approval of AI fixes
   - `CIBridgeScripts` — copy-paste integration snippets for GitHub Actions, Jenkins
   - Bundled GitHub Action (`.github/actions/karate-report/action.yml`)
-  - 4 new settings: `karateDsl.ciRepair.*`
+  - Command: `karate-dsl.setGitHubToken` (SecretStorage key: `karateDsl.github.token`)
+  - Pull/webhook dual mode settings under `karateDsl.ciRepair.*`
 
 - **Flaky Test Detector**
   - `FlakinessAnalyzer` — parabolic scoring: f(x) = 1 − (2x−1)²
+  - Tier labels: `stable`, `watch`, `flaky`, `broken`
   - Per-scenario trend detection (improving/stable/degrading)
   - `FlakinessFixService` — AI-powered stabilisation suggestions
   - Ranked report sorted by flakiness score
-  - 4 new settings: `karateDsl.flakiness.*`
+  - Tier threshold settings under `karateDsl.flakiness.thresholds.*`
+
+- **Shared Team Style**
+  - `SharedStyleService` — loads workspace shared style file from `karateDsl.generation.sharedStylePath`
+  - Precedence: shared style → learned local style → generator defaults
+  - Applied across generator entrypoints (commands, explorer direct flow, dashboard generation utilities)
+
+- **Extension-Managed MCP Host**
+  - `KarateMcpHostService` with HTTP JSON-RPC and SSE compatibility endpoints
+  - `KarateMcpToolService` full five-tool suite:
+    - `generate_tests`
+    - `check_coverage`
+    - `repair_test`
+    - `list_flaky`
+    - `run_feature` (CLI JAR backend)
+  - Token auth + connection snippet/rotation command
+  - MCP settings under `karateDsl.mcp.*`
 
 - **Smart Test Data Engine**
   - `SmartValueGenerator` — field-name-aware heuristics (email, phone, UUID, dates, etc.)
@@ -249,7 +308,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.2.12] - 2026-01-XX
+## [1.2.12] - 2026-01 (historical)
 
 ### Added
 - **Enhanced Coverage Dashboard**: Option to append tests to existing feature files
@@ -264,7 +323,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.2.10] - 2026-01-XX
+## [1.2.10] - 2026-01 (historical)
 
 ### Added
 - **Project Health Doctor**: Real-time linter with instant feedback
@@ -274,7 +333,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.2.9] - 2026-01-XX
+## [1.2.9] - 2026-01 (historical)
 
 ### Added
 - **Smart Retries**: Automatically handles "Sorry, I can't assist" responses
@@ -285,7 +344,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.2.3] - 2026-01-XX
+## [1.2.3] - 2026-01 (historical)
 
 ### Added
 - **Postman Collection Import**: Convert entire collections to Karate DSL
@@ -294,7 +353,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.2.1] - 2026-01-XX
+## [1.2.1] - 2026-01 (historical)
 
 ### Added
 - **Automatic Sync**: Detects changes in OpenAPI specs
@@ -313,12 +372,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.5.0]: https://github.com/mov2day/KaratePlugin/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/mov2day/KaratePlugin/compare/v1.3.5...v1.4.0
+[1.3.5]: https://github.com/mov2day/KaratePlugin/compare/v1.3.3...v1.3.5
 [1.3.3]: https://github.com/mov2day/KaratePlugin/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/mov2day/KaratePlugin/compare/v1.3.0...v1.3.2
 [1.3.0]: https://github.com/mov2day/KaratePlugin/compare/v1.2.12...v1.3.0
-[1.2.12]: https://github.com/your-repo/compare/v1.2.10...v1.2.12
-[1.2.10]: https://github.com/your-repo/compare/v1.2.9...v1.2.10
-[1.2.9]: https://github.com/your-repo/compare/v1.2.3...v1.2.9
-[1.2.3]: https://github.com/your-repo/compare/v1.2.1...v1.2.3
-[1.2.1]: https://github.com/your-repo/compare/v1.0.0...v1.2.1
-[1.0.0]: https://github.com/your-repo/releases/tag/v1.0.0
+[1.2.12]: https://github.com/mov2day/KaratePlugin/compare/v1.2.10...v1.2.12
+[1.2.10]: https://github.com/mov2day/KaratePlugin/compare/v1.2.9...v1.2.10
+[1.2.9]: https://github.com/mov2day/KaratePlugin/compare/v1.2.3...v1.2.9
+[1.2.3]: https://github.com/mov2day/KaratePlugin/compare/v1.2.1...v1.2.3
+[1.2.1]: https://github.com/mov2day/KaratePlugin/compare/v1.0.0...v1.2.1
+[1.0.0]: https://github.com/mov2day/KaratePlugin/releases/tag/v1.0.0

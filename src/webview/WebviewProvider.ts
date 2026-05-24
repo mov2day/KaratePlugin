@@ -13,6 +13,7 @@ import { GenerationOptions, KarateConfig, HistoryItem, KarateTemplate, WebviewMe
 import { HistoryManager } from '../services/historyManager';
 import { TemplateManager } from '../services/templateManager';
 import { StyleAnalyzer } from '../services/styleAnalyzer';
+import { SharedStyleService } from '../services/SharedStyleService';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'karateGenerator.mainView';
@@ -362,6 +363,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             const { KarateGenerator } = await import('../services/karateGenerator');
 
             const generator = new KarateGenerator();
+            const sharedStyle = SharedStyleService.loadSharedStyle();
+            if (sharedStyle) {
+                generator.setStyle(sharedStyle);
+            }
             const syncManager = new TestSyncManager(this._specHashManager, generator);
 
             // Perform sync
@@ -635,6 +640,22 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         <div class="tab-content" id="help-tab">
             <div class="card">
                 <div class="card-header">
+                    <span class="card-icon">🚀</span>
+                    <span class="card-title">Quick Start</span>
+                </div>
+                <div class="help-section">
+                    <p><strong>First run in a new workspace:</strong></p>
+                    <ul>
+                        <li><strong>Open the extension:</strong> Activity Bar → <strong>Karate Test Generator</strong> or Command Palette → <code>Karate: Open Test Generator</code>.</li>
+                        <li><strong>Pick an input:</strong> Generate from <code>OpenAPI</code>, <code>Confluence</code>, <code>Combined</code>, <code>GraphQL</code>, <code>Jira</code>, <code>Directory</code>, <code>Postman</code>, or <code>HAR</code>.</li>
+                        <li><strong>Optional AI setup:</strong> Enable Copilot in Settings, choose a model with <code>Karate: Select Copilot Model</code>, or store a Claude key with <code>Karate: Set Claude API Key</code>.</li>
+                        <li><strong>Generate and run:</strong> Create feature files, then use CodeLens, the Testing view, or Command Palette run commands to execute them.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
                     <span class="card-icon">🧪</span>
                     <span class="card-title">Running Tests</span>
                 </div>
@@ -644,7 +665,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                         <li><strong>▶ Run Feature:</strong> Click the CodeLens above any <code>Feature:</code> line to run the entire feature.</li>
                         <li><strong>▶ Run Scenario:</strong> Click the CodeLens above any <code>Scenario:</code> line to run a single scenario.</li>
                         <li><strong>Testing Sidebar:</strong> All <code>.feature</code> files appear in the VS Code Testing tab. Run any combination from there.</li>
-                        <li><strong>Run Folder / Tags:</strong> Use Command Palette → <code>Karate: Run Folder</code> or <code>Karate: Run by Tags</code>.</li>
+                        <li><strong>Run Folder / Tags:</strong> Use Command Palette → <code>Karate: Run All Tests in Folder</code> or <code>Karate: Run Tests by Tags</code>.</li>
+                        <li><strong>Reports & History:</strong> Use <code>Karate: Show Test Execution Report</code> and <code>Karate: Show Test History</code> to inspect past runs.</li>
                     </ul>
                     <p><strong>Build Tools:</strong> Supports <code>CLI</code> (standalone JAR), <code>Maven</code>, and <code>Gradle</code>. Set via <code>karateDsl.execution.defaultBuildTool</code>.</p>
                 </div>
@@ -685,7 +707,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             <div class="card">
                 <div class="card-header">
                     <span class="card-icon">🤖</span>
-                    <span class="card-title">Copilot Integration</span>
+                    <span class="card-title">AI Providers & Activity</span>
                 </div>
                 <div class="help-section">
                     <p><strong>AI-enhanced features:</strong></p>
@@ -695,8 +717,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                         <li><strong>Postman Import:</strong> Intelligent conversion of pre-request scripts to Karate assertions.</li>
                         <li><strong>HAR Import:</strong> AI enriches imported traffic with schema validation and error scenarios.</li>
                         <li><strong>Select Model:</strong> Command Palette → <code>Karate: Select Copilot Model</code> to choose your preferred model.</li>
+                        <li><strong>Claude Key:</strong> Use <code>Karate: Set Claude API Key</code> when a Claude-backed flow is configured.</li>
+                        <li><strong>Activity Log:</strong> Use <code>Karate: Show Copilot Activity Log</code> to inspect prompts, usage, and responses.</li>
                     </ul>
-                    <p><strong>Note:</strong> Requires an active GitHub Copilot subscription and the VS Code Copilot extension.</p>
+                    <p><strong>Note:</strong> Copilot-specific features require an active GitHub Copilot subscription and the VS Code Copilot extension.</p>
                 </div>
             </div>
 
@@ -710,6 +734,22 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     <p>2. Select your <code>.json</code>, <code>.yaml</code>, or <code>.yml</code> spec file.</p>
                     <p>3. (Optional) Check "AI Enhancement" for Copilot-powered tests.</p>
                     <p>4. Click <strong>Generate Tests</strong>.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🧩</span>
+                    <span class="card-title">Combined & Other Inputs</span>
+                </div>
+                <div class="help-section">
+                    <p><strong>Beyond a single OpenAPI file:</strong></p>
+                    <ul>
+                        <li><strong>Combined:</strong> Use <code>Karate: Generate Combined Tests</code> to merge OpenAPI structure with Confluence business context.</li>
+                        <li><strong>GraphQL:</strong> Right-click <code>.graphql</code>/<code>.gql</code> files or use <code>Karate: Generate Tests from GraphQL</code>.</li>
+                        <li><strong>Jira:</strong> Use <code>Karate: Generate Tests from Jira</code> when requirements live in Jira issues.</li>
+                        <li><strong>Directory:</strong> Use <code>Karate: Generate Tests from Directory</code> on a folder to batch process multiple specs.</li>
+                    </ul>
                 </div>
             </div>
 
@@ -758,12 +798,42 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
 
             <div class="card">
                 <div class="card-header">
+                    <span class="card-icon">📊</span>
+                    <span class="card-title">Coverage, Flakiness & Style</span>
+                </div>
+                <div class="help-section">
+                    <ul>
+                        <li><strong>Coverage:</strong> Use <code>Karate: Show Test Coverage Dashboard</code> to compare spec endpoints against generated tests and create missing scenarios.</li>
+                        <li><strong>Flakiness:</strong> Execution summaries and reports show stability tiers (<code>stable</code>, <code>watch</code>, <code>flaky</code>, <code>broken</code>). Tune them with <code>karateDsl.flakiness.*</code>.</li>
+                        <li><strong>Shared Team Style:</strong> Set <code>karateDsl.generation.sharedStylePath</code> to apply a workspace-wide <code>.karate-style.json</code>.</li>
+                        <li><strong>Learn from Existing Tests:</strong> Right-click a <code>.feature</code> file and use the style learning actions to match local conventions.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
                     <span class="card-icon">🔄</span>
                     <span class="card-title">Auto-Maintenance</span>
                 </div>
                 <div class="help-section">
                     <p>The extension watches your OpenAPI files for changes.</p>
                     <p>When you save a change to a spec, a notification will appear offering to <strong>Update with Copilot</strong>. This preserves your custom logic while adding new endpoints and fields.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🛠️</span>
+                    <span class="card-title">CI Repair & MCP</span>
+                </div>
+                <div class="help-section">
+                    <ul>
+                        <li><strong>CI Pull Mode:</strong> Enable <code>karateDsl.ciRepair.enabled</code>, keep <code>karateDsl.ciRepair.mode</code> as <code>pull</code> (default), and store a PAT with <code>Karate: Set GitHub Token</code>.</li>
+                        <li><strong>Webhook / Bridge:</strong> Use <code>Karate: Show CI Bridge Guide</code> for GitHub Actions and other CI integration snippets.</li>
+                        <li><strong>MCP Host:</strong> Enable <code>karateDsl.mcp.enabled</code> to expose the extension-managed MCP server.</li>
+                        <li><strong>Connection Snippet:</strong> Use <code>Karate: Show MCP Connection Info</code> to copy the JSON config and rotate the Bearer token stored in SecretStorage.</li>
+                    </ul>
                 </div>
             </div>
 
@@ -794,22 +864,24 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                         <li><code>.json/.yaml</code> (OpenAPI): Generate Karate Tests</li>
                         <li><code>.json</code> (Postman): Import Postman Collection</li>
                         <li><code>.har</code>: Import HAR File</li>
+                        <li><code>.graphql/.gql</code>: Generate Tests from GraphQL</li>
                         <li><code>.feature</code>: Learn Style from File</li>
+                        <li><strong>Folder:</strong> Generate Tests from Directory</li>
                     </ul>
-                    <p><strong>From Command Palette:</strong> <code>Cmd+Shift+P</code> → type "Karate" to see all commands.</p>
+                    <p><strong>From Command Palette:</strong> Open the command palette and type "Karate" to see all commands.</p>
                 </div>
             </div>
 
             <div class="card">
                 <div class="card-header">
                     <span class="card-icon">🏗️</span>
-                    <span class="card-title">Enterprise Features (v1.4.0)</span>
+                    <span class="card-title">Advanced Team Features</span>
                 </div>
                 <div class="help-section">
                     <p><strong>Precision Controls:</strong> In OpenAPI & Combined tabs, use checkboxes to filter by scenario type (positive, negative, edge, security) and HTTP method (GET, POST, PUT, DELETE, PATCH). Add free-text instructions for Copilot.</p>
                     <p><strong>Structuring Strategies:</strong> Set <code>karateDsl.generation.structuringStrategy</code> to <code>domain</code> (default — groups by API domain), <code>flat</code> (single file), or <code>method</code> (groups by HTTP verb).</p>
                     <p><strong>Smart Reusability:</strong> Generated tests are auto-analyzed for repeated patterns (auth, setup, headers). Common steps are extracted to <code>common/</code> feature files with <code>call</code>/<code>callonce</code>.</p>
-                    <p><strong>Agent Skills:</strong> Copilot prompts are hardened with 4 skill files for Karate DSL expertise, preventing hallucinations and enforcing best practices.</p>
+                    <p><strong>Agent Skills:</strong> Copilot prompts are hardened with skill files for Karate DSL expertise, preventing hallucinations and enforcing best practices.</p>
                 </div>
             </div>
         </div>

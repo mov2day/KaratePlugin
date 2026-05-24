@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { EnhancedCoverageService, EnhancedCoverageReport } from '../services/enhancedCoverageService';
+import { SharedStyleService } from '../services/SharedStyleService';
 import { logger } from '../utils/logger';
 
 /**
@@ -191,6 +192,10 @@ export class CoverageDashboardProvider {
         try {
             const { KarateGenerator } = await import('../services/karateGenerator');
             const generator = new KarateGenerator();
+            const sharedStyle = SharedStyleService.loadSharedStyle();
+            if (sharedStyle) {
+                generator.setStyle(sharedStyle);
+            }
             const fs = await import('fs');
             const path = await import('path');
 
@@ -363,6 +368,10 @@ export class CoverageDashboardProvider {
 
                         const { KarateGenerator } = await import('../services/karateGenerator');
                         const generator = new KarateGenerator();
+                        const sharedStyle = SharedStyleService.loadSharedStyle();
+                        if (sharedStyle) {
+                            generator.setStyle(sharedStyle);
+                        }
                         const feature = generator.generateFromOpenAPI([endpoint], endpoint.path.replace(/\//g, '_'));
                         const basicTest = generator.featureToString(feature);
 

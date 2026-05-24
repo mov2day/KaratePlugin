@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { OpenAPIParser } from '../services/openApiParser';
 import { KarateGenerator } from '../services/karateGenerator';
+import { SharedStyleService } from '../services/SharedStyleService';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
 
@@ -42,6 +43,10 @@ export async function generateFromOpenAPI(context: vscode.ExtensionContext): Pro
             // Generate Karate tests
             progress.report({ increment: 35, message: 'Generating Karate feature files...' });
             const generator = new KarateGenerator();
+            const sharedStyle = SharedStyleService.loadSharedStyle();
+            if (sharedStyle) {
+                generator.setStyle(sharedStyle);
+            }
 
             const specFileName = path.basename(specPath, path.extname(specPath));
             const feature = generator.generateFromOpenAPI(endpoints, specFileName);

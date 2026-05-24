@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { logger } from '../utils/logger';
+import { SharedStyleService } from '../services/SharedStyleService';
 
 /**
  * Batch generation command — generates tests for all OpenAPI specs in a folder.
@@ -37,6 +38,10 @@ export async function generateFromDirectory(folderUri: vscode.Uri): Promise<void
 
             const parser = new OpenAPIParser();
             const generator = new KarateGenerator();
+            const sharedStyle = SharedStyleService.loadSharedStyle();
+            if (sharedStyle) {
+                generator.setStyle(sharedStyle);
+            }
 
             const results: { file: string; success: boolean; scenarios: number; error?: string }[] = [];
             const increment = 80 / specFiles.length;

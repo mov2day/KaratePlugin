@@ -4,7 +4,7 @@
 
 Transform OpenAPI specs, Postman collections, and Confluence docs into production-ready Karate tests in seconds. Run them from your editor, track coverage, and let AI keep everything in sync as your API evolves.
 
-[![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-brightgreen.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -12,19 +12,40 @@ Transform OpenAPI specs, Postman collections, and Confluence docs into productio
 
 ---
 
-## 🆕 What's New in v1.4.0
+## 🆕 What's New in v1.5.0
+
+### 🛠️ Reliability, Docs, and Adoption
+- **In-Extension Help Refresh**: The Help & Guide tab now covers quick start, AI setup, coverage, flakiness tiers, shared style files, CI repair, and MCP setup.
+- **Execution Visibility**: Run summaries and the execution dashboard now surface flakiness tier counts (`stable`, `watch`, `flaky`, `broken`) for faster stability triage.
+- **Shared Style Everywhere**: `karateDsl.generation.sharedStylePath` is now honored across webview flows, explorer/direct commands, combined generation, and coverage-generated missing tests.
+- **Safer CI Pull Repair**: GitHub Actions pull-mode now retries runs when artifacts/logs fail to produce a repair payload instead of prematurely deduping them away.
+- **Stronger MCP Repair Flow**: `repair_test` now updates both `Scenario` and `Scenario Outline` blocks and returns a proper failure when the target scenario is not matched.
+- **README + Marketplace Alignment**: Commands, settings, and screenshot assets are aligned with the current extension build and package cleanly for VS Code extension pages.
+
+## 🚀 Previously in v1.4.0
 
 ### 🤖 Multi-AI Backend (Ollama, Claude API, Copilot)
 - **Pluggable Architecture**: Support for local inference (Ollama), Claude API, and GitHub Copilot.
 - **Secure Configuration**: Uses VS Code SecretStorage for Claude API keys. 
 
 ### 🛠️ AI-native CI Test Repair
-- **CI Webhook**: Listens for CI failure payloads on localhost (Port 47392).
+- **Dual Ingestion Modes**: Pull failed GitHub Actions runs (default), webhook listener, or both.
+- **GitHub Pull Mode**: Polls failed runs, dedupes run attempts, extracts artifacts/logs, and routes to repair flow.
 - **Test Repair**: AI-powered repair suggestions with diff view, auto-apply, and backup-before-repair modes.
 
 ### 🔎 Flaky Test Detector
 - **FlakinessAnalyzer**: Detects unstable scenarios and provides AI-powered stabilization suggestions.
+- **Tier Labels**: `stable | watch | flaky | broken` with configurable thresholds.
 - **Trend Detection**: Tracks scenario stability across runs (improving/stable/degrading).
+
+### 🎨 Shared Team Style
+- **Shared Style File**: Use `karateDsl.generation.sharedStylePath` to enforce a team-wide `.karate-style.json`.
+- **Precedence**: Shared style overrides learned local style, then generator defaults.
+
+### 🔌 Extension-Managed MCP Server
+- **5 Tool Suite**: `generate_tests`, `check_coverage`, `repair_test`, `list_flaky`, `run_feature`.
+- **Transport**: HTTP JSON-RPC with SSE compatibility endpoint support.
+- **Security**: Bearer token auth via VS Code SecretStorage.
 
 ### 🗃️ Smart Test Data Engine
 - **Field-Aware Generation**: Meaningful data based on field names (email, phone, UUID, dates) and OpenAPI boundaries.
@@ -41,7 +62,7 @@ Transform OpenAPI specs, Postman collections, and Confluence docs into productio
 
 ---
 
-## 🚀 Previously in v1.3.5
+## 🚀 Earlier Highlights from v1.3.5
 
 ### 🔍 Universal Config Discovery
 - **Workspace-Wide Search**: Automatically finds `karate-config.js` and runner classes anywhere in your project — no more hardcoded paths.
@@ -98,16 +119,17 @@ Run Karate tests directly from VS Code — no terminal required.
 ### 📊 Premium Execution Dashboard
 A modern, interactive dashboard replaces plain-text reports.
 
-![Dashboard Overview](https://github.com/mov2day/Docs/blob/main/dashboard-overview.png?raw=true)
+![Dashboard Overview](images/dashboard-overview.png)
 
 - **Visual Analytics**: Donut charts for pass/fail rates, bar charts for duration
 - **Feature Drill-Down**: Expand any feature to inspect scenarios and step-level details
+- **Flakiness Tier Summary**: Execution summaries include `stable`, `watch`, `flaky`, and `broken` counts
 - **Search & Filter**: Find failing tests instantly
 - **Dark Mode**: Full VS Code theme support with glassmorphism effects
 
-![Feature Breakdown](https://github.com/mov2day/Docs/blob/main/dashboard-feature.png?raw=true)
+![Feature Breakdown](images/dashboard-features.png)
 
-![Step-Level Details](https://github.com/mov2day/Docs/blob/main/dashboard-detail.png?raw=true)
+![Step-Level Details](images/dashboard-details.png)
 
 ### 📈 Visual Test Coverage
 Track which API endpoints have tests and which don't.
@@ -115,6 +137,7 @@ Track which API endpoints have tests and which don't.
 - **Coverage Dashboard**: See tested vs untested endpoints at a glance
 - **Gap Analysis**: Identify missing test scenarios per endpoint
 - **Generate Missing Tests**: Click to generate tests for uncovered endpoints
+- **Shared Style Aware**: Missing-test generation respects workspace shared style files before learned local style
 - **Append to Existing Files**: Add AI-generated scenarios to existing feature files with matching style
 
 ### 📦 Postman Collection Import
@@ -151,6 +174,7 @@ Real-time code quality analysis for Karate projects.
 Maintain consistency across your team's tests.
 
 - **Learn from Examples**: Right-click a well-formatted `.feature` file → *Learn Style Now*
+- **Team Baseline**: Set `karateDsl.generation.sharedStylePath` to apply a shared `.karate-style.json` across the workspace
 - **Future Consistency**: All generated tests match your team's patterns
 - **Template System**: Save and reuse preferred test structures
 
@@ -218,6 +242,12 @@ Or use the Extension Panel → **OpenAPI** tab with the Copilot toggle for AI-en
 
 **Result**: Tests combine the **structure** from your OpenAPI spec with the **business context** from your documentation.
 
+### Generating from GraphQL, Jira, or a Directory
+
+- **GraphQL**: Right-click a `.graphql` / `.gql` file or run `Karate: Generate Tests from GraphQL`
+- **Jira**: Use `Karate: Generate Tests from Jira` to turn issue content and acceptance criteria into Karate scenarios
+- **Directory Batch Mode**: Right-click a folder or run `Karate: Generate Tests from Directory` to process multiple specs in one pass
+
 ### Importing Postman Collections
 
 ```
@@ -233,8 +263,10 @@ Select your Postman collection file (`.json`) and optionally an environment file
 | **▶ Run Feature** (CodeLens) | Above `Feature:` line | Entire feature |
 | **▶ Run Scenario** (CodeLens) | Above each `Scenario:` | Single scenario |
 | **Testing Sidebar** | VS Code Testing tab | Any combination |
-| **Run Folder** | Command palette | All features in folder |
-| **Run by Tags** | Command palette | Tag-filtered execution |
+| **Karate: Run All Tests in Folder** | Command palette | All features in folder |
+| **Karate: Run Tests by Tags** | Command palette | Tag-filtered execution |
+| **Karate: Show Test Execution Report** | Command palette | Latest rich execution dashboard |
+| **Karate: Show Test History** | Command palette | Historical run inspection |
 
 ### Learning Style
 
@@ -243,6 +275,17 @@ Right-click your best .feature file → "Karate: Learn Style Now"
 ```
 
 All future generations will match this file's formatting, naming, and assertion patterns.
+
+### CI Repair + MCP Quick Setup
+
+1. **Enable CI repair**: Set `karateDsl.ciRepair.enabled` to `true`
+2. **Choose ingestion mode**: Leave `karateDsl.ciRepair.mode` as `pull` (default), or switch to `webhook` / `both`
+3. **Store GitHub credentials**: Run `Karate: Set GitHub Token`
+4. **Review bridge snippets**: Run `Karate: Show CI Bridge Guide` for GitHub Actions or webhook integration help
+5. **Enable MCP host**: Set `karateDsl.mcp.enabled` to `true`
+6. **Copy client config**: Run `Karate: Show MCP Connection Info` to get the connection JSON and rotate the Bearer token
+
+Available MCP tools: `generate_tests`, `check_coverage`, `repair_test`, `list_flaky`, `run_feature`.
 
 ---
 
@@ -262,7 +305,7 @@ Access settings via **Preferences → Settings** and search for `karateDsl`.
 | `karateDsl.execution.jvmArgs` | `[]` | JVM arguments (e.g., `["-Xmx512m"]`) |
 | `karateDsl.execution.karateArgs` | `[]` | Karate CLI arguments (e.g., `["--threads", "5"]`) |
 | `karateDsl.execution.autoOpenReport` | `true` | Auto-open execution report after runs |
-| `karateDsl.execution.historyLimit` | `20` | Max execution history entries |
+| `karateDsl.execution.historyLimit` | `50` | Max execution history entries |
 
 ### Confluence Settings
 
@@ -279,7 +322,52 @@ Access settings via **Preferences → Settings** and search for `karateDsl`.
 |:--------|:--------|:------------|
 | `karate.copilot.logging.enabled` | `true` | Toggle AI activity logging |
 | `karate.copilot.logging.redactSensitiveData` | `true` | Auto-redact secrets from logs |
-| `karate.copilot.logging.showTokenUsage` | `false` | Show token consumption stats |
+| `karate.copilot.logging.showTokenUsage` | `true` | Show token consumption stats |
+
+### CI Repair Settings
+
+| Setting | Default | Description |
+|:--------|:--------|:------------|
+| `karateDsl.ciRepair.enabled` | `false` | Enable CI failure ingestion + repair flow |
+| `karateDsl.ciRepair.mode` | `pull` | `pull`, `webhook`, or `both` |
+| `karateDsl.ciRepair.github.owner` | `""` | GitHub repository owner |
+| `karateDsl.ciRepair.github.repo` | `""` | GitHub repository name |
+| `karateDsl.ciRepair.github.workflow` | `""` | Optional workflow ID/file filter |
+| `karateDsl.ciRepair.github.branch` | `main` | Branch filter for pull mode |
+| `karateDsl.ciRepair.github.pollIntervalSec` | `90` | Poll interval for pull mode |
+| `karateDsl.ciRepair.github.artifactNamePattern` | `karate\|junit\|test\|report` | Artifact name regex filter |
+| `karateDsl.ciRepair.github.lookbackMinutes` | `120` | Lookback window for failed runs |
+| `karateDsl.ciRepair.webhookPort` | `47392` | Local webhook port (webhook/both modes) |
+
+Use command palette: **Karate: Set GitHub Token** to store PAT securely.
+
+### Flakiness Settings
+
+| Setting | Default | Description |
+|:--------|:--------|:------------|
+| `karateDsl.flakiness.enabled` | `true` | Enable flakiness analysis |
+| `karateDsl.flakiness.windowSize` | `20` | Historical runs considered |
+| `karateDsl.flakiness.threshold` | `0.15` | Legacy flagged threshold |
+| `karateDsl.flakiness.thresholds.watch` | `0.2` | `watch` tier lower bound |
+| `karateDsl.flakiness.thresholds.flaky` | `0.5` | `flaky` tier lower bound |
+| `karateDsl.flakiness.thresholds.broken` | `0.8` | `broken` tier lower bound |
+
+### Generation Style Settings
+
+| Setting | Default | Description |
+|:--------|:--------|:------------|
+| `karateDsl.generation.sharedStylePath` | `""` | Shared `.karate-style.json` path (relative or absolute) |
+
+### MCP Settings
+
+| Setting | Default | Description |
+|:--------|:--------|:------------|
+| `karateDsl.mcp.enabled` | `false` | Enable extension-managed MCP server |
+| `karateDsl.mcp.host` | `127.0.0.1` | MCP bind host |
+| `karateDsl.mcp.port` | `47393` | MCP bind port |
+| `karateDsl.mcp.tokenAuthEnabled` | `true` | Require Bearer token authentication |
+
+Use command palette: **Karate: Show MCP Connection Info** to view/copy connection JSON and rotate token.
 
 ### Agent Skills (VS Code 1.108+)
 
@@ -323,7 +411,7 @@ Feature: Pet API Tests
 
 | Requirement | Version | Notes |
 |:------------|:--------|:------|
-| **VS Code** | 1.108.0+ | Recommended. Basic features work on 1.104+ |
+| **VS Code** | 1.108.0+ | Required |
 | **Java** | 8+ | Required for running Karate tests |
 | **GitHub Copilot** | Latest | Optional, for AI-enhanced features |
 

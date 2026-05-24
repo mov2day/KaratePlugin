@@ -4,6 +4,7 @@ import { OpenAPIParser } from '../services/openApiParser';
 import { ConfluenceClient } from '../services/confluenceClient';
 import { ConfluenceParser } from '../services/confluenceParser';
 import { KarateGenerator } from '../services/karateGenerator';
+import { SharedStyleService } from '../services/SharedStyleService';
 import { ConfigManager } from '../utils/configManager';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
@@ -75,6 +76,10 @@ export async function generateCombined(context: vscode.ExtensionContext): Promis
             // Generate combined tests
             progress.report({ increment: 30, message: 'Generating combined tests...' });
             const generator = new KarateGenerator();
+            const sharedStyle = SharedStyleService.loadSharedStyle();
+            if (sharedStyle) {
+                generator.setStyle(sharedStyle);
+            }
             const scenarios: KarateScenario[] = [];
 
             // Map Confluence test cases to OpenAPI endpoints

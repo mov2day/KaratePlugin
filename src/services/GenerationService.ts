@@ -13,6 +13,7 @@ import { FeatureStructurer, StructuringOptions } from './FeatureStructurer';
 import { ReusabilityEngine } from './ReusabilityEngine';
 import { SpecHashManager, SpecMetadata } from './specHashManager';
 import { GenerationOptions, KarateStyle, KarateTemplate } from '../types';
+import { SharedStyleService } from './SharedStyleService';
 
 /**
  * Service to handle all test generation logic
@@ -314,7 +315,12 @@ export class GenerationService {
     // --- Helper Methods ---
 
     private configureGenerator(generator: KarateGenerator) {
-        if (this._learnedStyle) generator.setStyle(this._learnedStyle);
+        const sharedStyle = SharedStyleService.loadSharedStyle();
+        if (sharedStyle) {
+            generator.setStyle(sharedStyle);
+        } else if (this._learnedStyle) {
+            generator.setStyle(this._learnedStyle);
+        }
         if (this._template) generator.setTemplate(this._template);
     }
 

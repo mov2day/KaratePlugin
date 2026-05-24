@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
   "description": "Professional Karate Test Generator & Maintenance with Multi-AI - Transform OpenAPI, Postman, Confluence, GraphQL, and Jira into automated tests",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -187,6 +187,18 @@
       {
         "command": "karate-dsl.setClaudeApiKey",
         "title": "Karate: Set Claude API Key"
+      },
+      {
+        "command": "karate-dsl.setGitHubToken",
+        "title": "Karate: Set GitHub Token"
+      },
+      {
+        "command": "karate-dsl.showMcpConnectionInfo",
+        "title": "Karate: Show MCP Connection Info"
+      },
+      {
+        "command": "karate-dsl.showCIBridgeGuide",
+        "title": "Karate: Show CI Bridge Guide"
       }
     ],
     "viewsContainers": {
@@ -510,7 +522,56 @@
         "karateDsl.ciRepair.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Enable CI failure webhook listener for AI-assisted test repair"
+          "description": "Enable CI failure ingestion and AI-assisted test repair"
+        },
+        "karateDsl.ciRepair.mode": {
+          "type": "string",
+          "enum": [
+            "pull",
+            "webhook",
+            "both"
+          ],
+          "default": "pull",
+          "description": "CI failure ingestion mode: pull GitHub Actions API, webhook listener, or both"
+        },
+        "karateDsl.ciRepair.github.owner": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub repository owner for CI pull mode"
+        },
+        "karateDsl.ciRepair.github.repo": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub repository name for CI pull mode"
+        },
+        "karateDsl.ciRepair.github.workflow": {
+          "type": "string",
+          "default": "",
+          "description": "Optional workflow file name or workflow ID filter for CI pull mode"
+        },
+        "karateDsl.ciRepair.github.branch": {
+          "type": "string",
+          "default": "main",
+          "description": "Branch filter used for CI pull mode"
+        },
+        "karateDsl.ciRepair.github.pollIntervalSec": {
+          "type": "number",
+          "default": 90,
+          "minimum": 30,
+          "maximum": 3600,
+          "description": "Polling interval in seconds for CI pull mode"
+        },
+        "karateDsl.ciRepair.github.artifactNamePattern": {
+          "type": "string",
+          "default": "karate|junit|test|report",
+          "description": "Regex pattern for selecting GitHub Actions artifacts to inspect"
+        },
+        "karateDsl.ciRepair.github.lookbackMinutes": {
+          "type": "number",
+          "default": 120,
+          "minimum": 5,
+          "maximum": 10080,
+          "description": "How far back to search failed GitHub Actions runs"
         },
         "karateDsl.ciRepair.webhookPort": {
           "type": "number",
@@ -548,6 +609,32 @@
           "maximum": 1,
           "description": "Flakiness score threshold (0.0–1.0). Scenarios above this are flagged as flaky"
         },
+        "karateDsl.flakiness.thresholds": {
+          "type": "object",
+          "default": {
+            "watch": 0.2,
+            "flaky": 0.5,
+            "broken": 0.8
+          },
+          "description": "Tier thresholds for flakiness labels (stable/watch/flaky/broken)",
+          "properties": {
+            "watch": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "flaky": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "broken": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
         "karateDsl.flakiness.showInStatusBar": {
           "type": "boolean",
           "default": true,
@@ -564,6 +651,33 @@
           "minimum": 1,
           "maximum": 10,
           "description": "Minimum required fields to trigger Scenario Outline auto-generation"
+        },
+        "karateDsl.generation.sharedStylePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to workspace-shared .karate-style.json file (relative or absolute)"
+        },
+        "karateDsl.mcp.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable extension-managed Karate MCP host server"
+        },
+        "karateDsl.mcp.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Host interface for Karate MCP server"
+        },
+        "karateDsl.mcp.port": {
+          "type": "number",
+          "default": 47393,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "Port for Karate MCP server"
+        },
+        "karateDsl.mcp.tokenAuthEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require Bearer token authentication for Karate MCP endpoints"
         },
         "karateDsl.jira.baseUrl": {
           "type": "string",

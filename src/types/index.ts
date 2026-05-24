@@ -88,6 +88,7 @@ export interface TestExecutionResult {
     duration: number; // total execution time in ms
     status: 'success' | 'failed' | 'error';
     error?: string;
+    flakiness?: FlakinessSummary;
 }
 
 export interface TestSummary {
@@ -141,6 +142,27 @@ export interface HTTPRequestDetails {
     url: string;
     headers?: Record<string, string>;
     body?: string;
+}
+
+export type FlakinessTier = 'stable' | 'watch' | 'flaky' | 'broken';
+
+export interface FlakinessTierCounts {
+    stable: number;
+    watch: number;
+    flaky: number;
+    broken: number;
+}
+
+export interface FlakinessSummary {
+    threshold: number;
+    thresholds: {
+        watch: number;
+        flaky: number;
+        broken: number;
+    };
+    totalScenarios: number;
+    flaggedCount: number;
+    tierCounts: FlakinessTierCounts;
 }
 
 // Configuration Types

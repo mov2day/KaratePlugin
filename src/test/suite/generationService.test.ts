@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { GenerationService } from '../../services/GenerationService';
 import { SpecHashManager } from '../../services/specHashManager';
 import { HistoryManager } from '../../services/historyManager';
+import { FileUtils } from '../../utils/fileUtils';
 
 suite('GenerationService Test Suite', () => {
     let service: GenerationService;
@@ -75,21 +76,25 @@ suite('GenerationService Test Suite', () => {
     });
 
     test('generateFromOpenAPI should generate files from spec', async () => {
+        const originalResolveOutputPath = FileUtils.resolveOutputPath;
+        (FileUtils as any).resolveOutputPath = () => tempDir;
+
         const progressCallback = (msg: string, increment: number) => {
             console.log(`Progress: ${msg} (${increment}%)`);
         };
 
-        const result = await service.generateFromOpenAPI({
-            filePath: openApiFile,
-            useCopilot: false,
-            scenarioTypes: ['positive']
-        }, progressCallback);
+        try {
+            const result = await service.generateFromOpenAPI({
+                filePath: openApiFile,
+                useCopilot: false,
+                scenarioTypes: ['positive']
+            }, progressCallback);
 
-        assert.ok(result.files.length > 0, 'Should generate at least one file');
-        assert.ok(result.content.length > 0, 'Should return content');
-
-        // precise assertions depend on default output path which might be in source tree
-        // Verification of method call success is primary here
+            assert.ok(result.files.length > 0, 'Should generate at least one file');
+            assert.ok(result.content.length > 0, 'Should return content');
+        } finally {
+            (FileUtils as any).resolveOutputPath = originalResolveOutputPath;
+        }
     });
 
     // We cannot easily test Confluence without mocking network calls, which requires dependnecy injection.

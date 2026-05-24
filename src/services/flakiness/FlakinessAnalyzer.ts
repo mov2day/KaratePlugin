@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import { TestExecutionResult, ScenarioResult } from '../../types';
 import { logger } from '../../utils/logger';
+import * as vscode from 'vscode';
 
 /**
  * Per-scenario run record for flakiness analysis.
@@ -22,9 +23,18 @@ export interface ScenarioFlakiness {
     passRate: number;         // 0.0 – 1.0
     runCount: number;
     flakiness: number;        // parabolic: f(x) = 1 - (2x-1)²
+    tier: FlakinessTier;
     trend: 'improving' | 'stable' | 'degrading';
     lastFailure?: ScenarioRunRecord;
     suggestedFix?: string;    // AI-generated (optional)
+}
+
+export type FlakinessTier = 'stable' | 'watch' | 'flaky' | 'broken';
+
+export interface FlakinessTierThresholds {
+    watch: number;
+    flaky: number;
+    broken: number;
 }
 
 /**
@@ -34,6 +44,7 @@ export interface FlakinessReport {
     analysisTimestamp: number;
     windowSize: number;
     threshold: number;
+    thresholds: FlakinessTierThresholds;
     totalScenarios: number;
     flakyCount: number;
     scenarios: ScenarioFlakiness[];
@@ -47,6 +58,24 @@ export interface FlakinessReport {
  * - 0% or 100% pass rate → score 0.0 (consistently failing/passing)
  */
 export class FlakinessAnalyzer {
+    static getConfiguredThresholds(): FlakinessTierThresholds {
+        const config = vscode.workspace.getConfiguration('karateDsl');
+        const configured = config.get<Partial<FlakinessTierThresholds>>('flakiness.thresholds', {});
+
+        const watch = this.clampThreshold(configured.watch, 0.2);
+        const flaky = this.clampThreshold(configured.flaky, 0.5);
+        const broken = this.clampThreshold(configured.broken, 0.8);
+
+        // Maintain strict ascending order even if user config is bad
+        const normalizedFlaky = Math.max(flaky, watch);
+        const normalizedBroken = Math.max(broken, normalizedFlaky);
+
+        return {
+            watch,
+            flaky: normalizedFlaky,
+            broken: normalizedBroken
+        };
+    }
 
     /**
      * Analyze flakiness from execution history.
@@ -56,6 +85,8 @@ export class FlakinessAnalyzer {
         windowSize: number = 20,
         threshold: number = 0.15
     ): FlakinessReport {
+        const thresholds = FlakinessAnalyzer.getConfiguredThresholds();
+
         // Build per-scenario run map
         const scenarioMap = new Map<string, { featurePath: string; scenarioName: string; runs: ScenarioRunRecord[] }>();
 
@@ -99,6 +130,7 @@ export class FlakinessAnalyzer {
             const passCount = runs.filter(r => r.status === 'passed').length;
             const passRate = passCount / runs.length;
             const flakiness = this.computeFlakiness(passRate);
+            const tier = this.getTier(flakiness, thresholds);
             const trend = this.computeTrend(runs);
             const lastFailure = runs.find(r => r.status === 'failed');
 
@@ -108,6 +140,7 @@ export class FlakinessAnalyzer {
                 passRate,
                 runCount: runs.length,
                 flakiness,
+                tier,
                 trend,
                 lastFailure
             });
@@ -124,6 +157,7 @@ export class FlakinessAnalyzer {
             analysisTimestamp: Date.now(),
             windowSize,
             threshold,
+            thresholds,
             totalScenarios: scoredScenarios.length,
             flakyCount,
             scenarios: scoredScenarios
@@ -172,5 +206,25 @@ export class FlakinessAnalyzer {
      */
     private scenarioKey(featurePath: string, scenarioName: string): string {
         return crypto.createHash('md5').update(`${featurePath}::${scenarioName}`).digest('hex');
+    }
+
+    getTier(score: number, thresholds: FlakinessTierThresholds): FlakinessTier {
+        if (score >= thresholds.broken) {
+            return 'broken';
+        }
+        if (score >= thresholds.flaky) {
+            return 'flaky';
+        }
+        if (score >= thresholds.watch) {
+            return 'watch';
+        }
+        return 'stable';
+    }
+
+    private static clampThreshold(value: number | undefined, fallback: number): number {
+        if (typeof value !== 'number' || Number.isNaN(value)) {
+            return fallback;
+        }
+        return Math.max(0, Math.min(1, value));
     }
 }

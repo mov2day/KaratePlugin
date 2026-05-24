@@ -43,6 +43,7 @@ Feature: ${scenario.featurePath}
 Scenario: ${scenario.scenarioName}
 Pass Rate: ${(scenario.passRate * 100).toFixed(1)}% (${scenario.runCount} runs)
 Flakiness Score: ${scenario.flakiness.toFixed(3)}
+Tier: ${scenario.tier}
 Trend: ${scenario.trend}`;
 
         if (scenario.lastFailure) {

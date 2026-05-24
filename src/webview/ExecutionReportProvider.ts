@@ -227,6 +227,7 @@ export class ExecutionReportProvider {
             timestamp: result.timestamp,
             status: result.status,
             summary: result.summary,
+            flakiness: result.flakiness,
             features: result.features.map((f: any) => ({
                 name: f.name,
                 relativePath: f.relativePath,
@@ -365,11 +366,11 @@ export class ExecutionReportProvider {
             <!-- DASHBOARD VIEW -->
             <div id="dashboard-view" class="view-state">
                 <!-- Summary Cards -->
-                <div class="summary-grid">
-                    <div class="card summary-card">
-                        <div class="card-icon blue">📦</div>
-                        <div class="card-data">
-                            <div class="card-value" id="card-features">0</div>
+	                <div class="summary-grid">
+	                    <div class="card summary-card">
+	                        <div class="card-icon blue">📦</div>
+	                        <div class="card-data">
+	                            <div class="card-value" id="card-features">0</div>
                             <div class="card-label">Features</div>
                         </div>
                     </div>
@@ -387,14 +388,21 @@ export class ExecutionReportProvider {
                             <div class="card-label">Pass Rate</div>
                         </div>
                     </div>
-                    <div class="card summary-card">
-                        <div class="card-icon orange">⏱️</div>
-                        <div class="card-data">
-                            <div class="card-value" id="card-duration">0s</div>
-                            <div class="card-label">Duration</div>
-                        </div>
-                    </div>
-                </div>
+	                    <div class="card summary-card">
+	                        <div class="card-icon orange">⏱️</div>
+	                        <div class="card-data">
+	                            <div class="card-value" id="card-duration">0s</div>
+	                            <div class="card-label">Duration</div>
+	                        </div>
+	                    </div>
+	                    <div class="card summary-card">
+	                        <div class="card-icon red">🧪</div>
+	                        <div class="card-data">
+	                            <div class="card-value small" id="card-flaky-tiers">S:0 W:0 F:0 B:0</div>
+	                            <div class="card-label">Flaky Tiers</div>
+	                        </div>
+	                    </div>
+	                </div>
 
                 <!-- Charts Row -->
                 <div class="charts-grid">
@@ -700,14 +708,16 @@ export class ExecutionReportProvider {
                 font-size: 24px;
             }
 
-            .card-icon.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-            .card-icon.purple { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; }
-            .card-icon.green { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-            .card-icon.orange { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+	            .card-icon.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+	            .card-icon.purple { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; }
+	            .card-icon.green { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+	            .card-icon.orange { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+	            .card-icon.red { background: rgba(244, 63, 94, 0.1); color: #f43f5e; }
 
-            .card-value { font-size: 24px; font-weight: 700; line-height: 1.2; }
-            .card-value.success { color: var(--success); }
-            .card-label { font-size: 13px; color: var(--text-light); }
+	            .card-value { font-size: 24px; font-weight: 700; line-height: 1.2; }
+	            .card-value.small { font-size: 14px; }
+	            .card-value.success { color: var(--success); }
+	            .card-label { font-size: 13px; color: var(--text-light); }
 
             /* Charts Grid */
             .charts-grid {
@@ -979,16 +989,28 @@ export class ExecutionReportProvider {
                 statusBadge.className = 'status-badge ' + (failed ? 'failed' : 'passed');
 
                 // Update Summary Cards
-                document.getElementById('card-features').textContent = result.features.length;
-                document.getElementById('card-scenarios').textContent = result.summary.totalScenarios;
-                document.getElementById('card-passed').textContent = result.summary.passPercentage.toFixed(0) + '%';
-                
-                // Format total duration
-                const durationSec = parseFloat(result.summary.executionTime.replace('s', ''));
-                document.getElementById('card-duration').textContent = durationSec.toFixed(2) + 's';
-                
-                // Center text for donut
-                document.getElementById('center-total').textContent = result.summary.totalScenarios;
+	                document.getElementById('card-features').textContent = result.features.length;
+	                document.getElementById('card-scenarios').textContent = result.summary.totalScenarios;
+	                document.getElementById('card-passed').textContent = result.summary.passPercentage.toFixed(0) + '%';
+	                
+	                // Format total duration
+	                const durationMs = typeof result.duration === 'number' ? result.duration : 0;
+	                if (durationMs >= 60000) {
+	                    const minutes = Math.floor(durationMs / 60000);
+	                    const seconds = Math.round((durationMs % 60000) / 1000);
+	                    document.getElementById('card-duration').textContent = minutes + 'm ' + seconds + 's';
+	                } else {
+	                    document.getElementById('card-duration').textContent = (durationMs / 1000).toFixed(2) + 's';
+	                }
+
+	                const tierCounts = (result.flakiness && result.flakiness.tierCounts)
+	                    ? result.flakiness.tierCounts
+	                    : { stable: 0, watch: 0, flaky: 0, broken: 0 };
+	                document.getElementById('card-flaky-tiers').textContent =
+	                    'S:' + tierCounts.stable + ' W:' + tierCounts.watch + ' F:' + tierCounts.flaky + ' B:' + tierCounts.broken;
+	                
+	                // Center text for donut
+	                document.getElementById('center-total').textContent = result.summary.totalScenarios;
 
                 // Render Charts
                 renderCharts(result.summary, result.features);
