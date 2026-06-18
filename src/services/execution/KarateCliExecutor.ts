@@ -235,10 +235,11 @@ export class KarateCliExecutor {
                 args.push(options.target as string);
                 break;
 
-            case 'features':
+            case 'features': {
                 const features = options.target as string[];
                 args.push(...features);
                 break;
+            }
 
             case 'folder':
                 args.push(options.target as string);
@@ -252,7 +253,7 @@ export class KarateCliExecutor {
                 }
                 break;
 
-            case 'scenario':
+            case 'scenario': {
                 // For scenario execution, line-based targeting (:lineNumber) doesn't work reliably in Karate 1.5+
                 // Extract just the file path and run the whole feature
                 const target = options.target as string;
@@ -260,6 +261,7 @@ export class KarateCliExecutor {
                 args.push(filePath);
                 logger.info(`Running feature for scenario (line targeting removed): ${filePath}`);
                 break;
+            }
         }
 
         // Add parallel threads

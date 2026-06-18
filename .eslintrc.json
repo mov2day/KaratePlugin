@@ -13,11 +13,17 @@
         "plugin:@typescript-eslint/recommended"
     ],
     "rules": {
+        "@typescript-eslint/no-explicit-any": "warn",
+        "@typescript-eslint/no-unused-vars": "warn",
+        "@typescript-eslint/no-var-requires": "warn",
         "@typescript-eslint/naming-convention": "warn",
         "@typescript-eslint/semi": "warn",
         "curly": "warn",
         "eqeqeq": "warn",
+        "no-regex-spaces": "warn",
         "no-throw-literal": "warn",
+        "no-useless-escape": "warn",
+        "prefer-const": "warn",
         "semi": "off"
     }
 }

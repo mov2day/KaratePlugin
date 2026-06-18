@@ -106,12 +106,13 @@ export class BuildToolExecutor {
         // Build Maven command based on execution type
         switch (options.type) {
             case 'feature':
-            case 'features':
+            case 'features': {
                 // For specific features, use karate.options
                 const features = Array.isArray(options.target) ? options.target : [options.target];
                 const featurePaths = features.join(' ');
                 args.push(`-Dkarate.options=${featurePaths}`);
                 break;
+            }
 
             case 'tags':
                 // Execute by tags
@@ -125,11 +126,12 @@ export class BuildToolExecutor {
                 // Execute all tests in folder (let Maven discover)
                 break;
 
-            case 'scenario':
+            case 'scenario': {
                 // For scenario, use karate line number selection
                 const [featurePath, scenarioLine] = (options.target as string).split(':');
                 args.push(`-Dkarate.options=${featurePath}:${scenarioLine}`);
                 break;
+            }
         }
 
         // Add parallel threads if specified
@@ -202,11 +204,12 @@ export class BuildToolExecutor {
         // Build Gradle command based on execution type
         switch (options.type) {
             case 'feature':
-            case 'features':
+            case 'features': {
                 const features = Array.isArray(options.target) ? options.target : [options.target];
                 const featurePaths = features.join(' ');
                 args.push(`-Dkarate.options=${featurePaths}`);
                 break;
+            }
 
             case 'tags':
                 if (options.tags && options.tags.length > 0) {
@@ -219,10 +222,11 @@ export class BuildToolExecutor {
                 // Let Gradle discover all tests
                 break;
 
-            case 'scenario':
+            case 'scenario': {
                 const [featurePath, scenarioLine] = (options.target as string).split(':');
                 args.push(`-Dkarate.options=${featurePath}:${scenarioLine}`);
                 break;
+            }
         }
 
         // Add parallel threads

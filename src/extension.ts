@@ -1385,6 +1385,96 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         }
     );
 
+    const huntApiBugsCommand = vscode.commands.registerCommand(
+        'karate-dsl.huntApiBugs',
+        async (uri?: vscode.Uri) => {
+            try {
+                const specPath = await resolveBugHunterSpecPath(uri);
+                if (!specPath) {
+                    return;
+                }
+
+                const { OpenAPIParser } = await import('./services/openApiParser');
+                let baseUrl = await new OpenAPIParser().parseBaseUrl(specPath);
+                if (!baseUrl) {
+                    baseUrl = await vscode.window.showInputBox({
+                        prompt: 'Base URL to probe (OpenAPI servers.url missing or invalid)',
+                        placeHolder: 'https://staging.example.com',
+                        validateInput: (value) => {
+                            try {
+                                const url = new URL(value);
+                                return ['http:', 'https:'].includes(url.protocol) ? undefined : 'Enter a valid http(s) URL';
+                            } catch {
+                                return 'Enter a valid http(s) URL';
+                            }
+                        }
+                    });
+                }
+
+                if (!baseUrl) {
+                    return;
+                }
+
+                const config = vscode.workspace.getConfiguration('karateDsl.bugHunter');
+                const safeMode = config.get<boolean>('safeMode', true);
+                const includeDestructiveMethods = config.get<boolean>('includeDestructiveMethods', false);
+
+                if (!safeMode && includeDestructiveMethods) {
+                    const confirm = await vscode.window.showWarningMessage(
+                        'Bug Hunter destructive probes can create, update, or delete data. Use only against disposable local or staging environments.',
+                        { modal: true },
+                        'Run destructive probes'
+                    );
+                    if (confirm !== 'Run destructive probes') {
+                        return;
+                    }
+                }
+
+                const authHeader = await resolveBugHunterAuthHeader(context);
+                const { ApiBugHunterService } = await import('./services/bugHunter/ApiBugHunterService');
+                const { showBugHunterReport } = await import('./webview/BugHunterReportProvider');
+                const service = new ApiBugHunterService();
+
+                const result = await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'Karate API Bug Hunter',
+                    cancellable: false
+                }, async (progress) => {
+                    return service.hunt(specPath, {
+                        baseUrl,
+                        authHeader,
+                        safeMode,
+                        includeDestructiveMethods,
+                        maxRequests: config.get<number>('maxRequests', 100),
+                        timeoutMs: config.get<number>('timeoutMs', 5000),
+                        concurrency: config.get<number>('concurrency', 2),
+                        onProgress: (completed, total, probeName) => {
+                            progress.report({ message: `${completed}/${total} ${probeName}` });
+                        }
+                    });
+                });
+
+                const reproFile = result.findings.length > 0
+                    ? await writeBugHunterReproFeature(result.reproFeature, specPath)
+                    : undefined;
+
+                showBugHunterReport(result, reproFile);
+
+                const message = result.findings.length > 0
+                    ? `API Bug Hunter found ${result.findings.length} issue(s).`
+                    : 'API Bug Hunter completed with no findings.';
+                vscode.window.showInformationMessage(message, ...(reproFile ? ['Open Repro Feature'] : [])).then(selection => {
+                    if (selection === 'Open Repro Feature' && reproFile) {
+                        vscode.window.showTextDocument(vscode.Uri.file(reproFile));
+                    }
+                });
+            } catch (error) {
+                logger.error('API Bug Hunter failed', error as Error);
+                vscode.window.showErrorMessage(`API Bug Hunter failed: ${(error as Error).message}`);
+            }
+        }
+    );
+
     context.subscriptions.push(
         openApiCommand,
         confluenceCommand,
@@ -1419,8 +1509,70 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         setClaudeApiKeyCommand,
         setGitHubTokenCommand,
         showMcpConnectionInfoCommand,
-        showCIBridgeGuideCommand
+        showCIBridgeGuideCommand,
+        huntApiBugsCommand
     );
+}
+
+async function resolveBugHunterSpecPath(uri?: vscode.Uri): Promise<string | undefined> {
+    if (uri?.fsPath && fs.existsSync(uri.fsPath) && fs.statSync(uri.fsPath).isFile()) {
+        return uri.fsPath;
+    }
+
+    const files = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: {
+            'OpenAPI Specs': ['json', 'yaml', 'yml']
+        },
+        title: 'Select OpenAPI spec for API Bug Hunter'
+    });
+
+    return files?.[0]?.fsPath;
+}
+
+async function resolveBugHunterAuthHeader(context: vscode.ExtensionContext): Promise<string | undefined> {
+    const secretKey = 'karateDsl.bugHunter.authHeader';
+    const saved = await context.secrets.get(secretKey);
+    const choices = saved
+        ? ['Use saved Authorization header', 'Enter Bearer token', 'Enter raw Authorization header', 'No auth']
+        : ['Enter Bearer token', 'Enter raw Authorization header', 'No auth'];
+
+    const choice = await vscode.window.showQuickPick(choices, {
+        placeHolder: 'Optional auth for Bug Hunter probes'
+    });
+
+    if (!choice || choice === 'No auth') {
+        return undefined;
+    }
+
+    if (choice === 'Use saved Authorization header') {
+        return saved;
+    }
+
+    const input = await vscode.window.showInputBox({
+        prompt: choice === 'Enter Bearer token' ? 'Bearer token for Authorization header' : 'Raw Authorization header value',
+        password: true
+    });
+
+    if (!input) {
+        return undefined;
+    }
+
+    const authHeader = choice === 'Enter Bearer token' ? `Bearer ${input.trim()}` : input.trim();
+    await context.secrets.store(secretKey, authHeader);
+    return authHeader;
+}
+
+async function writeBugHunterReproFeature(featureContent: string, specPath: string): Promise<string> {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || path.dirname(specPath);
+    const outputSetting = vscode.workspace.getConfiguration('karateDsl').get<string>('outputPath', 'src/test/karate');
+    const outputDir = path.isAbsolute(outputSetting) ? outputSetting : path.join(workspaceRoot, outputSetting);
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const outputFile = path.join(outputDir, `bug-hunter-repro-${timestamp}.feature`);
+    fs.writeFileSync(outputFile, featureContent, 'utf-8');
+    return outputFile;
 }
 
 /**

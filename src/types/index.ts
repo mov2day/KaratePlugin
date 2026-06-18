@@ -227,6 +227,83 @@ export interface HTTPResponseDetails {
     duration?: number;
 }
 
+// API Bug Hunter Types
+export type BugFindingSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+export type BugFindingCategory =
+    | 'schema-drift'
+    | 'server-crash'
+    | 'validation-bypass'
+    | 'auth-missing'
+    | 'bola-smoke'
+    | 'injection-smoke';
+
+export interface BugFinding {
+    id: string;
+    severity: BugFindingSeverity;
+    category: BugFindingCategory;
+    endpoint: {
+        method: string;
+        path: string;
+        operationId?: string;
+    };
+    expected: string;
+    observed: string;
+    request: {
+        method: string;
+        url: string;
+        path: string;
+        headers: Record<string, string>;
+        query?: Record<string, unknown>;
+        body?: unknown;
+        probeName: string;
+    };
+    response: {
+        status: number;
+        headers: Record<string, string>;
+        body?: unknown;
+        durationMs: number;
+    };
+    curl: string;
+    karateScenario: string;
+}
+
+export interface BugHunterOptions {
+    baseUrl: string;
+    authHeader?: string;
+    safeMode: boolean;
+    maxRequests: number;
+    timeoutMs: number;
+    concurrency: number;
+    includeDestructiveMethods: boolean;
+    onProgress?: (completed: number, total: number, probeName: string) => void;
+}
+
+export interface BugHunterProbeReport {
+    name: string;
+    method: string;
+    path: string;
+    category?: BugFindingCategory;
+    status: 'executed' | 'skipped';
+    reason?: string;
+    responseStatus?: number;
+    durationMs?: number;
+    findingId?: string;
+}
+
+export interface BugHunterRunResult {
+    specPath: string;
+    baseUrl: string;
+    totalProbes: number;
+    executedProbes: number;
+    skippedProbes: number;
+    probes: BugHunterProbeReport[];
+    findings: BugFinding[];
+    startedAt: number;
+    completedAt: number;
+    reproFeature: string;
+}
+
 // Webview Message Types
 export type WebviewMessage =
     | { command: 'selectOpenAPIFile' }
@@ -242,4 +319,5 @@ export type WebviewMessage =
     | { command: 'openGeneratedFile'; filePath: string }
     | { command: 'copyToClipboard'; content: string }
     | { command: 'syncTests'; specPath: string; updatePlan: any }
-    | { command: 'launchCoverageDashboard' };
+    | { command: 'launchCoverageDashboard' }
+    | { command: 'huntApiBugs' };

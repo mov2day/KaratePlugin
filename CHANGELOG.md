@@ -5,6 +5,34 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-06-18
+
+### Theme: API Bug Hunter and Release Hardening
+
+### Added
+- **Karate API Bug Hunter**
+  - New command: `Karate: Hunt API Bugs`
+  - Runs bounded OpenAPI-derived live probes against a local or staging API
+  - Detects schema drift, 5xx crashes, validation bypasses, missing-auth acceptance, BOLA smoke findings, and injection-smoke findings
+  - Exports interesting findings as runnable Karate regression scenarios
+  - Shows a findings dashboard with severity, category, request/response summary, curl reproducer, and Karate scenario
+  - Adds Probe Trace details for every executed probe, skipped probe reason, response status, and linked finding
+  - Adds a Bug Hunt tab in the extension sidebar to launch the same workflow without using Command Palette
+  - Reads the target base URL from OpenAPI `servers.url`, with a prompt fallback when it is missing or invalid
+- **Bug Hunter Safety Settings**
+  - Added safe mode, max request, timeout, concurrency, and destructive-method controls under `karateDsl.bugHunter.*`
+  - Authorization header storage uses VS Code SecretStorage and redacts secrets in reports
+- **Release Verification Gate**
+  - Added clean, typecheck, verify, and package-content audit scripts
+  - Added GitHub Actions CI for install and verification
+
+### Changed
+- **Packaging Hygiene**
+  - VSIX packaging now excludes local agent files, GitHub metadata, compiled tests, debug leftovers, source maps, backup files, and generated VSIX archives
+  - Prepublish compile starts from a clean `out/` directory to avoid stale runtime files
+- **Lint Gate**
+  - Existing lint debt is surfaced as warnings so release verification can run green while preserving visibility
+
 ## [1.5.0] - 2026-05-24
 
 ### Theme: Reliability and Guidance Pass

@@ -106,6 +106,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 case 'launchCoverageDashboard':
                     await vscode.commands.executeCommand('karate-dsl.showCoverageDashboard');
                     break;
+                case 'huntApiBugs':
+                    await vscode.commands.executeCommand('karate-dsl.huntApiBugs');
+                    break;
             }
         });
     }
@@ -435,6 +438,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             <button class="tab-button" data-tab="coverage">
                 <span>📊</span> Coverage
             </button>
+            <button class="tab-button" data-tab="bughunt">
+                <span>🐞</span> Bug Hunt
+            </button>
             <button class="tab-button" data-tab="help">
                 <span>❓</span> Help
             </button>
@@ -456,6 +462,11 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 <div class="welcome-icon">🎨</div>
                 <h3>Personalize</h3>
                 <p>Styles & Templates</p>
+            </div>
+            <div class="welcome-card card" data-target="bughunt">
+                <div class="welcome-icon">🐞</div>
+                <h3>Bug Hunt</h3>
+                <p>Probe APIs from OpenAPI</p>
             </div>
             <div class="welcome-card card" data-target="help">
                 <div class="welcome-icon">❓</div>
@@ -1087,6 +1098,32 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                         <li>🤖 AI-powered Copilot insights</li>
                         <li>🎯 Priority endpoint recommendations</li>
                         <li>📊 Method-level coverage breakdown</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bug Hunt Tab -->
+        <div class="tab-content" id="bughunt-tab">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">🐞</span>
+                    <span class="card-title">API Bug Hunter</span>
+                </div>
+                <div class="form-group">
+                    <p class="info-text">Run bounded OpenAPI probes and export findings as Karate regression scenarios.</p>
+                </div>
+
+                <button class="primary-button" id="launch-bug-hunter-btn" style="width: 100%; margin-top: 20px;">
+                    <span>🚀</span> Hunt API Bugs
+                </button>
+
+                <div class="info-text" style="margin-top: 16px;">
+                    <p><strong>Report shows:</strong></p>
+                    <ul style="margin-left: 20px; margin-top: 8px;">
+                        <li>Every executed probe</li>
+                        <li>Every skipped probe with reason</li>
+                        <li>HTTP status and generated regression findings</li>
                     </ul>
                 </div>
             </div>

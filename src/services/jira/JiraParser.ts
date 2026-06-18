@@ -79,9 +79,10 @@ export class JiraParser {
             case 'text':
                 return node.text || '';
 
-            case 'heading':
+            case 'heading': {
                 const headingText = this.processNodes(node.content || []);
                 return headingText;
+            }
 
             case 'bulletList':
             case 'orderedList':

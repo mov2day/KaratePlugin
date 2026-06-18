@@ -39,6 +39,22 @@ export class OpenAPIParser {
         }
     }
 
+    async parseBaseUrl(filePath: string): Promise<string | undefined> {
+        const api = await SwaggerParser.parse(filePath) as any;
+        const server = (api.servers || []).find((item: any) => item?.url);
+        const rawUrl = server?.url?.replace(/\{([^}]+)\}/g, (_: string, name: string) => server.variables?.[name]?.default ?? `{${name}}`);
+        if (!rawUrl) {
+            return undefined;
+        }
+
+        try {
+            const url = new URL(rawUrl);
+            return ['http:', 'https:'].includes(url.protocol) ? url.toString().replace(/\/$/, '') : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
     /**
      * Extract endpoint information from OpenAPI operation
      */

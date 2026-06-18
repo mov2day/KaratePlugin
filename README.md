@@ -4,7 +4,7 @@
 
 Transform OpenAPI specs, Postman collections, and Confluence docs into production-ready Karate tests in seconds. Run them from your editor, track coverage, and let AI keep everything in sync as your API evolves.
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-brightgreen.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -12,7 +12,18 @@ Transform OpenAPI specs, Postman collections, and Confluence docs into productio
 
 ---
 
-## 🆕 What's New in v1.5.0
+## 🆕 What's New in v1.5.1
+
+### 🐞 Karate API Bug Hunter
+- **Find Real API Bugs from OpenAPI**: Run bounded live probes against local or staging APIs and detect schema drift, 5xx crashes, validation bypasses, missing-auth acceptance, BOLA smoke findings, and injection-smoke issues.
+- **Export Regressions**: Every finding includes a curl reproducer and can be saved as a runnable Karate regression scenario.
+- **Probe Trace Report**: Reports show every executed probe, every skipped probe with reason, HTTP status, and linked findings.
+- **Sidebar Launch**: The extension UI includes a Bug Hunt tab for starting `Karate: Hunt API Bugs`.
+- **Spec-Derived Target**: Bug Hunter reads the target from OpenAPI `servers.url` and prompts only when it is missing or invalid.
+- **Safe Defaults**: Safe mode skips destructive methods unless explicitly enabled, caps request count/concurrency/timeouts, and redacts secrets in reports.
+- **Release Hardening**: Clean builds, package-content audits, and CI verification keep VSIX contents aligned with runtime needs.
+
+## Previously in v1.5.0
 
 ### 🛠️ Reliability, Docs, and Adoption
 - **In-Extension Help Refresh**: The Help & Guide tab now covers quick start, AI setup, coverage, flakiness tiers, shared style files, CI repair, and MCP setup.
@@ -139,6 +150,17 @@ Track which API endpoints have tests and which don't.
 - **Generate Missing Tests**: Click to generate tests for uncovered endpoints
 - **Shared Style Aware**: Missing-test generation respects workspace shared style files before learned local style
 - **Append to Existing Files**: Add AI-generated scenarios to existing feature files with matching style
+
+### 🐞 API Bug Hunter
+Find real API bugs from an OpenAPI spec and export each finding as a Karate regression.
+
+- **Live Probes**: Generate valid and mutated payloads from OpenAPI schemas
+- **Finding Types**: Schema drift, server crashes, validation bypasses, missing auth, BOLA smoke, and injection smoke
+- **Probe Trace**: See every executed probe, skipped probe reason, response status, and linked finding
+- **Repro Artifacts**: Dashboard details, curl command, and runnable `.feature` export
+- **UI Launch**: Start from the Bug Hunt tab or Command Palette
+- **Base URL**: Uses the first absolute OpenAPI `servers.url`, with prompt fallback
+- **Safe Mode**: Destructive method probes stay off unless explicitly enabled
 
 ### 📦 Postman Collection Import
 Migrate from Postman to Karate in one click.
@@ -368,6 +390,16 @@ Use command palette: **Karate: Set GitHub Token** to store PAT securely.
 | `karateDsl.mcp.tokenAuthEnabled` | `true` | Require Bearer token authentication |
 
 Use command palette: **Karate: Show MCP Connection Info** to view/copy connection JSON and rotate token.
+
+### Bug Hunter Settings
+
+| Setting | Default | Description |
+|:--------|:--------|:------------|
+| `karateDsl.bugHunter.safeMode` | `true` | Skip destructive probes unless explicitly enabled |
+| `karateDsl.bugHunter.maxRequests` | `100` | Maximum live probes per run |
+| `karateDsl.bugHunter.timeoutMs` | `5000` | Per-probe HTTP timeout |
+| `karateDsl.bugHunter.concurrency` | `2` | Concurrent probes |
+| `karateDsl.bugHunter.includeDestructiveMethods` | `false` | Allow POST, PUT, PATCH, DELETE probes |
 
 ### Agent Skills (VS Code 1.108+)
 

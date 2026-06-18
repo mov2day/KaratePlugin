@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
   "description": "Professional Karate Test Generator & Maintenance with Multi-AI - Transform OpenAPI, Postman, Confluence, GraphQL, and Jira into automated tests",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -47,7 +47,12 @@
     "Karate executor",
     "Karate test runner",
     "Karate test report",
-    "Karate test coverage"
+    "Karate test coverage",
+    "api bug hunter",
+    "api fuzzing",
+    "api security testing",
+    "owasp api security",
+    "openapi fuzz testing"
   ],
   "repository": {
     "type": "git",
@@ -199,6 +204,10 @@
       {
         "command": "karate-dsl.showCIBridgeGuide",
         "title": "Karate: Show CI Bridge Guide"
+      },
+      {
+        "command": "karate-dsl.huntApiBugs",
+        "title": "Karate: Hunt API Bugs"
       }
     ],
     "viewsContainers": {
@@ -698,16 +707,51 @@
             "Basic Auth (Cloud): Uses email:token encoded as Base64",
             "Bearer Token (Data Center/Server): Uses PAT token with Bearer scheme"
           ]
+        },
+        "karateDsl.bugHunter.safeMode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run API Bug Hunter in safe mode. Safe mode skips destructive method probes unless explicitly enabled."
+        },
+        "karateDsl.bugHunter.maxRequests": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Maximum number of live API probes per Bug Hunter run."
+        },
+        "karateDsl.bugHunter.timeoutMs": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 500,
+          "maximum": 60000,
+          "description": "HTTP timeout in milliseconds for each Bug Hunter probe."
+        },
+        "karateDsl.bugHunter.concurrency": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Maximum number of Bug Hunter probes to run at once."
+        },
+        "karateDsl.bugHunter.includeDestructiveMethods": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow Bug Hunter probes for POST, PUT, PATCH, and DELETE endpoints."
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run clean && npm run compile",
+    "clean": "node ./scripts/clean-out.cjs",
     "compile": "tsc -p ./",
+    "typecheck": "tsc -p ./ --noEmit",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
+    "verify": "npm run typecheck && npm run lint && npm run package:check",
+    "package:check": "npm run clean && npm run compile && node ./scripts/check-package-files.cjs",
     "test": "node ./out/test/runTest.js",
     "package": "vsce package"
   },

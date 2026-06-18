@@ -592,4 +592,8 @@
     document.getElementById('launch-coverage-btn').addEventListener('click', () => {
         vscode.postMessage({ command: 'launchCoverageDashboard' });
     });
+
+    document.getElementById('launch-bug-hunter-btn').addEventListener('click', () => {
+        vscode.postMessage({ command: 'huntApiBugs' });
+    });
 })();
