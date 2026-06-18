@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
   "description": "Professional Karate Test Generator & Maintenance with Multi-AI - Transform OpenAPI, Postman, Confluence, GraphQL, and Jira into automated tests",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -92,6 +92,10 @@
       {
         "command": "karate-dsl.learnStyleFromExplorerDirect",
         "title": "Karate: Learn Style Now"
+      },
+      {
+        "command": "karate-dsl.migrateFeatureToV2",
+        "title": "Karate: Migrate Feature to v2"
       },
       {
         "command": "karate-dsl.viewTrackedSpecs",
@@ -242,14 +246,19 @@
           "group": "karate@4"
         },
         {
+          "command": "karate-dsl.migrateFeatureToV2",
+          "when": "resourceExtname == .feature",
+          "group": "karate@5"
+        },
+        {
           "command": "karate-dsl.generateFromDirectory",
           "when": "explorerResourceIsFolder",
-          "group": "karate@5"
+          "group": "karate@6"
         },
         {
           "command": "karate-dsl.generateFromGraphQL",
           "when": "resourceExtname == .graphql || resourceExtname == .gql",
-          "group": "karate@6"
+          "group": "karate@7"
         }
       ],
       "editor/context": [
@@ -272,6 +281,11 @@
           "command": "karate-dsl.learnStyleFromExplorer",
           "when": "resourceExtname == .feature",
           "group": "karate@4"
+        },
+        {
+          "command": "karate-dsl.migrateFeatureToV2",
+          "when": "resourceExtname == .feature",
+          "group": "karate@5"
         },
         {
           "command": "karate-dsl.runFeature",
@@ -477,6 +491,16 @@
           },
           "default": [],
           "markdownDescription": "Custom Karate CLI arguments appended to every test run. Example: `[\"--threads\", \"5\", \"--configdir\", \"src/test/resources\"]`"
+        },
+        "karateDsl.execution.jarPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Exact local Karate standalone JAR path. Leave blank to use the bundled Karate 1.5.0.RC3 JAR."
+        },
+        "karateDsl.execution.karateVersion": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Karate standalone JAR version to download and cache, e.g. `2.1.0`. Leave blank to use the bundled Karate 1.5.0.RC3 JAR."
         },
         "karateDsl.execution.systemProperties": {
           "type": "object",

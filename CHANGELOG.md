@@ -5,6 +5,22 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-06-19
+
+### Theme: Small Karate v2 Migration
+
+### Added
+- **Karate v1 to v2 migration**
+  - New command: `Karate: Migrate Feature to v2`
+  - Available from `.feature` file right-click only
+  - Replaces the selected feature file in place; no new file is created
+  - Migrates `@parallel=false` to `@lock=<feature-name>` and removes obsolete `scope: 'caller'`
+- **Safe Karate CLI selection**
+  - Added `karateDsl.execution.jarPath` for an exact local standalone JAR
+  - Added `karateDsl.execution.karateVersion` for an opt-in downloaded standalone JAR version
+  - Blank settings keep the bundled Karate `1.5.0.RC3` JAR for existing users
+  - Karate 2.x runs check for Java 21+
+
 ## [1.5.1] - 2026-06-18
 
 ### Theme: API Bug Hunter and Release Hardening

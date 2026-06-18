@@ -4,7 +4,7 @@
 
 Transform OpenAPI specs, Postman collections, and Confluence docs into production-ready Karate tests in seconds. Run them from your editor, track coverage, and let AI keep everything in sync as your API evolves.
 
-[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-1.5.2-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-brightgreen.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -12,7 +12,16 @@ Transform OpenAPI specs, Postman collections, and Confluence docs into productio
 
 ---
 
-## 🆕 What's New in v1.5.1
+## 🆕 What's New in v1.5.2
+
+### ⬆️ Karate v2 Migration
+- **Right-click migration**: Right-click a `.feature` file and run **Karate: Migrate Feature to v2**.
+- **In-place update**: The selected file is replaced with migrated content; no duplicate file is created.
+- **Small, safe rewrites**: Converts `@parallel=false` to `@lock=<feature-name>` and removes obsolete `scope: 'caller'`.
+- **Executor compatibility**: Existing users keep the bundled Karate `1.5.0.RC3` JAR unless they opt in to `jarPath` or `karateVersion`.
+- **Java guardrail**: Karate 2.x CLI runs check for Java 21+.
+
+## Previously in v1.5.1
 
 ### 🐞 Karate API Bug Hunter
 - **Find Real API Bugs from OpenAPI**: Run bounded live probes against local or staging APIs and detect schema drift, 5xx crashes, validation bypasses, missing-auth acceptance, BOLA smoke findings, and injection-smoke issues.
@@ -246,6 +255,14 @@ Right-click spec.yaml → "Karate: Generate Tests Now"
 
 Or use the Extension Panel → **OpenAPI** tab with the Copilot toggle for AI-enhanced output.
 
+### Migrating Karate v1 Feature Files to v2
+
+```
+Right-click test.feature → "Karate: Migrate Feature to v2"
+```
+
+The command updates the selected `.feature` file in place. It does not create a new file. To run with Karate v2 CLI, choose the prompt after migration or set `karateDsl.execution.karateVersion`.
+
 ### Generating from Confluence
 
 1. Open the Extension Panel → **Confluence** tab
@@ -326,6 +343,8 @@ Access settings via **Preferences → Settings** and search for `karateDsl`.
 | `karateDsl.execution.systemProperties` | `{}` | System properties as `-D` flags (e.g., `{"karate.env": "local"}`) |
 | `karateDsl.execution.jvmArgs` | `[]` | JVM arguments (e.g., `["-Xmx512m"]`) |
 | `karateDsl.execution.karateArgs` | `[]` | Karate CLI arguments (e.g., `["--threads", "5"]`) |
+| `karateDsl.execution.jarPath` | `""` | Exact local Karate standalone JAR path; blank keeps bundled `1.5.0.RC3` |
+| `karateDsl.execution.karateVersion` | `""` | Download/cache a specific Karate JAR version (e.g., `2.1.0`); blank keeps bundled `1.5.0.RC3` |
 | `karateDsl.execution.autoOpenReport` | `true` | Auto-open execution report after runs |
 | `karateDsl.execution.historyLimit` | `50` | Max execution history entries |
 

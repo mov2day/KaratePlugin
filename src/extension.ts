@@ -34,6 +34,7 @@ import { TestRepairService } from './services/ci/TestRepairService';
 import { GitHubActionsPullIngestor } from './services/ci/GitHubActionsPullIngestor';
 import { KarateMcpHostService } from './services/mcp/KarateMcpHostService';
 import { TestExecutionResult } from './types';
+import { KarateV2Migrator } from './services/KarateV2Migrator';
 
 export function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
@@ -296,6 +297,56 @@ export function activate(context: vscode.ExtensionContext) {
                 filePath: uri.fsPath,
                 target: 'style'
             });
+        }
+    );
+
+    const migrateFeatureToV2Command = vscode.commands.registerCommand(
+        'karate-dsl.migrateFeatureToV2',
+        async (uri?: vscode.Uri) => {
+            const target = uri || vscode.window.activeTextEditor?.document.uri;
+            if (!target || path.extname(target.fsPath) !== '.feature') {
+                vscode.window.showWarningMessage('Open or select a .feature file first.');
+                return;
+            }
+
+            const confirm = await vscode.window.showWarningMessage(
+                `Replace ${path.basename(target.fsPath)} with migrated Karate v2 content?`,
+                { modal: true },
+                'Migrate'
+            );
+            if (confirm !== 'Migrate') {
+                return;
+            }
+
+            try {
+                const document = await vscode.workspace.openTextDocument(target);
+                const original = document.getText();
+                const result = KarateV2Migrator.migrate(original, target.fsPath);
+                if (result.content !== original) {
+                    const edit = new vscode.WorkspaceEdit();
+                    edit.replace(target, new vscode.Range(document.positionAt(0), document.positionAt(original.length)), result.content);
+                    if (!await vscode.workspace.applyEdit(edit)) {
+                        throw new Error('Could not apply migration edit');
+                    }
+                    await document.save();
+                }
+
+                const message = result.changes.length > 0
+                    ? `Migrated ${path.basename(target.fsPath)}: ${result.changes.join(', ')}`
+                    : `No required Karate v2 edits found in ${path.basename(target.fsPath)}`;
+                const action = await vscode.window.showInformationMessage(
+                    result.warnings.length > 0 ? `${message}. Warning: ${result.warnings.join('; ')}` : message,
+                    'Use Karate v2 CLI',
+                    'Keep Current CLI'
+                );
+                if (action === 'Use Karate v2 CLI') {
+                    await vscode.workspace.getConfiguration('karateDsl.execution').update('karateVersion', '2.1.0', vscode.ConfigurationTarget.Workspace);
+                    vscode.window.showInformationMessage('Workspace Karate CLI version set to 2.1.0. Java 21+ required.');
+                }
+            } catch (error) {
+                logger.error('Karate v2 migration failed', error as Error);
+                vscode.window.showErrorMessage(`Karate v2 migration failed: ${(error as Error).message}`);
+            }
         }
     );
 
@@ -1482,6 +1533,7 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         openPanelCommand,
         generateFromExplorerCommand,
         learnStyleFromExplorerCommand,
+        migrateFeatureToV2Command,
         generateFromExplorerDirectCommand,
         learnStyleFromExplorerDirectCommand,
         viewTrackedSpecsCommand,

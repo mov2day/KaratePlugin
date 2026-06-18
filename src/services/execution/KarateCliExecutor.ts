@@ -9,23 +9,68 @@ import { logger } from '../../utils/logger';
 /**
  * Direct Karate CLI executor using standalone JAR
  */
+interface KarateJarResolution {
+    jarPath: string;
+    version: string;
+    bundled: boolean;
+    customPath: boolean;
+}
+
 export class KarateCliExecutor {
-    private static readonly KARATE_VERSION = '1.5.0.RC3';
-    private static readonly JAR_NAME = `karate-${this.KARATE_VERSION}.jar`;
+    private static readonly BUNDLED_KARATE_VERSION = '1.5.0.RC3';
 
     /**
      * Get path to Karate standalone JAR
      */
-    private static getJarPath(extensionPath: string): string {
-        return path.join(extensionPath, 'lib', this.JAR_NAME);
+    private static getJarPath(extensionPath: string, version: string): string {
+        return path.join(extensionPath, 'lib', `karate-${version}.jar`);
+    }
+
+    private static resolveJar(extensionPath: string): KarateJarResolution {
+        const config = vscode.workspace.getConfiguration('karateDsl.execution');
+        const configuredPath = (config.get<string>('jarPath', '') || '').trim();
+        if (configuredPath) {
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath || extensionPath;
+            const jarPath = path.isAbsolute(configuredPath) ? configuredPath : path.join(workspaceRoot, configuredPath);
+            const version = path.basename(jarPath).match(/^karate-(.+)\.jar$/)?.[1] || 'custom';
+            return { jarPath, version, bundled: false, customPath: true };
+        }
+
+        const configuredVersion = (config.get<string>('karateVersion', '') || '').trim();
+        if (configuredVersion) {
+            return {
+                jarPath: this.getJarPath(extensionPath, configuredVersion),
+                version: configuredVersion,
+                bundled: false,
+                customPath: false
+            };
+        }
+
+        return {
+            jarPath: this.getJarPath(extensionPath, this.BUNDLED_KARATE_VERSION),
+            version: this.BUNDLED_KARATE_VERSION,
+            bundled: true,
+            customPath: false
+        };
     }
 
     /**
      * Check if Karate JAR exists, download if needed
      */
-    static async ensureKarateJar(extensionPath: string): Promise<string> {
-        const jarPath = this.getJarPath(extensionPath);
-        const libDir = path.dirname(jarPath);
+    static async ensureKarateJar(extensionPath: string): Promise<KarateJarResolution> {
+        const selected = this.resolveJar(extensionPath);
+
+        if (selected.customPath) {
+            if (!fs.existsSync(selected.jarPath)) {
+                throw new Error(`Configured Karate JAR not found: ${selected.jarPath}`);
+            }
+            if (fs.statSync(selected.jarPath).size === 0) {
+                throw new Error(`Configured Karate JAR is empty: ${selected.jarPath}`);
+            }
+            return selected;
+        }
+
+        const libDir = path.dirname(selected.jarPath);
 
         // Create lib directory if it doesn't exist
         if (!fs.existsSync(libDir)) {
@@ -33,21 +78,24 @@ export class KarateCliExecutor {
         }
 
         // Download if not exists
-        if (!fs.existsSync(jarPath)) {
-            logger.info(`Karate JAR not found, downloading version ${this.KARATE_VERSION}...`);
-            await this.downloadKarateJar(jarPath);
+        if (!fs.existsSync(selected.jarPath)) {
+            logger.info(`Karate JAR not found, downloading version ${selected.version}...`);
+            await this.downloadKarateJar(selected.jarPath, selected.version);
         }
 
-        return jarPath;
+        return selected;
     }
 
     /**
      * Clear JAR cache - useful for troubleshooting
      */
     static clearJarCache(extensionPath: string): boolean {
-        const jarPath = this.getJarPath(extensionPath);
-        if (fs.existsSync(jarPath)) {
-            fs.unlinkSync(jarPath);
+        const selected = this.resolveJar(extensionPath);
+        if (selected.bundled) {
+            return false;
+        }
+        if (fs.existsSync(selected.jarPath)) {
+            fs.unlinkSync(selected.jarPath);
             logger.info('Karate JAR cache cleared');
             return true;
         }
@@ -57,13 +105,13 @@ export class KarateCliExecutor {
     /**
      * Download Karate standalone JAR with progress notification
      */
-    private static async downloadKarateJar(jarPath: string): Promise<void> {
+    private static async downloadKarateJar(jarPath: string, version: string): Promise<void> {
         // Karate standalone JARs are distributed via GitHub Releases, not Maven Central
-        const url = `https://github.com/karatelabs/karate/releases/download/v${this.KARATE_VERSION}/karate-${this.KARATE_VERSION}.jar`;
+        const url = `https://github.com/karatelabs/karate/releases/download/v${version}/karate-${version}.jar`;
 
         return vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: `Downloading Karate JAR v${this.KARATE_VERSION}...`,
+            title: `Downloading Karate JAR v${version}...`,
             cancellable: false
         }, async (progress) => {
             progress.report({ increment: 10, message: 'Connecting to GitHub Releases...' });
@@ -152,7 +200,7 @@ export class KarateCliExecutor {
 
                 progress.report({ increment: 100, message: 'Download complete!' });
                 logger.info(`Karate JAR downloaded successfully (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
-                vscode.window.showInformationMessage(`✅ Karate JAR v${this.KARATE_VERSION} downloaded successfully`);
+                vscode.window.showInformationMessage('Karate JAR downloaded successfully');
                 resolve();
             });
         });
@@ -176,6 +224,36 @@ export class KarateCliExecutor {
         });
     }
 
+    private static async ensureJavaVersion(version: string): Promise<void> {
+        if (!version.startsWith('2.')) {
+            return;
+        }
+
+        const major = await this.getJavaMajorVersion();
+        if (major !== undefined && major < 21) {
+            throw new Error(`Karate ${version} requires Java 21+. Current Java major version: ${major}`);
+        }
+    }
+
+    private static async getJavaMajorVersion(): Promise<number | undefined> {
+        return new Promise((resolve) => {
+            let output = '';
+            const process = spawn('java', ['-version'], { shell: true });
+            process.stdout?.on('data', data => output += data.toString());
+            process.stderr?.on('data', data => output += data.toString());
+            process.on('close', () => {
+                const match = output.match(/version "(\d+)(?:\.(\d+))?/);
+                if (!match) {
+                    resolve(undefined);
+                    return;
+                }
+                const first = Number(match[1]);
+                resolve(first === 1 ? Number(match[2]) : first);
+            });
+            process.on('error', () => resolve(undefined));
+        });
+    }
+
     /**
      * Execute Karate tests using standalone JAR
      */
@@ -185,7 +263,8 @@ export class KarateCliExecutor {
         cancellationToken?: vscode.CancellationToken
     ): Promise<{ success: boolean; output: string }> {
         // Ensure JAR is available
-        const jarPath = await this.ensureKarateJar(extensionPath);
+        const jar = await this.ensureKarateJar(extensionPath);
+        await this.ensureJavaVersion(jar.version);
 
         // Use ConfigDiscovery for comprehensive classpath handling
         const workingDir = options.workingDirectory || '';
@@ -221,7 +300,7 @@ export class KarateCliExecutor {
         args.push(...executionParams.javaArgs);
 
         // Build classpath: include JAR and all discovered/suggested entries
-        const classpathEntries = [jarPath, ...executionParams.classpath];
+        const classpathEntries = [jar.jarPath, ...executionParams.classpath];
         const classpathStr = classpathEntries.join(path.delimiter);
         args.push('-cp', classpathStr);
         logger.info(`Using classpath: ${classpathStr}`);
