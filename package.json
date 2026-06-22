@@ -202,6 +202,10 @@
         "title": "Karate: Set GitHub Token"
       },
       {
+        "command": "karate-dsl.setZephyrToken",
+        "title": "Karate: Set Zephyr Bearer Token"
+      },
+      {
         "command": "karate-dsl.showMcpConnectionInfo",
         "title": "Karate: Show MCP Connection Info"
       },
@@ -731,6 +735,41 @@
             "Basic Auth (Cloud): Uses email:token encoded as Base64",
             "Bearer Token (Data Center/Server): Uses PAT token with Bearer scheme"
           ]
+        },
+        "karateDsl.zephyr.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Push tagged Karate scenario results to Zephyr Scale Cloud after test runs"
+        },
+        "karateDsl.zephyr.baseUrl": {
+          "type": "string",
+          "default": "https://eu.api.zephyrscale.smartbear.com/v2",
+          "description": "Zephyr Scale Cloud API base URL"
+        },
+        "karateDsl.zephyr.projectKey": {
+          "type": "string",
+          "default": "",
+          "description": "Jira project key for Zephyr Scale executions, e.g. PROJ"
+        },
+        "karateDsl.zephyr.cycleName": {
+          "type": "string",
+          "default": "Karate Regression",
+          "description": "Zephyr Scale test cycle name to reuse or create"
+        },
+        "karateDsl.zephyr.status.pass": {
+          "type": "string",
+          "default": "Pass",
+          "description": "Zephyr Scale execution status name for passed Karate scenarios"
+        },
+        "karateDsl.zephyr.status.fail": {
+          "type": "string",
+          "default": "Fail",
+          "description": "Zephyr Scale execution status name for failed Karate scenarios"
+        },
+        "karateDsl.zephyr.status.skipped": {
+          "type": "string",
+          "default": "Not Executed",
+          "description": "Zephyr Scale execution status name for skipped Karate scenarios"
         },
         "karateDsl.bugHunter.safeMode": {
           "type": "boolean",

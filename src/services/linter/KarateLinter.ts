@@ -12,6 +12,7 @@ import { FileNamingRule } from './rules/FileNamingRule';
 import { TagPlacementRule } from './rules/TagPlacementRule';
 import { AuthenticationTestRule } from './rules/AuthenticationTestRule';
 import { HardcodedSecretRule } from './rules/HardcodedSecretRule';
+import { DuplicateZephyrTagRule } from './rules/DuplicateZephyrTagRule';
 
 export class KarateLinter {
     private diagnosticsManager: DiagnosticsManager;
@@ -30,7 +31,8 @@ export class KarateLinter {
             new FileNamingRule(),
             new TagPlacementRule(),
             new AuthenticationTestRule(),
-            new HardcodedSecretRule()
+            new HardcodedSecretRule(),
+            new DuplicateZephyrTagRule()
         ];
 
         this.registerListeners();

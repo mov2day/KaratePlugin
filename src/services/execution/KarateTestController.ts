@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { TestExecutor } from './TestExecutor';
 import { logger } from '../../utils/logger';
+import { ZephyrScalePublisher } from '../zephyr/ZephyrScalePublisher';
 
 /**
  * VS Code Test Controller for Karate feature files
@@ -11,6 +12,7 @@ import { logger } from '../../utils/logger';
 export class KarateTestController {
     private controller: vscode.TestController;
     private testExecutor: TestExecutor;
+    private zephyrPublisher: ZephyrScalePublisher;
     private fileWatcher: vscode.FileSystemWatcher;
 
     constructor(
@@ -18,6 +20,7 @@ export class KarateTestController {
         testExecutor: TestExecutor
     ) {
         this.testExecutor = testExecutor;
+        this.zephyrPublisher = new ZephyrScalePublisher(context);
 
         // Create test controller
         this.controller = vscode.tests.createTestController(
@@ -194,6 +197,8 @@ export class KarateTestController {
                 workingDirectory: workspaceRoot
             }, token);
 
+            await this.publishZephyrResult(result);
+
             // Get the feature item to update children
             const featureTestItem = isScenario ? test.parent : test;
 
@@ -255,6 +260,24 @@ export class KarateTestController {
         } catch (error) {
             logger.error('Test execution failed', error as Error);
             run.errored(test, new vscode.TestMessage(`Execution failed: ${error}`));
+        }
+    }
+
+    private async publishZephyrResult(result: Awaited<ReturnType<TestExecutor['execute']>>) {
+        try {
+            const summary = await this.zephyrPublisher.publish(result);
+            if (summary.duplicateKeys.length > 0) {
+                vscode.window.showWarningMessage(`Zephyr skipped duplicate tag(s): ${summary.duplicateKeys.join(', ')}`);
+            }
+            if (summary.projectMismatches.length > 0) {
+                vscode.window.showWarningMessage(`Zephyr skipped tag(s) outside configured project: ${summary.projectMismatches.join(', ')}`);
+            }
+            if (summary.pushed > 0) {
+                vscode.window.showInformationMessage(`Zephyr: pushed ${summary.pushed} execution(s) to ${summary.cycleKey}`);
+            }
+        } catch (error) {
+            logger.error('Zephyr publish failed', error as Error);
+            vscode.window.showErrorMessage(`Zephyr publish failed: ${(error as Error).message}`);
         }
     }
 

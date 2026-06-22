@@ -35,6 +35,7 @@ import { GitHubActionsPullIngestor } from './services/ci/GitHubActionsPullIngest
 import { KarateMcpHostService } from './services/mcp/KarateMcpHostService';
 import { TestExecutionResult } from './types';
 import { KarateV2Migrator } from './services/KarateV2Migrator';
+import { ZephyrScalePublisher, ZEPHYR_TOKEN_KEY } from './services/zephyr/ZephyrScalePublisher';
 
 export function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
@@ -112,6 +113,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Initialize test executor
     const testExecutor = new TestExecutor(context.extensionPath);
+    const zephyrPublisher = new ZephyrScalePublisher(context);
 
     // Initialize test history service
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
@@ -154,6 +156,28 @@ export function activate(context: vscode.ExtensionContext) {
             };
         } catch (error) {
             logger.warn('Failed to compute flakiness summary', error as Error);
+        }
+    };
+
+    const publishZephyrResult = async (result: TestExecutionResult): Promise<void> => {
+        try {
+            const summary = await zephyrPublisher.publish(result);
+            if (!summary.enabled || summary.skippedReason === 'disabled') {
+                return;
+            }
+
+            if (summary.duplicateKeys.length > 0) {
+                vscode.window.showWarningMessage(`Zephyr skipped duplicate tag(s): ${summary.duplicateKeys.join(', ')}`);
+            }
+            if (summary.projectMismatches.length > 0) {
+                vscode.window.showWarningMessage(`Zephyr skipped tag(s) outside configured project: ${summary.projectMismatches.join(', ')}`);
+            }
+            if (summary.pushed > 0) {
+                vscode.window.showInformationMessage(`Zephyr: pushed ${summary.pushed} execution(s) to ${summary.cycleKey}`);
+            }
+        } catch (error) {
+            logger.error('Zephyr publish failed', error as Error);
+            vscode.window.showErrorMessage(`Zephyr publish failed: ${(error as Error).message}`);
         }
     };
 
@@ -786,6 +810,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                     // Show report
                     await executionReportProvider.showReport(result);
+                    await publishZephyrResult(result);
 
                     const flakySummary = result.flakiness
                         ? ` | Tiers S:${result.flakiness.tierCounts.stable} W:${result.flakiness.tierCounts.watch} F:${result.flakiness.tierCounts.flaky} B:${result.flakiness.tierCounts.broken}`
@@ -871,6 +896,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                     // Show report
                     await executionReportProvider.showReport(result);
+                    await publishZephyrResult(result);
 
                     if (result.status === 'success') {
                         const watchCount = result.flakiness?.tierCounts.watch || 0;
@@ -924,6 +950,7 @@ export function activate(context: vscode.ExtensionContext) {
                     codeLensProvider.updateResult(result);
                     decorationProvider.updateResult(result);
                     await executionReportProvider.showReport(result);
+                    await publishZephyrResult(result);
 
                     const flakySummary = result.flakiness
                         ? ` | Tiers S:${result.flakiness.tierCounts.stable} W:${result.flakiness.tierCounts.watch} F:${result.flakiness.tierCounts.flaky} B:${result.flakiness.tierCounts.broken}`
@@ -971,6 +998,7 @@ export function activate(context: vscode.ExtensionContext) {
                     codeLensProvider.updateResult(result);
                     decorationProvider.updateResult(result);
                     await executionReportProvider.showReport(result);
+                    await publishZephyrResult(result);
 
                     const flakySummary = result.flakiness
                         ? ` | Tiers S:${result.flakiness.tierCounts.stable} W:${result.flakiness.tierCounts.watch} F:${result.flakiness.tierCounts.flaky} B:${result.flakiness.tierCounts.broken}`
@@ -1390,6 +1418,25 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         }
     );
 
+    const setZephyrTokenCommand = vscode.commands.registerCommand(
+        'karate-dsl.setZephyrToken',
+        async () => {
+            const token = await vscode.window.showInputBox({
+                prompt: 'Enter your Zephyr Scale Cloud bearer token',
+                password: true,
+                ignoreFocusOut: true,
+                placeHolder: 'Zephyr Scale API token'
+            });
+
+            if (!token) {
+                return;
+            }
+
+            await context.secrets.store(ZEPHYR_TOKEN_KEY, token.trim());
+            vscode.window.showInformationMessage('Zephyr bearer token stored securely');
+        }
+    );
+
     const showMcpConnectionInfoCommand = vscode.commands.registerCommand(
         'karate-dsl.showMcpConnectionInfo',
         async () => {
@@ -1560,6 +1607,7 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         generateFromJiraCommand,
         setClaudeApiKeyCommand,
         setGitHubTokenCommand,
+        setZephyrTokenCommand,
         showMcpConnectionInfoCommand,
         showCIBridgeGuideCommand,
         huntApiBugsCommand
