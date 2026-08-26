@@ -8,6 +8,8 @@ type Area = 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations
 
 interface Snapshot {
     folderName?: string;
+    folderPath?: string;
+    folders?: Array<{ name: string; path: string }>;
     featureCount?: number;
     runs?: Array<{ id: string; timestamp: number; status: string; summary?: { totalScenarios: number; passed: number; failed: number; passPercentage: number } }>;
     findings?: Array<{ id: string; title?: string; state?: string; severity?: string }>;
@@ -58,7 +60,7 @@ function App() {
         </aside>
         <section class="workspace">
             <header class="topbar">
-                <div><span class="eyebrow">WORKSPACE</span><strong>{snapshot.folderName || 'Karate project'}</strong></div>
+                <label class="workspace-picker"><span class="eyebrow">WORKSPACE</span><select value={snapshot.folderPath || ''} onChange={event => send('getManagementSnapshot', { folderPath: (event.target as HTMLSelectElement).value })}>{(snapshot.folders || [{ name: snapshot.folderName || 'Karate project', path: snapshot.folderPath || '' }]).map(folder => <option value={folder.path}>{folder.name}</option>)}</select></label>
                 <label class="search"><span class="codicon codicon-search" aria-hidden="true" /><span class="sr-only">Search runs</span><input value={query} onInput={event => setQuery((event.target as HTMLInputElement).value)} placeholder="Search tests, runs, findings" /></label>
                 <button class="primary-action" onClick={() => send('executeExtensionCommand', { commandId: 'karate-dsl.runFolder' })}><span class="codicon codicon-play" aria-hidden="true" /> Run tests</button>
             </header>

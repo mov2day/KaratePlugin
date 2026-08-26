@@ -14,7 +14,7 @@ import { HistoryManager } from '../services/historyManager';
 import { TemplateManager } from '../services/templateManager';
 import { StyleAnalyzer } from '../services/styleAnalyzer';
 import { SharedStyleService } from '../services/SharedStyleService';
-import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore';
+import { WorkspaceIndex } from '../services/workspace/WorkspaceIndex';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'karateGenerator.mainView';
@@ -23,6 +23,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _templateManager: TemplateManager | undefined;
     private _generationService: GenerationService | undefined;
     private _learnedStyle: KarateStyle | null = null;
+    private readonly _workspaceIndexes = new Map<string, WorkspaceIndex>();
 
     /**
      * Process feature content through ReusabilityEngine.
@@ -111,7 +112,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     await vscode.commands.executeCommand('karate-dsl.huntApiBugs');
                     break;
                 case 'getManagementSnapshot':
-                    await this.sendManagementSnapshot();
+                    await this.sendManagementSnapshot(data.folderPath);
                     break;
                 case 'executeExtensionCommand':
                     await this.executeShellCommand((data as any).commandId);
@@ -392,17 +393,25 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async sendManagementSnapshot(): Promise<void> {
-        const folder = vscode.workspace.workspaceFolders?.[0];
+    private async sendManagementSnapshot(folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
         if (!folder) {
             this.sendMessage({ type: 'managementSnapshot', data: { runs: [], findings: [], featureCount: 0 } });
             return;
         }
-        const store = new WorkspaceEntityStore(folder.uri.fsPath);
-        const features = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*.feature'), '**/{node_modules,.git}/**');
-        const runs = store.list<any>('runs').sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
-        const findings = store.list<any>('findings').slice(0, 100);
-        this.sendMessage({ type: 'managementSnapshot', data: { folderName: folder.name, featureCount: features.length, runs, findings } });
+        let index = this._workspaceIndexes.get(folder.uri.fsPath);
+        if (!index) {
+            index = new WorkspaceIndex(folder);
+            this._workspaceIndexes.set(folder.uri.fsPath, index);
+            index.onDidUpdate(snapshot => this.sendMessage({ type: 'managementSnapshot', data: snapshot }));
+            await index.initialize();
+        }
+        this.sendMessage({ type: 'managementSnapshot', data: {
+            ...index.snapshot(),
+            folderPath: folder.uri.fsPath,
+            folders: (vscode.workspace.workspaceFolders || []).map(item => ({ name: item.name, path: item.uri.fsPath }))
+        } });
     }
 
     private async executeShellCommand(commandId: unknown): Promise<void> {

@@ -321,5 +321,5 @@ export type WebviewMessage =
     | { command: 'syncTests'; specPath: string; updatePlan: any }
     | { command: 'launchCoverageDashboard' }
     | { command: 'huntApiBugs' }
-    | { command: 'getManagementSnapshot' }
+    | { command: 'getManagementSnapshot'; folderPath?: string }
     | { command: 'executeExtensionCommand'; commandId: string };
