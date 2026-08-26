@@ -6,6 +6,7 @@ export interface ManagementSnapshot {
     featureCount: number;
     runs: Array<Record<string, unknown>>;
     findings: Array<Record<string, unknown>>;
+    features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number }> }>;
 }
 
 /** Keeps UI queries off the filesystem hot path and refreshes on editor or Git file changes. */
@@ -17,6 +18,7 @@ export class WorkspaceIndex implements vscode.Disposable {
     private runs: Array<Record<string, unknown>> = [];
     private findings: Array<Record<string, unknown>> = [];
     private featureCount = 0;
+    private features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number }> }> = [];
     private refreshTimer: NodeJS.Timeout | undefined;
 
     constructor(private readonly folder: vscode.WorkspaceFolder) {
@@ -33,7 +35,7 @@ export class WorkspaceIndex implements vscode.Disposable {
     }
 
     snapshot(): ManagementSnapshot {
-        return { folderName: this.folder.name, featureCount: this.featureCount, runs: this.runs, findings: this.findings };
+        return { folderName: this.folder.name, featureCount: this.featureCount, runs: this.runs, findings: this.findings, features: this.features };
     }
 
     dispose(): void {
@@ -51,7 +53,28 @@ export class WorkspaceIndex implements vscode.Disposable {
         this.runs = this.store.list<Record<string, unknown>>('runs')
             .sort((left, right) => Number(right.timestamp || 0) - Number(left.timestamp || 0)).slice(0, 100);
         this.findings = this.store.list<Record<string, unknown>>('findings').slice(0, 500);
-        this.featureCount = (await vscode.workspace.findFiles(new vscode.RelativePattern(this.folder, '**/*.feature'), '**/{node_modules,.git}/**')).length;
+        const featureUris = await vscode.workspace.findFiles(new vscode.RelativePattern(this.folder, '**/*.feature'), '**/{node_modules,.git}/**');
+        this.featureCount = featureUris.length;
+        this.features = await Promise.all(featureUris.slice(0, 1500).map(async uri => {
+            const document = await vscode.workspace.openTextDocument(uri);
+            const tags: string[] = [];
+            const scenarios: Array<{ name: string; tags: string[]; line: number }> = [];
+            document.getText().split(/\r?\n/).forEach((line, index) => {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('@')) {
+                    tags.push(...trimmed.split(/\s+/));
+                    return;
+                }
+                const header = trimmed.match(/^Scenario(?: Outline)?:\s*(.+)$/);
+                if (header) {
+                    scenarios.push({ name: header[1].trim(), tags: [...tags], line: index + 1 });
+                    tags.length = 0;
+                } else if (trimmed && !trimmed.startsWith('#')) {
+                    tags.length = 0;
+                }
+            });
+            return { path: vscode.workspace.asRelativePath(uri, false).replace(/\\/g, '/'), scenarios };
+        }));
         this.updateEmitter.fire(this.snapshot());
     }
 }
