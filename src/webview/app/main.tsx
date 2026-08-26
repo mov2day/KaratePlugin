@@ -36,10 +36,12 @@ function App() {
     const [activeArea, setActiveArea] = useState<Area>('overview');
     const [snapshot, setSnapshot] = useState<Snapshot>({ runs: [], findings: [] });
     const [query, setQuery] = useState('');
+    const [notice, setNotice] = useState<{ kind: 'error' | 'success'; text: string }>();
 
     useEffect(() => {
-        const onMessage = (event: MessageEvent<{ type?: string; data?: Snapshot }>) => {
+        const onMessage = (event: MessageEvent<{ type?: string; data?: Snapshot; message?: string }>) => {
             if (event.data.type === 'managementSnapshot') setSnapshot(event.data.data || {});
+            if ((event.data.type === 'error' || event.data.type === 'success') && event.data.message) setNotice({ kind: event.data.type, text: event.data.message });
         };
         window.addEventListener('message', onMessage);
         send('getManagementSnapshot');
@@ -73,6 +75,7 @@ function App() {
             {activeArea === 'quality' && <Quality findings={snapshot.findings || []} folderPath={snapshot.folderPath} />}
             {activeArea === 'create' && <Create />}
             {activeArea === 'operations' && <Operations />}
+            {notice && <div class={`notice ${notice.kind}`} role="status"><span>{notice.text}</span><button aria-label="Dismiss message" onClick={() => setNotice(undefined)}><span class="codicon codicon-close" aria-hidden="true" /></button></div>}
         </section>
     </main>;
 }

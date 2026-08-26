@@ -66,7 +66,11 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         this._generationService = new GenerationService(this._context, this._historyManager, this._specHashManager);
 
         // Handle messages from the webview
-        webviewView.webview.onDidReceiveMessage(async (data: WebviewMessage) => {
+        webviewView.webview.onDidReceiveMessage(async (data: unknown) => {
+            if (!isWebviewMessage(data)) {
+                this.sendError('The test management workspace received an invalid request.');
+                return;
+            }
             switch (data.command) {
                 case 'selectOpenAPIFile':
                     await this.handleSelectOpenAPIFile();
@@ -1246,5 +1250,32 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     <script src="${scriptUri}"></script>
 </body>
 </html>`;
+    }
+}
+
+function isWebviewMessage(data: unknown): data is WebviewMessage {
+    if (!data || typeof data !== 'object' || typeof (data as { command?: unknown }).command !== 'string') return false;
+    const message = data as Record<string, unknown>;
+    switch (message.command) {
+        case 'getManagementSnapshot': return message.folderPath === undefined || typeof message.folderPath === 'string';
+        case 'executeExtensionCommand': return typeof message.commandId === 'string';
+        case 'advanceQualityFinding':
+            return typeof message.id === 'string'
+                && typeof message.nextState === 'string'
+                && ['New', 'Investigating', 'Fixed', 'Verified'].includes(message.nextState)
+                && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        case 'createRunProfile':
+            return typeof message.name === 'string'
+                && typeof message.environment === 'string'
+                && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        // Legacy generation messages remain supported for existing callers. Their command
+        // handlers retain their own validation and all shell-originating operations use the
+        // stricter cases above.
+        case 'selectOpenAPIFile': case 'generateFromOpenAPI': case 'generateFromConfluence':
+        case 'generateCombined': case 'getConfig': case 'saveConfig': case 'getHistory':
+        case 'getTemplates': case 'saveTemplate': case 'learnStyle': case 'openGeneratedFile':
+        case 'copyToClipboard': case 'syncTests': case 'launchCoverageDashboard': case 'huntApiBugs':
+            return true;
+        default: return false;
     }
 }
