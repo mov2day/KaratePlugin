@@ -28,6 +28,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _learnedStyle: KarateStyle | null = null;
     private readonly _workspaceIndexes = new Map<string, WorkspaceIndex>();
     private readonly _telemetry: TelemetryService;
+    private _activeManagementFolderPath: string | undefined;
 
     /**
      * Process feature content through ReusabilityEngine.
@@ -418,18 +419,27 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendMessage({ type: 'managementSnapshot', data: { runs: [], findings: [], featureCount: 0 } });
             return;
         }
+        this._activeManagementFolderPath = folder.uri.fsPath;
         let index = this._workspaceIndexes.get(folder.uri.fsPath);
         if (!index) {
             index = new WorkspaceIndex(folder);
             this._workspaceIndexes.set(folder.uri.fsPath, index);
-            index.onDidUpdate(snapshot => this.sendMessage({ type: 'managementSnapshot', data: snapshot }));
+            index.onDidUpdate(snapshot => {
+                if (this._activeManagementFolderPath === folder.uri.fsPath) {
+                    this.sendMessage({ type: 'managementSnapshot', data: this.withFolderMetadata(folder, snapshot) });
+                }
+            });
             await index.initialize();
         }
-        this.sendMessage({ type: 'managementSnapshot', data: {
-            ...index.snapshot(),
+        this.sendMessage({ type: 'managementSnapshot', data: this.withFolderMetadata(folder, index.snapshot()) });
+    }
+
+    private withFolderMetadata(folder: vscode.WorkspaceFolder, snapshot: ReturnType<WorkspaceIndex['snapshot']>) {
+        return {
+            ...snapshot,
             folderPath: folder.uri.fsPath,
             folders: (vscode.workspace.workspaceFolders || []).map(item => ({ name: item.name, path: item.uri.fsPath }))
-        } });
+        };
     }
 
     private async executeShellCommand(commandId: unknown): Promise<void> {
