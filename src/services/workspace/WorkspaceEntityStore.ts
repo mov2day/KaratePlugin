@@ -160,7 +160,8 @@ export class WorkspaceEntityStore {
                 if (previouslyMigrated.has(file)) return;
                 try {
                     const value = JSON.parse(fs.readFileSync(path.join(legacyDirectory, file), 'utf8')) as Record<string, unknown>;
-                    const preferredId = typeof value.id === 'string' && value.id ? value.id : undefined;
+                    const legacyId = typeof value.id === 'string' && value.id ? value.id : undefined;
+                    const preferredId = legacyId && isUuid(legacyId) ? legacyId : undefined;
                     const id = preferredId && !fs.existsSync(this.entityPath('runs', preferredId)) ? preferredId : this.createId('runs');
                     const now = Date.now();
                     const migratedEntity: WorkspaceEntity = {
@@ -169,7 +170,8 @@ export class WorkspaceEntityStore {
                         createdAt: typeof value.timestamp === 'number' ? value.timestamp : now,
                         updatedAt: now,
                         migratedFrom: '.karate-test-history',
-                        legacyFile: file
+                        legacyFile: file,
+                        legacyId
                     };
                     this.writeAtomic(this.entityPath('runs', id), JSON.stringify(migratedEntity, null, 2));
                     this.touchManifest();
@@ -264,4 +266,8 @@ export class WorkspaceEntityStore {
             else fs.copyFileSync(from, to);
         }
     }
+}
+
+function isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }

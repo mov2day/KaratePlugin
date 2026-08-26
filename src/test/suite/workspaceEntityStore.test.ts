@@ -61,6 +61,19 @@ suite('Workspace Entity Store', () => {
         assert.strictEqual(store.list<{ id: string }>('runs').length, 1);
     });
 
+    test('migrates old execution IDs to UUID filenames while retaining their legacy identifier', () => {
+        const legacy = path.join(root, '.karate-test-history');
+        fs.mkdirSync(legacy);
+        fs.writeFileSync(path.join(legacy, 'run.json'), JSON.stringify({ id: 'exec_12345_old', timestamp: 42, summary: {} }));
+        const store = new WorkspaceEntityStore(root);
+
+        store.migrateLegacyHistory();
+        const run = store.list<{ id: string; legacyId?: string }>('runs')[0];
+
+        assert.match(run.id, /^[0-9a-f-]{36}$/i);
+        assert.strictEqual(run.legacyId, 'exec_12345_old');
+    });
+
     test('recovers an abandoned workspace lock', () => {
         const store = new WorkspaceEntityStore(root);
         store.initialize();
