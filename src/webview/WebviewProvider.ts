@@ -17,6 +17,7 @@ import { SharedStyleService } from '../services/SharedStyleService';
 import { WorkspaceIndex } from '../services/workspace/WorkspaceIndex';
 import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore';
 import { QualityState, QualityWorkflowService } from '../services/workspace/QualityWorkflowService';
+import { TelemetryService } from '../services/telemetry/TelemetryService';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'karateGenerator.mainView';
@@ -26,6 +27,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _generationService: GenerationService | undefined;
     private _learnedStyle: KarateStyle | null = null;
     private readonly _workspaceIndexes = new Map<string, WorkspaceIndex>();
+    private readonly _telemetry: TelemetryService;
 
     /**
      * Process feature content through ReusabilityEngine.
@@ -37,6 +39,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     constructor(private readonly _extensionUri: vscode.Uri, private readonly _context: vscode.ExtensionContext) {
         // Initialize SpecHashManager for AI-Powered Test Maintenance
         this._specHashManager = new SpecHashManager(_context);
+        this._telemetry = new TelemetryService(_context);
     }
 
     public postMessageToWebview(message: any) {
@@ -128,6 +131,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'createRunProfile':
                     await this.createRunProfile(data.name, data.environment, data.folderPath);
+                    break;
+                case 'webviewShellError':
+                    this._telemetry.send('webview_shell_error', { area: data.area, error: data.message });
                     break;
             }
         });
@@ -440,7 +446,13 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendError('This action is not available from the test management workspace.');
             return;
         }
-        await vscode.commands.executeCommand(commandId);
+        try {
+            await vscode.commands.executeCommand(commandId);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this._telemetry.send('command_error', { commandId, error: message });
+            this.sendError(`Could not complete this action: ${message}`);
+        }
     }
 
     private async advanceQualityFinding(id: string, nextState: QualityState, folderPath?: string): Promise<void> {
@@ -1268,6 +1280,8 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
             return typeof message.name === 'string'
                 && typeof message.environment === 'string'
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        case 'webviewShellError':
+            return typeof message.area === 'string' && typeof message.message === 'string';
         // Legacy generation messages remain supported for existing callers. Their command
         // handlers retain their own validation and all shell-originating operations use the
         // stricter cases above.

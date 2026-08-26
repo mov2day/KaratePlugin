@@ -324,4 +324,5 @@ export type WebviewMessage =
     | { command: 'getManagementSnapshot'; folderPath?: string }
     | { command: 'executeExtensionCommand'; commandId: string }
     | { command: 'advanceQualityFinding'; id: string; nextState: 'New' | 'Investigating' | 'Fixed' | 'Verified'; folderPath?: string }
-    | { command: 'createRunProfile'; name: string; environment: string; folderPath?: string };
+    | { command: 'createRunProfile'; name: string; environment: string; folderPath?: string }
+    | { command: 'webviewShellError'; area: string; message: string };

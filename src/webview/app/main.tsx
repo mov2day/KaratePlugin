@@ -48,6 +48,15 @@ function App() {
         return () => window.removeEventListener('message', onMessage);
     }, []);
 
+    useEffect(() => {
+        const report = (reason: unknown) => send('webviewShellError', { area: activeArea, message: reason instanceof Error ? reason.message : String(reason) });
+        const onError = (event: ErrorEvent) => report(event.error || event.message);
+        const onRejection = (event: PromiseRejectionEvent) => report(event.reason);
+        window.addEventListener('error', onError);
+        window.addEventListener('unhandledrejection', onRejection);
+        return () => { window.removeEventListener('error', onError); window.removeEventListener('unhandledrejection', onRejection); };
+    }, [activeArea]);
+
     const filteredRuns = useMemo(() => (snapshot.runs || []).filter(run => run.id.toLowerCase().includes(query.toLowerCase())), [snapshot.runs, query]);
     const failedRuns = (snapshot.runs || []).filter(run => run.status !== 'success');
 
