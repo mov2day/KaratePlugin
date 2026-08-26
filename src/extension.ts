@@ -36,8 +36,9 @@ import { KarateMcpHostService } from './services/mcp/KarateMcpHostService';
 import { TestExecutionResult } from './types';
 import { KarateV2Migrator } from './services/KarateV2Migrator';
 import { ZephyrScalePublisher, ZEPHYR_TOKEN_KEY } from './services/zephyr/ZephyrScalePublisher';
+import { WorkspaceEntityStore } from './services/workspace/WorkspaceEntityStore';
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
 
     // Initialize Agent Skills with extension path for bundled skills
@@ -46,6 +47,25 @@ export function activate(context: vscode.ExtensionContext) {
     // Initialize Services
     const linter = new KarateLinter();
     context.subscriptions.push(linter);
+
+    // Complete the one-time history migration before any management UI can read run state.
+    for (const folder of vscode.workspace.workspaceFolders || []) {
+        const legacyHistory = path.join(folder.uri.fsPath, '.karate-test-history');
+        if (!fs.existsSync(legacyHistory)) continue;
+        const store = new WorkspaceEntityStore(folder.uri.fsPath);
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Migrating Karate test history for ${folder.name}`,
+            cancellable: false
+        }, async progress => {
+            const result = store.migrateLegacyHistory((current, total) => {
+                progress.report({ message: `${current}/${total} run records` });
+            });
+            if (result.corrupted.length > 0) {
+                vscode.window.showWarningMessage(`Karate history migration skipped ${result.corrupted.length} corrupted record(s) in ${folder.name}.`);
+            }
+        });
+    }
 
     // Register Copilot Suggestion Command
     context.subscriptions.push(

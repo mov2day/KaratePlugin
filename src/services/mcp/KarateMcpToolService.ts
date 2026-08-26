@@ -12,6 +12,7 @@ import { SharedStyleService } from '../SharedStyleService';
 import { AIProviderRegistry } from '../ai/AIProviderRegistry';
 import { CIFailurePayload } from '../ci/CIFailureIngestor';
 import { TestExecutionResult } from '../../types';
+import { ScenarioLocator } from '../ci/ScenarioLocator';
 
 export interface KarateMcpToolOutcome {
     ok: boolean;
@@ -27,6 +28,7 @@ export class KarateMcpToolService {
     private readonly flakinessAnalyzer = new FlakinessAnalyzer();
     private readonly flakinessFixService = new FlakinessFixService();
     private readonly testExecutor: TestExecutor;
+    private readonly scenarioLocator = new ScenarioLocator();
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -485,47 +487,7 @@ Return the complete fixed Scenario block. Pure Karate DSL only.`;
     }
 
     private replaceScenario(content: string, scenarioName: string, fixedScenario: string): string {
-        const lines = content.split('\n');
-        const startIdx = lines.findIndex(l =>
-            this.matchesScenarioHeader(l, scenarioName)
-        );
-
-        if (startIdx === -1) {
-            return content;
-        }
-
-        let endIdx = lines.length;
-        for (let i = startIdx + 1; i < lines.length; i++) {
-            const trimmed = lines[i].trim();
-            if (trimmed.startsWith('Scenario:') || trimmed.startsWith('Scenario Outline:')) {
-                endIdx = i;
-                break;
-            }
-        }
-
-        let tagStartIdx = startIdx;
-        for (let i = startIdx - 1; i >= 0; i--) {
-            const trimmed = lines[i].trim();
-            if (trimmed.startsWith('@')) {
-                tagStartIdx = i;
-            } else if (trimmed === '') {
-                continue;
-            } else {
-                break;
-            }
-        }
-
-        const before = lines.slice(0, tagStartIdx);
-        const after = lines.slice(endIdx);
-        return [...before, fixedScenario, '', ...after].join('\n');
-    }
-
-    private matchesScenarioHeader(line: string, scenarioName: string): boolean {
-        const trimmed = line.trim();
-        return (
-            trimmed.startsWith('Scenario:') ||
-            trimmed.startsWith('Scenario Outline:')
-        ) && trimmed.includes(scenarioName);
+        return this.scenarioLocator.replace(content, { name: scenarioName }, fixedScenario) || content;
     }
 
     private buildScenarioDiff(before: string, after: string, filePath: string): string {

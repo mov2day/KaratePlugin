@@ -4,6 +4,7 @@ import * as path from 'path';
 import { CIFailurePayload } from './CIFailureIngestor';
 import { AIProviderRegistry } from '../ai/AIProviderRegistry';
 import { logger } from '../../utils/logger';
+import { ScenarioLocator } from './ScenarioLocator';
 
 /**
  * TestRepairService — orchestrates AI-powered test repair.
@@ -11,6 +12,7 @@ import { logger } from '../../utils/logger';
  * and writes the fixed scenario back to disk.
  */
 export class TestRepairService {
+    private readonly scenarioLocator = new ScenarioLocator();
 
     /**
      * Attempt to repair a failing test based on CI failure payload.
@@ -130,44 +132,12 @@ OUTPUT
     }
 
     private replaceScenario(content: string, scenarioName: string, fixedScenario: string): string {
-        const lines = content.split('\n');
-        const startIdx = lines.findIndex(l =>
-            l.trim().startsWith('Scenario:') && l.includes(scenarioName)
-        );
-
-        if (startIdx === -1) {
-            logger.warn(`TestRepairService: could not find scenario "${scenarioName}"`);
+        const replaced = this.scenarioLocator.replace(content, { name: scenarioName }, fixedScenario);
+        if (!replaced) {
+            logger.warn(`TestRepairService: could not uniquely locate scenario "${scenarioName}"`);
             return content;
         }
-
-        // Find end of scenario (next Scenario: or end of file)
-        let endIdx = lines.length;
-        for (let i = startIdx + 1; i < lines.length; i++) {
-            const trimmed = lines[i].trim();
-            if (trimmed.startsWith('Scenario:') || trimmed.startsWith('Scenario Outline:')) {
-                endIdx = i;
-                break;
-            }
-        }
-
-        // Include preceding tags
-        let tagStartIdx = startIdx;
-        for (let i = startIdx - 1; i >= 0; i--) {
-            const trimmed = lines[i].trim();
-            if (trimmed.startsWith('@')) {
-                tagStartIdx = i;
-            } else if (trimmed === '') {
-                continue;
-            } else {
-                break;
-            }
-        }
-
-        // Replace
-        const before = lines.slice(0, tagStartIdx);
-        const after = lines.slice(endIdx);
-
-        return [...before, fixedScenario, '', ...after].join('\n');
+        return replaced;
     }
 
     private async showDiff(filePath: string, originalContent: string, scenarioName: string, fixedScenario: string): Promise<void> {
@@ -199,10 +169,7 @@ OUTPUT
     }
 
     private findScenarioLine(content: string, scenarioName: string): number {
-        const lines = content.split('\n');
-        return lines.findIndex(l =>
-            l.trim().startsWith('Scenario:') && l.includes(scenarioName)
-        );
+        return this.scenarioLocator.find(content, { name: scenarioName })?.startLine ?? -1;
     }
 
     private cleanResponse(response: string): string {

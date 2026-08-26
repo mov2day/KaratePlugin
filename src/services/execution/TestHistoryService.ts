@@ -1,32 +1,23 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as vscode from 'vscode';
 import { TestExecutionResult } from '../../types';
 import { logger } from '../../utils/logger';
+import { WorkspaceEntityStore } from '../workspace/WorkspaceEntityStore';
 
 /**
  * Manages test execution history and persistence
  */
 export class TestHistoryService {
-    private static readonly HISTORY_DIR = '.karate-test-history';
-    private static readonly MAX_HISTORY_ITEMS = 50; // Keep last 50 executions
+    private readonly store: WorkspaceEntityStore;
 
-    constructor(private workspaceRoot: string) { }
-
-    /**
-     * Get history directory path
-     */
-    private getHistoryDir(): string {
-        return path.join(this.workspaceRoot, TestHistoryService.HISTORY_DIR);
+    constructor(private workspaceRoot: string) {
+        this.store = new WorkspaceEntityStore(workspaceRoot);
     }
 
     /**
      * Ensure history directory exists
      */
     private ensureHistoryDir(): void {
-        const historyDir = this.getHistoryDir();
-        if (!fs.existsSync(historyDir)) {
-            fs.mkdirSync(historyDir, { recursive: true });
-        }
+        this.store.initialize();
     }
 
     /**
@@ -35,12 +26,8 @@ export class TestHistoryService {
     async saveResult(result: TestExecutionResult): Promise<void> {
         try {
             this.ensureHistoryDir();
-
-            const filename = `${result.id}.json`;
-            const filepath = path.join(this.getHistoryDir(), filename);
-
-            fs.writeFileSync(filepath, JSON.stringify(result, null, 2));
-            logger.info(`Saved test result to history: ${filename}`);
+            this.store.save('runs', result, result.id);
+            logger.info(`Saved test result to history: ${result.id}.json`);
 
             // Clean up old history
             await this.cleanupOldHistory();
@@ -56,34 +43,9 @@ export class TestHistoryService {
         try {
             this.ensureHistoryDir();
 
-            const historyDir = this.getHistoryDir();
-            const files = fs.readdirSync(historyDir)
-                .filter(f => f.endsWith('.json'))
-                .map(f => path.join(historyDir, f));
-
-            // Sort by modified time (newest first)
-            files.sort((a, b) => {
-                const statA = fs.statSync(a);
-                const statB = fs.statSync(b);
-                return statB.mtimeMs - statA.mtimeMs;
-            });
-
-            // Apply limit
-            const limitedFiles = limit ? files.slice(0, limit) : files;
-
-            // Read and parse results
-            const results: TestExecutionResult[] = [];
-            for (const file of limitedFiles) {
-                try {
-                    const content = fs.readFileSync(file, 'utf-8');
-                    const result = JSON.parse(content) as TestExecutionResult;
-                    results.push(result);
-                } catch (error) {
-                    logger.warn(`Failed to parse history file: ${file}`);
-                }
-            }
-
-            return results;
+            const results = this.store.list<TestExecutionResult & { createdAt: number; updatedAt: number }>('runs')
+                .sort((a, b) => b.timestamp - a.timestamp) as TestExecutionResult[];
+            return limit ? results.slice(0, limit) : results;
         } catch (error) {
             logger.error('Failed to get test history', error as Error);
             return [];
@@ -95,14 +57,7 @@ export class TestHistoryService {
      */
     async getResultById(id: string): Promise<TestExecutionResult | null> {
         try {
-            const filepath = path.join(this.getHistoryDir(), `${id}.json`);
-
-            if (!fs.existsSync(filepath)) {
-                return null;
-            }
-
-            const content = fs.readFileSync(filepath, 'utf-8');
-            return JSON.parse(content) as TestExecutionResult;
+            return (this.store.get('runs', id) as TestExecutionResult | undefined) || null;
         } catch (error) {
             logger.error(`Failed to get test result: ${id}`, error as Error);
             return null;
@@ -122,24 +77,13 @@ export class TestHistoryService {
      */
     private async cleanupOldHistory(): Promise<void> {
         try {
-            const historyDir = this.getHistoryDir();
-            const files = fs.readdirSync(historyDir)
-                .filter(f => f.endsWith('.json'))
-                .map(f => ({
-                    path: path.join(historyDir, f),
-                    mtime: fs.statSync(path.join(historyDir, f)).mtimeMs
-                }));
-
-            // Sort by modified time (oldest first)
-            files.sort((a, b) => a.mtime - b.mtime);
-
-            // Remove oldest files if exceeding limit
-            if (files.length > TestHistoryService.MAX_HISTORY_ITEMS) {
-                const filesToRemove = files.slice(0, files.length - TestHistoryService.MAX_HISTORY_ITEMS);
-                for (const file of filesToRemove) {
-                    fs.unlinkSync(file.path);
-                    logger.info(`Removed old history file: ${path.basename(file.path)}`);
-                }
+            const configuredLimit = vscode.workspace.getConfiguration('karateDsl').get<number>('execution.historyLimit', 50);
+            const historyLimit = Math.max(1, configuredLimit || 50);
+            const runs = this.store.list<TestExecutionResult & { id: string }>('runs')
+                .sort((a, b) => b.timestamp - a.timestamp);
+            for (const staleRun of runs.slice(historyLimit)) {
+                this.store.remove('runs', staleRun.id);
+                logger.info(`Removed old history file: ${staleRun.id}.json`);
             }
         } catch (error) {
             logger.warn('Failed to cleanup old history', error as Error);
@@ -151,18 +95,8 @@ export class TestHistoryService {
      */
     async clearHistory(): Promise<void> {
         try {
-            const historyDir = this.getHistoryDir();
-
-            if (fs.existsSync(historyDir)) {
-                const files = fs.readdirSync(historyDir)
-                    .filter(f => f.endsWith('.json'));
-
-                for (const file of files) {
-                    fs.unlinkSync(path.join(historyDir, file));
-                }
-
-                logger.info('Cleared test execution history');
-            }
+            for (const run of this.store.list<TestExecutionResult & { id: string }>('runs')) this.store.remove('runs', run.id);
+            logger.info('Cleared test execution history');
         } catch (error) {
             logger.error('Failed to clear history', error as Error);
         }
