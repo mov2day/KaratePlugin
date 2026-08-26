@@ -8,6 +8,7 @@ export interface QualityFinding extends WorkspaceEntity {
     state: QualityState;
     source: 'coverage' | 'health' | 'flakiness' | 'spec-diff' | 'ci';
     description?: string;
+    sourceRef?: string;
 }
 
 const TRANSITIONS: Record<QualityState, QualityState[]> = {
@@ -36,5 +37,16 @@ export class QualityWorkflowService {
 
     nextState(state: QualityState): QualityState | undefined {
         return TRANSITIONS[state][0];
+    }
+
+    /** Keeps recurring coverage scans actionable without creating duplicate open work. */
+    recordCoverageGap(input: Pick<QualityFinding, 'title' | 'severity' | 'description' | 'sourceRef'>): QualityFinding {
+        const existing = this.store.list<QualityFinding>('findings').find(finding =>
+            finding.source === 'coverage' && finding.sourceRef === input.sourceRef && finding.state !== 'Verified'
+        );
+        if (existing) {
+            return this.store.save('findings', { ...existing, ...input }, existing.id) as QualityFinding;
+        }
+        return this.create({ ...input, source: 'coverage' });
     }
 }

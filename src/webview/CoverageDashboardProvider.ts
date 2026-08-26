@@ -3,6 +3,8 @@ import * as path from 'path';
 import { EnhancedCoverageService, EnhancedCoverageReport } from '../services/enhancedCoverageService';
 import { SharedStyleService } from '../services/SharedStyleService';
 import { logger } from '../utils/logger';
+import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore';
+import { QualityWorkflowService } from '../services/workspace/QualityWorkflowService';
 
 /**
  * Webview provider for the interactive coverage dashboard
@@ -148,6 +150,7 @@ export class CoverageDashboardProvider {
             );
 
             this._currentReport = report;
+            this.recordCoverageFindings(report);
 
             // Send report data to webview
             webview.postMessage({
@@ -163,6 +166,21 @@ export class CoverageDashboardProvider {
                 message: (error as Error).message
             });
         }
+    }
+
+    private recordCoverageFindings(report: EnhancedCoverageReport): void {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!workspaceRoot) return;
+        const workflow = new QualityWorkflowService(new WorkspaceEntityStore(workspaceRoot));
+        report.endpoints.filter(endpoint => !endpoint.covered).forEach(endpoint => {
+            const method = endpoint.method.toUpperCase();
+            workflow.recordCoverageGap({
+                title: `Missing coverage: ${method} ${endpoint.path}`,
+                severity: 'normal',
+                description: endpoint.missingTests?.join('\n') || `No Karate scenario covers ${method} ${endpoint.path}.`,
+                sourceRef: `${method} ${endpoint.path}`
+            });
+        });
     }
 
     private serializeReport(report: EnhancedCoverageReport): any {

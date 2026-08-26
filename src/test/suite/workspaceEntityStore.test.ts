@@ -84,6 +84,19 @@ suite('Quality Workflow', () => {
         assert.strictEqual(workflow.advance(finding.id, 'Fixed').state, 'Fixed');
         assert.strictEqual(workflow.advance(finding.id, 'Verified').state, 'Verified');
     });
+
+    test('updates an open coverage gap instead of duplicating it on every scan', () => {
+        const workflow = new QualityWorkflowService(new WorkspaceEntityStore(root));
+        const first = workflow.recordCoverageGap({
+            title: 'Missing coverage: GET /orders', severity: 'normal', sourceRef: 'GET /orders'
+        });
+        const second = workflow.recordCoverageGap({
+            title: 'Missing coverage: GET /orders', severity: 'high', sourceRef: 'GET /orders'
+        });
+
+        assert.strictEqual(second.id, first.id);
+        assert.strictEqual(second.severity, 'high');
+    });
 });
 
 suite('Scenario Locator', () => {
