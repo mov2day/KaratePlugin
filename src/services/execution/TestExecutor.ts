@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { TestExecutionOptions, TestExecutionResult } from '../../types';
 import { BuildToolExecutor, BuildToolConfig } from './BuildToolExecutor';
 import { KarateCliExecutor } from './KarateCliExecutor';
@@ -171,7 +172,9 @@ export class TestExecutor {
      * Generate unique execution ID
      */
     private generateExecutionId(): string {
-        return `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Run IDs become entity filenames in .karate-test-management/runs.
+        // UUIDs avoid same-name collisions across offline Git branches.
+        return randomUUID();
     }
 
     /**

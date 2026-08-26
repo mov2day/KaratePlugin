@@ -2,9 +2,11 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { ScenarioLocator } from '../../services/ci/ScenarioLocator';
 import { WorkspaceEntityStore } from '../../services/workspace/WorkspaceEntityStore';
 import { QualityWorkflowService } from '../../services/workspace/QualityWorkflowService';
+import { TestExecutor } from '../../services/execution/TestExecutor';
 
 suite('Workspace Entity Store', () => {
     let root: string;
@@ -68,6 +70,13 @@ suite('Workspace Entity Store', () => {
         fs.utimesSync(lock, staleTime, staleTime);
 
         assert.doesNotThrow(() => store.save('environments', { name: 'staging' }));
+    });
+
+    test('accepts UUID execution records as workspace run entities', () => {
+        const store = new WorkspaceEntityStore(root);
+        const resultId = randomUUID();
+        const run = store.save('runs', { timestamp: Date.now(), status: 'success' }, resultId);
+        assert.strictEqual(run.id, resultId);
     });
 });
 
