@@ -122,6 +122,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 case 'advanceQualityFinding':
                     await this.advanceQualityFinding(data.id, data.nextState, data.folderPath);
                     break;
+                case 'createRunProfile':
+                    await this.createRunProfile(data.name, data.environment, data.folderPath);
+                    break;
             }
         });
     }
@@ -444,6 +447,19 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         } catch (error) {
             this.sendError(error instanceof Error ? error.message : String(error));
         }
+    }
+
+    private async createRunProfile(name: string, environment: string, folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        const trimmedName = name.trim();
+        if (!folder || !trimmedName) {
+            this.sendError('A run profile needs a name.');
+            return;
+        }
+        const store = new WorkspaceEntityStore(folder.uri.fsPath);
+        store.save('run-profiles', { name: trimmedName, environment: environment.trim(), parallel: 1 });
+        await this.sendManagementSnapshot(folder.uri.fsPath);
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {

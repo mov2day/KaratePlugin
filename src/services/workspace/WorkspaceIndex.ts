@@ -6,6 +6,8 @@ export interface ManagementSnapshot {
     featureCount: number;
     runs: Array<Record<string, unknown>>;
     findings: Array<Record<string, unknown>>;
+    runProfiles: Array<Record<string, unknown>>;
+    environments: Array<Record<string, unknown>>;
     features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number }> }>;
 }
 
@@ -17,6 +19,8 @@ export class WorkspaceIndex implements vscode.Disposable {
     readonly onDidUpdate = this.updateEmitter.event;
     private runs: Array<Record<string, unknown>> = [];
     private findings: Array<Record<string, unknown>> = [];
+    private runProfiles: Array<Record<string, unknown>> = [];
+    private environments: Array<Record<string, unknown>> = [];
     private featureCount = 0;
     private features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number }> }> = [];
     private refreshTimer: NodeJS.Timeout | undefined;
@@ -35,7 +39,15 @@ export class WorkspaceIndex implements vscode.Disposable {
     }
 
     snapshot(): ManagementSnapshot {
-        return { folderName: this.folder.name, featureCount: this.featureCount, runs: this.runs, findings: this.findings, features: this.features };
+        return {
+            folderName: this.folder.name,
+            featureCount: this.featureCount,
+            runs: this.runs,
+            findings: this.findings,
+            runProfiles: this.runProfiles,
+            environments: this.environments,
+            features: this.features
+        };
     }
 
     dispose(): void {
@@ -53,6 +65,10 @@ export class WorkspaceIndex implements vscode.Disposable {
         this.runs = this.store.list<Record<string, unknown>>('runs')
             .sort((left, right) => Number(right.timestamp || 0) - Number(left.timestamp || 0)).slice(0, 100);
         this.findings = this.store.list<Record<string, unknown>>('findings').slice(0, 500);
+        this.runProfiles = this.store.list<Record<string, unknown>>('run-profiles')
+            .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
+        this.environments = this.store.list<Record<string, unknown>>('environments')
+            .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
         const featureUris = await vscode.workspace.findFiles(new vscode.RelativePattern(this.folder, '**/*.feature'), '**/{node_modules,.git}/**');
         this.featureCount = featureUris.length;
         this.features = await Promise.all(featureUris.slice(0, 1500).map(async uri => {
