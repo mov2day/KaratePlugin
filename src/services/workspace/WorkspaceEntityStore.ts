@@ -153,7 +153,6 @@ export class WorkspaceEntityStore {
             const previouslyMigrated = new Set(this.list<MigratedRun>('runs')
                 .map(run => run.legacyFile)
                 .filter((file): file is string => Boolean(file)));
-            const migratedRunIds: string[] = [];
             const corruptedFiles: string[] = [];
             files.forEach((file, index) => {
                 onProgress?.(index + 1, files.length);
@@ -175,19 +174,17 @@ export class WorkspaceEntityStore {
                     };
                     this.writeAtomic(this.entityPath('runs', id), JSON.stringify(migratedEntity, null, 2));
                     this.touchManifest();
-                    migratedRunIds.push(id);
                 } catch {
                     corruptedFiles.push(file);
                 }
             });
+            const allMigratedRunIds = this.list<MigratedRun>('runs')
+                .filter(run => run.migratedFrom === '.karate-test-history')
+                .map(run => run.id);
             this.writeAtomic(journalPath, JSON.stringify({
-                source: '.karate-test-history', completedAt: Date.now(), migratedRunIds: [
-                    ...this.list<MigratedRun>('runs')
-                        .filter(run => run.migratedFrom === '.karate-test-history')
-                        .map(run => run.id)
-                ], corruptedFiles
+                source: '.karate-test-history', completedAt: Date.now(), migratedRunIds: allMigratedRunIds, corruptedFiles
             } satisfies MigrationJournal, null, 2));
-            return { migrated: migratedRunIds.length, corrupted: corruptedFiles };
+            return { migrated: allMigratedRunIds.length, corrupted: corruptedFiles };
         });
     }
 

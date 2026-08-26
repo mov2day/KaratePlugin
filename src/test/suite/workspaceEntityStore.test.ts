@@ -6,7 +6,6 @@ import { randomUUID } from 'crypto';
 import { ScenarioLocator } from '../../services/ci/ScenarioLocator';
 import { WorkspaceEntityStore } from '../../services/workspace/WorkspaceEntityStore';
 import { QualityWorkflowService } from '../../services/workspace/QualityWorkflowService';
-import { TestExecutor } from '../../services/execution/TestExecutor';
 
 suite('Workspace Entity Store', () => {
     let root: string;
@@ -43,7 +42,9 @@ suite('Workspace Entity Store', () => {
         assert.strictEqual(result.migrated, 1);
         assert.deepStrictEqual(result.corrupted, ['broken.json']);
         assert.ok(fs.existsSync(path.join(legacy, 'valid.json')));
-        assert.strictEqual(store.list<{ id: string }>('runs')[0].id, 'legacy-run');
+        const run = store.list<{ id: string; legacyId?: string }>('runs')[0];
+        assert.match(run.id, /^[0-9a-f-]{36}$/i);
+        assert.strictEqual(run.legacyId, 'legacy-run');
         assert.strictEqual(store.migrateLegacyHistory().migrated, 1);
     });
 
