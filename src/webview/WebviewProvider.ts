@@ -427,7 +427,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             'karate-dsl.runFolder', 'karate-dsl.showCoverageDashboard', 'karate-dsl.analyzeProjectHealth',
             'karate-dsl.generateFromOpenAPI', 'karate-dsl.importPostmanCollection', 'karate-dsl.importHar',
             'karate-dsl.generateFromGraphQL', 'karate-dsl.generateFromJira', 'karate-dsl.generateFromConfluence',
-            'karate-dsl.huntApiBugs', 'karate-dsl.showCIBridgeGuide', 'karate-dsl.reportBug', 'workbench.action.openSettings'
+            'karate-dsl.generateCombined', 'karate-dsl.generateFromDirectory', 'karate-dsl.startRecording',
+            'karate-dsl.huntApiBugs', 'karate-dsl.showCIBridgeGuide', 'karate-dsl.reportBug',
+            'karate-dsl.setClaudeApiKey', 'karate-dsl.setGitHubToken', 'karate-dsl.setZephyrToken',
+            'karate-dsl.showMcpConnectionInfo', 'workbench.action.openSettings'
         ]);
         if (typeof commandId !== 'string' || !allowed.has(commandId)) {
             this.sendError('This action is not available from the test management workspace.');
