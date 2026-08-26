@@ -531,7 +531,12 @@
         },
         "karateDsl.ai.provider": {
           "type": "string",
-          "enum": ["auto", "copilot", "claude-api", "ollama"],
+          "enum": [
+            "auto",
+            "copilot",
+            "claude-api",
+            "ollama"
+          ],
           "default": "auto",
           "description": "Active AI provider: auto (try copilot first), copilot, claude-api, or ollama",
           "enumDescriptions": [
@@ -728,7 +733,10 @@
         },
         "karateDsl.jira.authType": {
           "type": "string",
-          "enum": ["basic", "bearer"],
+          "enum": [
+            "basic",
+            "bearer"
+          ],
           "default": "basic",
           "description": "Jira authentication type: basic (Cloud email:token) or bearer (Data Center PAT)",
           "enumDescriptions": [
@@ -806,15 +814,16 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run clean && npm run compile",
+    "vscode:prepublish": "npm run build:webview && npm run clean && npm run compile",
     "clean": "node ./scripts/clean-out.cjs",
     "compile": "tsc -p ./",
+    "build:webview": "node ./scripts/build-webview.cjs",
     "typecheck": "tsc -p ./ --noEmit",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "verify": "npm run typecheck && npm run lint && npm run package:check",
-    "package:check": "npm run clean && npm run compile && node ./scripts/check-package-files.cjs",
+    "verify": "npm run build:webview && npm run typecheck && npm run lint && npm run package:check",
+    "package:check": "npm run build:webview && npm run clean && npm run compile && node ./scripts/check-package-files.cjs",
     "test": "node ./out/test/runTest.js",
     "package": "vsce package"
   },
@@ -828,13 +837,17 @@
     "@vscode/test-electron": "^2.3.8",
     "@vscode/vsce": "^2.22.0",
     "eslint": "^8.56.0",
+    "esbuild": "^0.28.2",
     "mocha": "^10.2.0",
     "typescript": "^5.3.3"
   },
   "dependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",
     "axios": "^1.6.2",
+    "chart.js": "^4.5.1",
     "js-yaml": "^4.1.0",
+    "mermaid": "^11.17.2",
+    "preact": "^10.29.8",
     "swagger-parser": "^10.0.3"
   }
 }

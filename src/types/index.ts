@@ -320,4 +320,6 @@ export type WebviewMessage =
     | { command: 'copyToClipboard'; content: string }
     | { command: 'syncTests'; specPath: string; updatePlan: any }
     | { command: 'launchCoverageDashboard' }
-    | { command: 'huntApiBugs' };
+    | { command: 'huntApiBugs' }
+    | { command: 'getManagementSnapshot' }
+    | { command: 'executeExtensionCommand'; commandId: string };

@@ -14,6 +14,7 @@ import { HistoryManager } from '../services/historyManager';
 import { TemplateManager } from '../services/templateManager';
 import { StyleAnalyzer } from '../services/styleAnalyzer';
 import { SharedStyleService } from '../services/SharedStyleService';
+import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'karateGenerator.mainView';
@@ -108,6 +109,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'huntApiBugs':
                     await vscode.commands.executeCommand('karate-dsl.huntApiBugs');
+                    break;
+                case 'getManagementSnapshot':
+                    await this.sendManagementSnapshot();
+                    break;
+                case 'executeExtensionCommand':
+                    await this.executeShellCommand((data as any).commandId);
                     break;
             }
         });
@@ -385,9 +392,41 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    private async sendManagementSnapshot(): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.[0];
+        if (!folder) {
+            this.sendMessage({ type: 'managementSnapshot', data: { runs: [], findings: [], featureCount: 0 } });
+            return;
+        }
+        const store = new WorkspaceEntityStore(folder.uri.fsPath);
+        const features = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*.feature'), '**/{node_modules,.git}/**');
+        const runs = store.list<any>('runs').sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
+        const findings = store.list<any>('findings').slice(0, 100);
+        this.sendMessage({ type: 'managementSnapshot', data: { folderName: folder.name, featureCount: features.length, runs, findings } });
+    }
+
+    private async executeShellCommand(commandId: unknown): Promise<void> {
+        const allowed = new Set([
+            'karate-dsl.runFolder', 'karate-dsl.showCoverageDashboard', 'karate-dsl.analyzeProjectHealth',
+            'karate-dsl.generateFromOpenAPI', 'karate-dsl.importPostmanCollection', 'karate-dsl.importHar',
+            'karate-dsl.generateFromGraphQL', 'karate-dsl.generateFromJira', 'karate-dsl.generateFromConfluence',
+            'karate-dsl.huntApiBugs', 'karate-dsl.showCIBridgeGuide', 'karate-dsl.reportBug', 'workbench.action.openSettings'
+        ]);
+        if (typeof commandId !== 'string' || !allowed.has(commandId)) {
+            this.sendError('This action is not available from the test management workspace.');
+            return;
+        }
+        await vscode.commands.executeCommand(commandId);
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview) {
-        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
-        const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'style.css'));
+        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'test-management.js'));
+        const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'test-management.css'));
+        const nonce = crypto.randomBytes(16).toString('base64');
+        return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};"><link rel="stylesheet" href="${styleUri}"><title>Karate Test Management</title></head><body><div id="root"></div><script nonce="${nonce}" src="${scriptUri}"></script></body></html>`;
+
+        const legacyScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
+        const legacyStyleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'style.css'));
 
         return `<!DOCTYPE html>
 <html lang="en">
