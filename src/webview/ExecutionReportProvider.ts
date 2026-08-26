@@ -294,7 +294,7 @@ export class ExecutionReportProvider {
      */
     private _getHtmlForWebview(webview: vscode.Webview): string {
         const nonce = getNonce();
-        const chartJsUri = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+        const chartJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'chart.umd.js'));
 
         // Compute logo URI
         // Using existing icon from resources folder
@@ -903,7 +903,6 @@ export class ExecutionReportProvider {
             let durationChart = null;
             let historyChart = null;
 
-            console.log('[Karate] Dashboard script loaded');
             vscode.postMessage({ command: 'webviewReady' });
 
             // Navigation Logic

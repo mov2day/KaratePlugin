@@ -2,29 +2,31 @@ import * as vscode from 'vscode';
 
 export class Logger {
     private outputChannel: vscode.OutputChannel;
+    private readonly recentLines: string[] = [];
+    private static readonly RECENT_LINE_LIMIT = 200;
 
     constructor() {
         this.outputChannel = vscode.window.createOutputChannel('Karate DSL Generator');
     }
 
     info(message: string): void {
-        this.outputChannel.appendLine(`[INFO] ${new Date().toISOString()}: ${this.redact(message)}`);
+        this.write(`[INFO] ${new Date().toISOString()}: ${Logger.redact(message)}`);
     }
 
     error(message: string, error?: Error): void {
-        this.outputChannel.appendLine(`[ERROR] ${new Date().toISOString()}: ${this.redact(message)}`);
+        this.write(`[ERROR] ${new Date().toISOString()}: ${Logger.redact(message)}`);
         if (error) {
-            this.outputChannel.appendLine(`  ${this.redact(error.message)}`);
+            this.write(`  ${Logger.redact(error.message)}`);
             if (error.stack) {
-                this.outputChannel.appendLine(`  ${this.redact(error.stack)}`);
+                this.write(`  ${Logger.redact(error.stack)}`);
             }
         }
     }
 
     warn(message: string, error?: Error): void {
-        this.outputChannel.appendLine(`[WARN] ${new Date().toISOString()}: ${this.redact(message)}`);
+        this.write(`[WARN] ${new Date().toISOString()}: ${Logger.redact(message)}`);
         if (error) {
-            this.outputChannel.appendLine(`  ${this.redact(error.message)}`);
+            this.write(`  ${Logger.redact(error.message)}`);
         }
     }
 
@@ -32,7 +34,17 @@ export class Logger {
         this.outputChannel.show();
     }
 
-    private redact(message: string): string {
+    getRecentLines(): string[] {
+        return [...this.recentLines];
+    }
+
+    private write(line: string): void {
+        this.outputChannel.appendLine(line);
+        this.recentLines.push(line);
+        if (this.recentLines.length > Logger.RECENT_LINE_LIMIT) this.recentLines.splice(0, this.recentLines.length - Logger.RECENT_LINE_LIMIT);
+    }
+
+    static redact(message: string): string {
         if (!message) return '';
 
         let redacted = message;

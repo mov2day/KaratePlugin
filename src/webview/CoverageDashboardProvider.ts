@@ -451,7 +451,7 @@ export class CoverageDashboardProvider {
     }
 
     private _getHtmlForWebview(webview: vscode.Webview): string {
-        const chartJsUri = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+        const chartJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'chart.umd.js'));
 
         const nonce = getNonce();
 
@@ -460,7 +460,7 @@ export class CoverageDashboardProvider {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource};">
     <title>Coverage Dashboard</title>
     <style>
         * {
@@ -779,7 +779,6 @@ export class CoverageDashboardProvider {
         (function() {
             'use strict';
             
-            console.log('=== Coverage Dashboard Script Starting ===');
             
             // Define variables at top level of IIFE for proper scope
             let vscode;
@@ -789,22 +788,16 @@ export class CoverageDashboardProvider {
             
             try {
                 vscode = acquireVsCodeApi();
-                console.log('VSCode API acquired successfully');
                 
                 function init() {
-                    console.log('Initializing coverage dashboard...');
-                    console.log('Document ready state:', document.readyState);
                     
                     try {
                         // Spec button
                         const specBtn = document.getElementById('select-specs-btn');
-                        console.log('Spec button found:', !!specBtn);
                         if (specBtn) {
                             specBtn.addEventListener('click', function() {
-                                console.log('Spec button clicked, sending message...');
                                 try {
                                     vscode.postMessage({ command: 'selectSpecs' });
-                                    console.log('Message sent successfully');
                                 } catch (e) {
                                     console.error('Error sending message:', e);
                                 }
@@ -813,13 +806,10 @@ export class CoverageDashboardProvider {
 
                         // Feature button
                         const featBtn = document.getElementById('select-features-btn');
-                        console.log('Feature button found:', !!featBtn);
                         if (featBtn) {
                             featBtn.addEventListener('click', function() {
-                                console.log('Feature button clicked, sending message...');
                                 try {
                                     vscode.postMessage({ command: 'selectFeatures' });
-                                    console.log('Message sent successfully');
                                 } catch (e) {
                                     console.error('Error sending message:', e);
                                 }
@@ -829,14 +819,9 @@ export class CoverageDashboardProvider {
                 const analyzeBtn = document.getElementById('analyze-coverage-btn');
                 const refreshBtn = document.getElementById('refresh-coverage-btn');
                 
-                console.log('Analyze button found:', !!analyzeBtn);
-                console.log('Refresh button found:', !!refreshBtn);
                 
                 if (analyzeBtn) {
                     analyzeBtn.addEventListener('click', function() {
-                        console.log('Analyze button clicked');
-                        console.log('Current selectedSpecPaths:', selectedSpecPaths);
-                        console.log('Current selectedFeaturePaths:', selectedFeaturePaths);
                         
                         if (selectedSpecPaths.length === 0) {
                             console.warn('No OpenAPI specs selected');
@@ -848,11 +833,6 @@ export class CoverageDashboardProvider {
                         }
                         
                         const useCopilot = document.getElementById('use-copilot').checked;
-                        console.log('Sending analyze coverage message...', {
-                            specPaths: selectedSpecPaths,
-                            featurePaths: selectedFeaturePaths,
-                            useCopilot: useCopilot
-                        });
                         vscode.postMessage({
                             command: 'analyzeCoverage',
                             specPaths: selectedSpecPaths,
@@ -864,14 +844,12 @@ export class CoverageDashboardProvider {
                 
                 if (refreshBtn) {
                     refreshBtn.addEventListener('click', function() {
-                        console.log('Refresh button clicked');
                         if (selectedSpecPaths.length === 0 || selectedFeaturePaths.length === 0) {
                             console.warn('No files selected for refresh');
                             return;
                         }
                         
                         const useCopilot = document.getElementById('use-copilot').checked;
-                        console.log('Re-analyzing coverage with same files...');
                         vscode.postMessage({
                             command: 'analyzeCoverage',
                             specPaths: selectedSpecPaths,
@@ -881,7 +859,6 @@ export class CoverageDashboardProvider {
                     });
                 }
                 
-                console.log('Dashboard initialization complete');
                     } catch (initError) {
                         console.error('Error during initialization:', initError);
                     }
@@ -896,7 +873,6 @@ export class CoverageDashboardProvider {
                 // Listen for messages from extension (MUST be inside IIFE to access same variables)
                 window.addEventListener('message', event => {
                     const message = event.data;
-                    console.log('Received message from extension:', message.type);
                     
                     switch (message.type) {
                         case 'coverageReport':
@@ -914,18 +890,14 @@ export class CoverageDashboardProvider {
                             showError(message.message);
                             break;
                         case 'specsSelected':
-                            console.log('Specs selected, paths:', message.paths);
                             selectedSpecPaths = message.paths;
-                            console.log('Updated selectedSpecPaths:', selectedSpecPaths);
                             const specDisplay = message.paths.length === 1 
                                 ? message.paths[0].split('/').pop() 
                                 : message.paths.length + ' specs selected';
                             document.getElementById('spec-paths').value = specDisplay;
                             break;
                         case 'featuresSelected':
-                            console.log('Features selected, paths:', message.paths);
                             selectedFeaturePaths = message.paths;
-                            console.log('Updated selectedFeaturePaths:', selectedFeaturePaths);
                             document.getElementById('feature-paths').value = message.count + ' feature files selected';
                             break;
                     }
@@ -938,7 +910,6 @@ export class CoverageDashboardProvider {
                         const path = e.target.getAttribute('data-path');
                         const description = e.target.getAttribute('data-description');
                         
-                        console.log('Priority AI button clicked:', { method, path, description });
                 vscode.postMessage({
                             command: 'generateTestWithAI',
                             endpoint: { method, path, description }

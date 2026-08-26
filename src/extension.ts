@@ -37,9 +37,11 @@ import { TestExecutionResult } from './types';
 import { KarateV2Migrator } from './services/KarateV2Migrator';
 import { ZephyrScalePublisher, ZEPHYR_TOKEN_KEY } from './services/zephyr/ZephyrScalePublisher';
 import { WorkspaceEntityStore } from './services/workspace/WorkspaceEntityStore';
+import { TelemetryService } from './services/telemetry/TelemetryService';
 
 export async function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
+    const telemetry = new TelemetryService(context);
 
     // Initialize Agent Skills with extension path for bundled skills
     AgentSkillsService.setExtensionPath(context.extensionPath);
@@ -53,19 +55,27 @@ export async function activate(context: vscode.ExtensionContext) {
         const legacyHistory = path.join(folder.uri.fsPath, '.karate-test-history');
         if (!fs.existsSync(legacyHistory)) continue;
         const store = new WorkspaceEntityStore(folder.uri.fsPath);
-        await vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: `Migrating Karate test history for ${folder.name}`,
-            cancellable: false
-        }, async progress => {
-            const result = store.migrateLegacyHistory((current, total) => {
-                progress.report({ message: `${current}/${total} run records` });
+        try {
+            telemetry.send('migration_started', { schemaVersionFrom: 1, schemaVersionTo: 2 });
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Migrating Karate test history for ${folder.name}`,
+                cancellable: false
+            }, async progress => {
+                const result = store.migrateLegacyHistory((current, total) => {
+                    progress.report({ message: `${current}/${total} run records` });
+                });
+                telemetry.send('migration_completed', { historyFileCount: result.migrated, schemaVersionTo: 2 });
+                if (result.corrupted.length > 0) {
+                    vscode.window.showWarningMessage(`Karate history migration skipped ${result.corrupted.length} corrupted record(s) in ${folder.name}.`);
+                }
             });
-            if (result.corrupted.length > 0) {
-                vscode.window.showWarningMessage(`Karate history migration skipped ${result.corrupted.length} corrupted record(s) in ${folder.name}.`);
-            }
-        });
+        } catch (error) {
+            telemetry.send('migration_failed', { stage: 'history-v1', error: error instanceof Error ? error.message : String(error) });
+            throw error;
+        }
     }
+    telemetry.send('activation');
 
     // Register Copilot Suggestion Command
     context.subscriptions.push(
@@ -1534,6 +1544,13 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
                 }
 
                 const config = vscode.workspace.getConfiguration('karateDsl.bugHunter');
+                const hostname = new URL(baseUrl).hostname.toLowerCase();
+                const allowedHosts = config.get<string[]>('allowedHosts', []).map(host => host.toLowerCase());
+                const localHostnames = new Set(['localhost', '127.0.0.1', '::1']);
+                if (!localHostnames.has(hostname) && !allowedHosts.includes(hostname)) {
+                    vscode.window.showErrorMessage(`Bug Hunter blocked ${hostname}. Add it to karateDsl.bugHunter.allowedHosts to allow live probes.`);
+                    return;
+                }
                 const safeMode = config.get<boolean>('safeMode', true);
                 const includeDestructiveMethods = config.get<boolean>('includeDestructiveMethods', false);
 
@@ -1593,6 +1610,22 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         }
     );
 
+    const reportBugCommand = vscode.commands.registerCommand('karate-dsl.reportBug', async () => {
+        const description = await vscode.window.showInputBox({
+            title: 'Report a Karate extension issue',
+            prompt: 'Optional: describe what went wrong',
+            placeHolder: 'What did you expect to happen?'
+        });
+        telemetry.send('user_reported_bug', { recentLogLines: logger.getRecentLines(), userDescription: description || '' });
+        const issueBody = encodeURIComponent([
+            `Extension version: ${context.extension.packageJSON.version}`,
+            `VS Code: ${vscode.version}`,
+            `Platform: ${process.platform}`,
+            '', description || ''
+        ].join('\n'));
+        await vscode.env.openExternal(vscode.Uri.parse(`https://github.com/mov2day/KaratePlugin/issues/new?body=${issueBody}`));
+    });
+
     context.subscriptions.push(
         openApiCommand,
         confluenceCommand,
@@ -1630,7 +1663,8 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         setZephyrTokenCommand,
         showMcpConnectionInfoCommand,
         showCIBridgeGuideCommand,
-        huntApiBugsCommand
+        huntApiBugsCommand,
+        reportBugCommand
     );
 }
 

@@ -216,6 +216,10 @@
       {
         "command": "karate-dsl.huntApiBugs",
         "title": "Karate: Hunt API Bugs"
+      },
+      {
+        "command": "karate-dsl.reportBug",
+        "title": "Karate: Report a Bug"
       }
     ],
     "viewsContainers": {
@@ -784,6 +788,12 @@
           "default": true,
           "description": "Run API Bug Hunter in safe mode. Safe mode skips destructive method probes unless explicitly enabled."
         },
+        "karateDsl.bugHunter.allowedHosts": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string" },
+          "description": "Hostnames explicitly allowed for live Bug Hunter probes. localhost is always allowed."
+        },
         "karateDsl.bugHunter.maxRequests": {
           "type": "number",
           "default": 100,
@@ -809,6 +819,16 @@
           "type": "boolean",
           "default": false,
           "description": "Allow Bug Hunter probes for POST, PUT, PATCH, and DELETE endpoints."
+        },
+        "karateDsl.telemetry.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Send anonymous, redacted diagnostic events when VS Code telemetry is also enabled."
+        },
+        "karateDsl.telemetry.endpoint": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Official Karate telemetry collector endpoint. Leave blank to disable event delivery."
         }
       }
     }

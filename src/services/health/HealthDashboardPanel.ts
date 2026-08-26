@@ -35,7 +35,7 @@ export class HealthDashboardPanel {
             column || vscode.ViewColumn.One,
             {
                 enableScripts: true,
-                localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'resources'), vscode.Uri.joinPath(extensionUri, 'out')]
+                localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'resources'), vscode.Uri.joinPath(extensionUri, 'out'), vscode.Uri.joinPath(extensionUri, 'media')]
             }
         );
 
@@ -69,6 +69,7 @@ export class HealthDashboardPanel {
     }
 
     private _getHtmlForWebview(stats: ProjectHealthStats) {
+        const mermaidUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'mermaid.esm.min.mjs'));
         // Basic HTML for now
         // Uses simple CSS for a card layout
         
@@ -101,7 +102,7 @@ export class HealthDashboardPanel {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>Karate Project Health</title>
                 <script type="module">
-                    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+                    import mermaid from '${mermaidUri}';
                     mermaid.initialize({ startOnLoad: true, theme: 'dark' });
                 </script>
                 <style>

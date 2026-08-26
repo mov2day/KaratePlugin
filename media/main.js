@@ -456,13 +456,6 @@
 
     // Sync panel handlers
     function handleShowSyncPanel(data) {
-        // Debug logging
-        console.log('=== SYNC PANEL DATA ===');
-        console.log('Full data:', data);
-        console.log('Spec path:', data.specPath);
-        console.log('Diff:', data.diff);
-        console.log('Affected:', data.affected);
-        console.log('======================');
 
         // Switch to sync tab
         switchTab('sync');
