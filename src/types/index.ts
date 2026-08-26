@@ -322,4 +322,5 @@ export type WebviewMessage =
     | { command: 'launchCoverageDashboard' }
     | { command: 'huntApiBugs' }
     | { command: 'getManagementSnapshot'; folderPath?: string }
-    | { command: 'executeExtensionCommand'; commandId: string };
+    | { command: 'executeExtensionCommand'; commandId: string }
+    | { command: 'advanceQualityFinding'; id: string; nextState: 'New' | 'Investigating' | 'Fixed' | 'Verified'; folderPath?: string };

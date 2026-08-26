@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { ScenarioLocator } from '../../services/ci/ScenarioLocator';
 import { WorkspaceEntityStore } from '../../services/workspace/WorkspaceEntityStore';
+import { QualityWorkflowService } from '../../services/workspace/QualityWorkflowService';
 
 suite('Workspace Entity Store', () => {
     let root: string;
@@ -42,6 +43,21 @@ suite('Workspace Entity Store', () => {
         assert.ok(fs.existsSync(path.join(legacy, 'valid.json')));
         assert.strictEqual(store.list<{ id: string }>('runs')[0].id, 'legacy-run');
         assert.strictEqual(store.migrateLegacyHistory().migrated, 1);
+    });
+});
+
+suite('Quality Workflow', () => {
+    let root: string;
+    setup(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'karate-quality-workflow-')); });
+    teardown(() => { fs.rmSync(root, { recursive: true, force: true }); });
+
+    test('allows only the planned lifecycle transitions', () => {
+        const workflow = new QualityWorkflowService(new WorkspaceEntityStore(root));
+        const finding = workflow.create({ title: 'Untested endpoint', severity: 'high', source: 'coverage' });
+        assert.strictEqual(workflow.advance(finding.id, 'Investigating').state, 'Investigating');
+        assert.throws(() => workflow.advance(finding.id, 'Verified'), /Cannot move/);
+        assert.strictEqual(workflow.advance(finding.id, 'Fixed').state, 'Fixed');
+        assert.strictEqual(workflow.advance(finding.id, 'Verified').state, 'Verified');
     });
 });
 

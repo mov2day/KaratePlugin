@@ -15,6 +15,8 @@ import { TemplateManager } from '../services/templateManager';
 import { StyleAnalyzer } from '../services/styleAnalyzer';
 import { SharedStyleService } from '../services/SharedStyleService';
 import { WorkspaceIndex } from '../services/workspace/WorkspaceIndex';
+import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore';
+import { QualityState, QualityWorkflowService } from '../services/workspace/QualityWorkflowService';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'karateGenerator.mainView';
@@ -116,6 +118,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'executeExtensionCommand':
                     await this.executeShellCommand((data as any).commandId);
+                    break;
+                case 'advanceQualityFinding':
+                    await this.advanceQualityFinding(data.id, data.nextState, data.folderPath);
                     break;
             }
         });
@@ -426,6 +431,19 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             return;
         }
         await vscode.commands.executeCommand(commandId);
+    }
+
+    private async advanceQualityFinding(id: string, nextState: QualityState, folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        if (!folder) return;
+        try {
+            const workflow = new QualityWorkflowService(new WorkspaceEntityStore(folder.uri.fsPath));
+            workflow.advance(id, nextState);
+            await this.sendManagementSnapshot(folder.uri.fsPath);
+        } catch (error) {
+            this.sendError(error instanceof Error ? error.message : String(error));
+        }
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {
