@@ -44,6 +44,31 @@ suite('Workspace Entity Store', () => {
         assert.strictEqual(store.list<{ id: string }>('runs')[0].id, 'legacy-run');
         assert.strictEqual(store.migrateLegacyHistory().migrated, 1);
     });
+
+    test('does not duplicate legacy records if a migration journal is lost', () => {
+        const legacy = path.join(root, '.karate-test-history');
+        fs.mkdirSync(legacy);
+        fs.writeFileSync(path.join(legacy, 'run.json'), JSON.stringify({ id: 'legacy-run', timestamp: 42, summary: {} }));
+        const store = new WorkspaceEntityStore(root);
+
+        store.migrateLegacyHistory();
+        fs.unlinkSync(path.join(root, '.karate-test-management', 'migration', 'history-v1.json'));
+        const result = store.migrateLegacyHistory();
+
+        assert.strictEqual(result.migrated, 1);
+        assert.strictEqual(store.list<{ id: string }>('runs').length, 1);
+    });
+
+    test('recovers an abandoned workspace lock', () => {
+        const store = new WorkspaceEntityStore(root);
+        store.initialize();
+        const lock = path.join(root, '.karate-test-management', 'locks', 'workspace.lock');
+        fs.writeFileSync(lock, 'crashed');
+        const staleTime = new Date(Date.now() - 31_000);
+        fs.utimesSync(lock, staleTime, staleTime);
+
+        assert.doesNotThrow(() => store.save('environments', { name: 'staging' }));
+    });
 });
 
 suite('Quality Workflow', () => {

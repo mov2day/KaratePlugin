@@ -32,6 +32,10 @@ interface MigrationJournal {
     corruptedFiles: string[];
 }
 
+interface MigratedRun extends WorkspaceEntity {
+    legacyFile?: string;
+}
+
 const ENTITY_KINDS: WorkspaceEntityKind[] = [
     'run-profiles', 'environments', 'traceability', 'findings', 'actions', 'runs'
 ];
@@ -143,10 +147,17 @@ export class WorkspaceEntityStore {
             if (!fs.existsSync(backupTarget)) this.copyDirectory(legacyDirectory, backupTarget);
 
             const files = fs.readdirSync(legacyDirectory).filter(file => file.endsWith('.json')).sort();
+            // A journal is intentionally ignored by Git and can be lost when a workspace is
+            // copied or a migration is interrupted. The per-record source marker is the
+            // durable idempotency key in that situation.
+            const previouslyMigrated = new Set(this.list<MigratedRun>('runs')
+                .map(run => run.legacyFile)
+                .filter((file): file is string => Boolean(file)));
             const migratedRunIds: string[] = [];
             const corruptedFiles: string[] = [];
             files.forEach((file, index) => {
                 onProgress?.(index + 1, files.length);
+                if (previouslyMigrated.has(file)) return;
                 try {
                     const value = JSON.parse(fs.readFileSync(path.join(legacyDirectory, file), 'utf8')) as Record<string, unknown>;
                     const preferredId = typeof value.id === 'string' && value.id ? value.id : undefined;
@@ -157,7 +168,8 @@ export class WorkspaceEntityStore {
                         id,
                         createdAt: typeof value.timestamp === 'number' ? value.timestamp : now,
                         updatedAt: now,
-                        migratedFrom: '.karate-test-history'
+                        migratedFrom: '.karate-test-history',
+                        legacyFile: file
                     };
                     this.writeAtomic(this.entityPath('runs', id), JSON.stringify(migratedEntity, null, 2));
                     this.touchManifest();
@@ -167,7 +179,11 @@ export class WorkspaceEntityStore {
                 }
             });
             this.writeAtomic(journalPath, JSON.stringify({
-                source: '.karate-test-history', completedAt: Date.now(), migratedRunIds, corruptedFiles
+                source: '.karate-test-history', completedAt: Date.now(), migratedRunIds: [
+                    ...this.list<MigratedRun>('runs')
+                        .filter(run => run.migratedFrom === '.karate-test-history')
+                        .map(run => run.id)
+                ], corruptedFiles
             } satisfies MigrationJournal, null, 2));
             return { migrated: migratedRunIds.length, corrupted: corruptedFiles };
         });
@@ -203,6 +219,17 @@ export class WorkspaceEntityStore {
                 break;
             } catch (error: unknown) {
                 if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+                // A process crash cannot execute finally. Treat a sufficiently old lock as
+                // abandoned so an interrupted migration can recover on the next activation.
+                try {
+                    if (Date.now() - fs.statSync(lockPath).mtimeMs > 30_000) {
+                        fs.unlinkSync(lockPath);
+                        continue;
+                    }
+                } catch (lockError: unknown) {
+                    if ((lockError as NodeJS.ErrnoException).code !== 'ENOENT') throw lockError;
+                    continue;
+                }
                 const started = Date.now();
                 while (Date.now() - started < 25) { /* short synchronous retry window */ }
             }
