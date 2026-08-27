@@ -61,6 +61,7 @@ function App() {
 
     const filteredRuns = useMemo(() => (snapshot.runs || []).filter(run => `${run.id} ${run.status} ${run.options?.environment || ''} ${run.options?.target || ''}`.toLowerCase().includes(query.toLowerCase())), [snapshot.runs, query]);
     const failedRuns = (snapshot.runs || []).filter(run => run.status !== 'success');
+    const latestRun = snapshot.runs?.[0];
 
     return <main class="management-shell">
         <aside class="rail" aria-label="Karate test management navigation">
@@ -78,6 +79,7 @@ function App() {
             <header class="topbar">
                 <label class="workspace-picker"><span class="eyebrow">WORKSPACE</span><select value={snapshot.folderPath || ''} onChange={event => send('getManagementSnapshot', { folderPath: (event.target as HTMLSelectElement).value })}>{(snapshot.folders || [{ name: snapshot.folderName || 'Karate project', path: snapshot.folderPath || '' }]).map(folder => <option value={folder.path}>{folder.name}</option>)}</select></label>
                 <label class="search"><span class="codicon codicon-search" aria-hidden="true" /><span class="sr-only">Search runs</span><input value={query} onInput={event => setQuery((event.target as HTMLInputElement).value)} placeholder="Search tests, runs, findings" /></label>
+                <button class={`run-status ${latestRun ? (latestRun.status === 'success' ? 'is-success' : 'is-failed') : ''}`} onClick={() => setActiveArea('runs')} title="Open runs">{latestRun ? <><span class={`codicon codicon-${latestRun.status === 'success' ? 'pass' : 'error'}`} aria-hidden="true" /> Latest: {latestRun.status === 'success' ? 'passed' : latestRun.status}</> : <><span class="codicon codicon-circle-outline" aria-hidden="true" /> No runs yet</>}</button>
                 <button class="primary-action" onClick={() => send('executeExtensionCommand', { commandId: 'karate-dsl.runFolder' })}><span class="codicon codicon-play" aria-hidden="true" /> Run tests</button>
             </header>
             {activeArea === 'overview' && <Overview snapshot={snapshot} failedRuns={failedRuns} onNavigate={setActiveArea} />}
