@@ -88,6 +88,28 @@ suite('Workspace Entity Store', () => {
         assert.doesNotThrow(() => store.save('environments', { name: 'staging' }));
     });
 
+    test('keeps sibling workspace migrations isolated', () => {
+        const sibling = fs.mkdtempSync(path.join(os.tmpdir(), 'karate-workspace-sibling-'));
+        try {
+            const failedLegacy = path.join(root, '.karate-test-history');
+            const healthyLegacy = path.join(sibling, '.karate-test-history');
+            fs.mkdirSync(failedLegacy);
+            fs.mkdirSync(healthyLegacy);
+            fs.writeFileSync(path.join(failedLegacy, 'broken.json'), '{broken');
+            fs.writeFileSync(path.join(healthyLegacy, 'run.json'), JSON.stringify({ id: 'legacy-sibling', timestamp: 10, summary: {} }));
+
+            const failed = new WorkspaceEntityStore(root).migrateLegacyHistory();
+            const healthyStore = new WorkspaceEntityStore(sibling);
+            const healthy = healthyStore.migrateLegacyHistory();
+
+            assert.deepStrictEqual(failed.corrupted, ['broken.json']);
+            assert.strictEqual(healthy.migrated, 1);
+            assert.strictEqual(healthyStore.list('runs').length, 1);
+        } finally {
+            fs.rmSync(sibling, { recursive: true, force: true });
+        }
+    });
+
     test('accepts UUID execution records as workspace run entities', () => {
         const store = new WorkspaceEntityStore(root);
         const resultId = randomUUID();
