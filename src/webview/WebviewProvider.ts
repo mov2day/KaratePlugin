@@ -524,12 +524,16 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     private async executeShellCommandWithArguments(commandId: string, ...args: unknown[]): Promise<void> {
+        const isExecution = ['karate-dsl.runFeature', 'karate-dsl.runScenario', 'karate-dsl.runFolder', 'karate-dsl.runByTags'].includes(commandId);
         try {
+            if (isExecution) this.postMessageToWebview({ type: 'executionState', running: true });
             await vscode.commands.executeCommand(commandId, ...args);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             this._telemetry.send('command_error', { commandId, error: message });
             this.sendError(`Could not complete this action: ${message}`);
+        } finally {
+            if (isExecution) this.postMessageToWebview({ type: 'executionState', running: false });
         }
     }
 
