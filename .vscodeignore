@@ -12,6 +12,9 @@ tsconfig.json
 **/*.ts
 out/test/**
 out/debug/**
+out/**
+!out/extension.js
+node_modules/**
 **/*.bak
 **/.DS_Store
 .DS_Store

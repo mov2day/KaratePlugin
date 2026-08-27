@@ -834,16 +834,17 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run build:webview && npm run clean && npm run compile",
+    "vscode:prepublish": "npm run build:webview && npm run clean && npm run build:extension",
     "clean": "node ./scripts/clean-out.cjs",
     "compile": "tsc -p ./",
     "build:webview": "node ./scripts/build-webview.cjs",
+    "build:extension": "node ./scripts/build-extension.cjs",
     "typecheck": "tsc -p ./ --noEmit",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-contributions.cjs && npm run typecheck && npm run lint && npm run package:check",
-    "package:check": "npm run build:webview && npm run clean && npm run compile && node ./scripts/check-package-files.cjs",
+    "package:check": "npm run build:webview && npm run clean && npm run build:extension && node ./scripts/check-package-files.cjs",
     "test": "node ./out/test/runTest.js",
     "package": "vsce package"
   },
