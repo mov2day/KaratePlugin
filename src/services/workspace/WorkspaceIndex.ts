@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { WorkspaceEntityStore } from './WorkspaceEntityStore';
+import { FlakinessAnalyzer, FlakinessTier } from '../flakiness/FlakinessAnalyzer';
 
 export interface ManagementSnapshot {
     folderName: string;
@@ -10,7 +11,7 @@ export interface ManagementSnapshot {
     environments: Array<Record<string, unknown>>;
     coverageReports: Array<Record<string, unknown>>;
     healthReports: Array<Record<string, unknown>>;
-    features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number; owner?: string; status?: string; zephyrKey?: string }> }>;
+    features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number; owner?: string; status?: string; zephyrKey?: string; flakiness?: number; flakinessTier?: FlakinessTier; flakinessRuns?: number }> }>;
 }
 
 /** Keeps UI queries off the filesystem hot path and refreshes on editor or Git file changes. */
@@ -26,7 +27,7 @@ export class WorkspaceIndex implements vscode.Disposable {
     private coverageReports: Array<Record<string, unknown>> = [];
     private healthReports: Array<Record<string, unknown>> = [];
     private featureCount = 0;
-    private features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number; owner?: string; status?: string; zephyrKey?: string }> }> = [];
+    private features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number; owner?: string; status?: string; zephyrKey?: string; flakiness?: number; flakinessTier?: FlakinessTier; flakinessRuns?: number }> }> = [];
     private refreshTimer: NodeJS.Timeout | undefined;
 
     constructor(private readonly folder: vscode.WorkspaceFolder) {
@@ -84,6 +85,7 @@ export class WorkspaceIndex implements vscode.Disposable {
             .filter(action => action.kind === 'health-report')
             .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
             .slice(0, 10);
+        const flakiness = this.indexFlakiness();
         const traceability = new Map(this.store.list<{ featurePath?: string; scenarioName?: string; owner?: string; status?: string; zephyrKey?: string }>('traceability')
             .filter(item => item.featurePath && item.scenarioName)
             .map(item => [`${item.featurePath}\u0000${item.scenarioName}`, item]));
@@ -92,7 +94,7 @@ export class WorkspaceIndex implements vscode.Disposable {
         this.features = await Promise.all(featureUris.slice(0, 1500).map(async uri => {
             const document = await vscode.workspace.openTextDocument(uri);
             const tags: string[] = [];
-            const scenarios: Array<{ name: string; tags: string[]; line: number; owner?: string; status?: string; zephyrKey?: string }> = [];
+            const scenarios: Array<{ name: string; tags: string[]; line: number; owner?: string; status?: string; zephyrKey?: string; flakiness?: number; flakinessTier?: FlakinessTier; flakinessRuns?: number }> = [];
             document.getText().split(/\r?\n/).forEach((line, index) => {
                 const trimmed = line.trim();
                 if (trimmed.startsWith('@')) {
@@ -104,7 +106,8 @@ export class WorkspaceIndex implements vscode.Disposable {
                     const name = header[1].trim();
                     const featurePath = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, '/');
                     const linked = traceability.get(`${featurePath}\u0000${name}`);
-                    scenarios.push({ name, tags: [...tags], line: index + 1, owner: linked?.owner, status: linked?.status, zephyrKey: linked?.zephyrKey });
+                    const stability = flakiness.get(`${featurePath}\u0000${name}`);
+                    scenarios.push({ name, tags: [...tags], line: index + 1, owner: linked?.owner, status: linked?.status, zephyrKey: linked?.zephyrKey, ...stability });
                     tags.length = 0;
                 } else if (trimmed && !trimmed.startsWith('#')) {
                     tags.length = 0;
@@ -113,5 +116,40 @@ export class WorkspaceIndex implements vscode.Disposable {
             return { path: vscode.workspace.asRelativePath(uri, false).replace(/\\/g, '/'), scenarios };
         }));
         this.updateEmitter.fire(this.snapshot());
+    }
+
+    /** Derive per-scenario stability from indexed history without reopening history files. */
+    private indexFlakiness(): Map<string, { flakiness: number; flakinessTier: FlakinessTier; flakinessRuns: number }> {
+        const outcomes = new Map<string, Array<{ timestamp: number; status: string }>>();
+        for (const run of this.runs) {
+            const timestamp = Number(run.timestamp || 0);
+            const features = Array.isArray(run.features) ? run.features : [];
+            for (const feature of features) {
+                if (!feature || typeof feature !== 'object') continue;
+                const source = feature as Record<string, unknown>;
+                const featurePath = String(source.relativePath || source.name || '').replace(/\\/g, '/');
+                const scenarios = Array.isArray(source.scenarios) ? source.scenarios : [];
+                for (const scenario of scenarios) {
+                    if (!scenario || typeof scenario !== 'object') continue;
+                    const item = scenario as Record<string, unknown>;
+                    if (typeof item.name !== 'string' || typeof item.status !== 'string') continue;
+                    const key = `${featurePath}\u0000${item.name}`;
+                    const history = outcomes.get(key) || [];
+                    history.push({ timestamp, status: item.status });
+                    outcomes.set(key, history);
+                }
+            }
+        }
+        const analyzer = new FlakinessAnalyzer();
+        const thresholds = FlakinessAnalyzer.getConfiguredThresholds();
+        const result = new Map<string, { flakiness: number; flakinessTier: FlakinessTier; flakinessRuns: number }>();
+        for (const [key, history] of outcomes) {
+            const recent = history.sort((left, right) => right.timestamp - left.timestamp).slice(0, 20);
+            if (recent.length < 2) continue;
+            const passRate = recent.filter(item => item.status === 'passed').length / recent.length;
+            const score = analyzer.computeFlakiness(passRate);
+            result.set(key, { flakiness: score, flakinessTier: analyzer.getTier(score, thresholds), flakinessRuns: recent.length });
+        }
+        return result;
     }
 }
