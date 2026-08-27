@@ -147,8 +147,9 @@ Saved to File System
 ## Extension Telemetry
 
 Telemetry is **off by default**. It sends nothing unless both
-`karateDsl.telemetry.enabled` and VS Code's own telemetry setting are enabled,
-and an official collector endpoint is configured.
+`karateDsl.telemetry.enabled` and VS Code's own telemetry setting are enabled.
+The default official collector endpoint is hosted on Vercel; users can blank
+the endpoint setting to prevent delivery entirely.
 
 When opted in, the extension sends only diagnostic event metadata such as the
 extension/VS Code version, platform, a random per-activation session ID, and
@@ -165,10 +166,12 @@ store.
 
 ### Collector deployment
 
-Deploy `api/telemetry.js` to Vercel and configure `KV_REST_API_URL` and
-`KV_REST_API_TOKEN` with Vercel KV or Upstash REST credentials. Then set the
-deployed HTTPS endpoint in `karateDsl.telemetry.endpoint`; leaving it blank
-keeps delivery disabled even when telemetry is opted in.
+The official collector is deployed at
+`https://karate-telemetry-collector.vercel.app/api/telemetry` on Vercel's free
+Hobby plan. Its deployment requires a free Vercel KV/Upstash integration that
+provides `KV_REST_API_URL` and `KV_REST_API_TOKEN`. Leaving
+`karateDsl.telemetry.endpoint` blank keeps delivery disabled even when
+telemetry is opted in.
 
 ## Questions?
 

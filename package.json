@@ -827,8 +827,8 @@
         },
         "karateDsl.telemetry.endpoint": {
           "type": "string",
-          "default": "",
-          "markdownDescription": "Official Karate telemetry collector endpoint. Leave blank to disable event delivery."
+          "default": "https://karate-telemetry-collector.vercel.app/api/telemetry",
+          "markdownDescription": "Official Karate telemetry collector endpoint. Telemetry still requires opt-in and VS Code telemetry to be enabled; leave blank to prevent delivery."
         }
       }
     }
