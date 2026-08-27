@@ -228,7 +228,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         });
 
         if (fileUri && fileUri.length > 0) {
-            this._view?.webview.postMessage({
+            this.sendMessage({
                 type: 'fileSelected',
                 filePath: fileUri[0].fsPath
             });

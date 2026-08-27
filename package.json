@@ -226,7 +226,7 @@
       "activitybar": [
         {
           "id": "karate-generator",
-          "title": "Karate Test Generator",
+          "title": "Karate Test Management",
           "icon": "resources/icon.svg"
         }
       ]
@@ -312,7 +312,7 @@
         {
           "type": "webview",
           "id": "karateGenerator.mainView",
-          "name": "Test Generator"
+          "name": "Test Management"
         }
       ]
     },
