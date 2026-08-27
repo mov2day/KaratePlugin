@@ -133,6 +133,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 case 'createRunProfile':
                     await this.createRunProfile(data.name, data.environment, data.folderPath);
                     break;
+                case 'runProfile':
+                    await this.runProfile(data.id, data.folderPath);
+                    break;
                 case 'webviewShellError':
                     this._telemetry.send('webview_shell_error', { area: data.area, error: data.message });
                     break;
@@ -456,8 +459,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendError('This action is not available from the test management workspace.');
             return;
         }
+        await this.executeShellCommandWithArguments(commandId);
+    }
+
+    private async executeShellCommandWithArguments(commandId: string, ...args: unknown[]): Promise<void> {
         try {
-            await vscode.commands.executeCommand(commandId);
+            await vscode.commands.executeCommand(commandId, ...args);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             this._telemetry.send('command_error', { commandId, error: message });
@@ -489,6 +496,22 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         const store = new WorkspaceEntityStore(folder.uri.fsPath);
         store.save('run-profiles', { name: trimmedName, environment: environment.trim(), parallel: 1 });
         await this.sendManagementSnapshot(folder.uri.fsPath);
+    }
+
+    private async runProfile(id: string, folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        if (!folder) return;
+        const profile = new WorkspaceEntityStore(folder.uri.fsPath).get<{ environment?: string; parallel?: number }>('run-profiles', id);
+        if (!profile) {
+            this.sendError('This run profile no longer exists.');
+            return;
+        }
+        await this.executeShellCommandWithArguments('karate-dsl.runFolder', {
+            folderPath: folder.uri.fsPath,
+            environment: profile.environment,
+            parallel: profile.parallel
+        });
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {
@@ -1290,6 +1313,8 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
             return typeof message.name === 'string'
                 && typeof message.environment === 'string'
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        case 'runProfile':
+            return typeof message.id === 'string' && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'webviewShellError':
             return typeof message.area === 'string' && typeof message.message === 'string';
         // Legacy generation messages remain supported for existing callers. Their command

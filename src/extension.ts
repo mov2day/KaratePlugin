@@ -953,9 +953,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
     const runFolderCommand = vscode.commands.registerCommand(
         'karate-dsl.runFolder',
-        async (uri?: vscode.Uri) => {
+        async (target?: vscode.Uri | { folderPath?: string; environment?: string; parallel?: number }) => {
             try {
-                const folderPath = uri?.fsPath || workspaceRoot;
+                const profile = target && !(target instanceof vscode.Uri) ? target : undefined;
+                const folderPath = target instanceof vscode.Uri ? target.fsPath : profile?.folderPath || workspaceRoot;
                 if (!folderPath) {
                     vscode.window.showWarningMessage('No folder selected');
                     return;
@@ -970,8 +971,9 @@ export async function activate(context: vscode.ExtensionContext) {
                         type: 'folder',
                         target: folderPath,
                         buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
-                        parallel: vscode.workspace.getConfiguration('karateDsl').get('execution.parallelThreads') || 1,
-                        workingDirectory: workspaceRoot
+                        environment: profile?.environment,
+                        parallel: profile?.parallel || vscode.workspace.getConfiguration('karateDsl').get('execution.parallelThreads') || 1,
+                        workingDirectory: folderPath
                     }, token);
 
                     await attachFlakinessSummary(result);
