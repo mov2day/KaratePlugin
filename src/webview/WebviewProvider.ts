@@ -29,6 +29,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private readonly _workspaceIndexes = new Map<string, WorkspaceIndex>();
     private readonly _telemetry: TelemetryService;
     private _activeManagementFolderPath: string | undefined;
+    private _pendingManagementArea: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations' | undefined;
 
     /**
      * Process feature content through ReusabilityEngine.
@@ -50,8 +51,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     public async showManagementArea(area: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations'): Promise<void> {
+        this._pendingManagementArea = area;
         await vscode.commands.executeCommand('karateGenerator.mainView.focus');
-        this.postMessageToWebview({ type: 'navigateManagement', area });
+        this.postPendingManagementArea();
     }
 
     public resolveWebviewView(
@@ -143,6 +145,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'saveTraceability':
                     await this.saveTraceability(data.featurePath, data.scenarioName, data.owner, data.status, data.zephyrKey, data.folderPath);
+                    break;
+                case 'managementReady':
+                    await this.sendManagementSnapshot(this._activeManagementFolderPath);
+                    this.postPendingManagementArea();
                     break;
                 case 'webviewShellError':
                     this._telemetry.send('webview_shell_error', { area: data.area, error: data.message });
@@ -443,6 +449,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             await index.initialize();
         }
         this.sendMessage({ type: 'managementSnapshot', data: this.withFolderMetadata(folder, index.snapshot()) });
+    }
+
+    private postPendingManagementArea(): void {
+        if (!this._pendingManagementArea || !this._view) return;
+        this.postMessageToWebview({ type: 'navigateManagement', area: this._pendingManagementArea });
+        this._pendingManagementArea = undefined;
     }
 
     private withFolderMetadata(folder: vscode.WorkspaceFolder, snapshot: ReturnType<WorkspaceIndex['snapshot']>) {
@@ -1344,6 +1356,7 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
         case 'saveTraceability':
             return ['featurePath', 'scenarioName', 'owner', 'status', 'zephyrKey'].every(key => typeof message[key] === 'string')
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        case 'managementReady': return true;
         case 'webviewShellError':
             return typeof message.area === 'string' && typeof message.message === 'string';
         // Legacy generation messages remain supported for existing callers. Their command

@@ -327,4 +327,5 @@ export type WebviewMessage =
     | { command: 'createRunProfile'; name: string; environment: string; parallel: number; folderPath?: string }
     | { command: 'runProfile'; id: string; folderPath?: string }
     | { command: 'saveTraceability'; featurePath: string; scenarioName: string; owner: string; status: string; zephyrKey: string; folderPath?: string }
+    | { command: 'managementReady' }
     | { command: 'webviewShellError'; area: string; message: string };

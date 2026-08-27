@@ -46,6 +46,7 @@ function App() {
         };
         window.addEventListener('message', onMessage);
         send('getManagementSnapshot');
+        send('managementReady');
         return () => window.removeEventListener('message', onMessage);
     }, []);
 
