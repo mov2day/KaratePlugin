@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate API Test Generator",
   "description": "Professional Karate Test Generator & Maintenance with Multi-AI - Transform OpenAPI, Postman, Confluence, GraphQL, and Jira into automated tests",
-  "version": "1.5.2",
+  "version": "2.0.0",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",

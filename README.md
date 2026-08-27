@@ -4,7 +4,7 @@
 
 Transform OpenAPI specs, Postman collections, and Confluence docs into production-ready Karate tests in seconds. Run them from your editor, track coverage, and let AI keep everything in sync as your API evolves.
 
-[![Version](https://img.shields.io/badge/version-1.5.2-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-brightgreen.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -12,7 +12,16 @@ Transform OpenAPI specs, Postman collections, and Confluence docs into productio
 
 ---
 
-## 🆕 What's New in v1.5.2
+## 🆕 What's New in v2.0.0
+
+### Test Management Workspace
+- **One focused workspace**: Overview, Test Library, Runs, Quality, Create & Import, and Operations are organized in a compact, professional interface.
+- **Git-friendly shared state**: Run profiles, environments, traceability, Quality findings, and runs use UUID-backed entity files under `.karate-test-management/`.
+- **Actionable Quality queue**: Coverage gaps, specification changes, health issues, and Bug Hunter results become managed findings with guarded status transitions.
+- **Traceability and execution**: Track scenario owners, lifecycle status, Zephyr keys, and run saved profiles with their target environment and worker count.
+- **Safe local webview assets**: The workspace ships its own assets, supports VS Code themes, and works without remote scripts.
+
+## Previously in v1.5.2
 
 ### ⬆️ Karate v2 Migration
 - **Right-click migration**: Right-click a `.feature` file and run **Karate: Migrate Feature to v2**.

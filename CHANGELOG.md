@@ -5,6 +5,22 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-08-27
+
+### Theme: Karate Test Management Workspace
+
+### Added
+- A compact, keyboard-first Test Management workspace with Overview, Test Library, Runs, Quality, Create & Import, and Operations areas.
+- Git-friendly, UUID-based workspace state under `.karate-test-management/`, including safe legacy-history migration and per-folder multi-root isolation.
+- Indexed test library search, scenario traceability (owner, lifecycle status, Zephyr key), executable run profiles, live run drill-down, and guarded Quality finding transitions.
+- Quality work queue inputs from coverage, specification changes, project health, and Bug Hunter results.
+- Locally bundled webview assets, strict CSP, opt-in failure telemetry, and package checks for webview debug/CDN regressions.
+
+### Changed
+- Run history is retained as entity-per-file workspace data and follows `karateDsl.execution.historyLimit`.
+- Scenario repair uses exact matching rather than substring replacement; ambiguous repairs are refused.
+- This is a major UI redesign. Existing command IDs and settings remain available.
+
 ## [1.5.2] - 2026-06-19
 
 ### Theme: Small Karate v2 Migration
