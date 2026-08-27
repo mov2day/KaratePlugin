@@ -172,6 +172,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 case 'saveTraceability':
                     await this.saveTraceability(data.featurePath, data.scenarioName, data.owner, data.status, data.zephyrKey, data.folderPath);
                     break;
+                case 'openScenario':
+                    await this.openScenario(data.featurePath, data.line, data.folderPath);
+                    break;
                 case 'managementReady':
                     this._managementReady = true;
                     await this.sendManagementSnapshot(this._activeManagementFolderPath);
@@ -709,6 +712,23 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             .find(item => item.featurePath === featurePath && item.scenarioName === scenarioName);
         store.save('traceability', { featurePath, scenarioName, owner: owner.trim(), status: status.trim(), zephyrKey: zephyrKey.trim() }, existing?.id);
         await this.sendManagementSnapshot(folder.uri.fsPath);
+    }
+
+    private async openScenario(featurePath: string, line: number, folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        if (!folder || path.isAbsolute(featurePath) || line < 1) return;
+        const absolute = path.resolve(folder.uri.fsPath, featurePath);
+        const relative = path.relative(folder.uri.fsPath, absolute);
+        if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) || !fs.existsSync(absolute)) {
+            this.sendError('This scenario no longer resolves inside the selected workspace.');
+            return;
+        }
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(absolute));
+        const editor = await vscode.window.showTextDocument(document);
+        const position = new vscode.Position(Math.min(line - 1, document.lineCount - 1), 0);
+        editor.selection = new vscode.Selection(position, position);
+        editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {
@@ -1525,6 +1545,9 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
             return message.folderPath === undefined || typeof message.folderPath === 'string';
         case 'saveTraceability':
             return ['featurePath', 'scenarioName', 'owner', 'status', 'zephyrKey'].every(key => typeof message[key] === 'string')
+                && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        case 'openScenario':
+            return typeof message.featurePath === 'string' && typeof message.line === 'number' && Number.isInteger(message.line) && message.line > 0
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'managementReady': return true;
         case 'reportBug': return typeof message.activeArea === 'string';
