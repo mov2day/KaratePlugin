@@ -131,7 +131,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     await this.advanceQualityFinding(data.id, data.nextState, data.folderPath);
                     break;
                 case 'createRunProfile':
-                    await this.createRunProfile(data.name, data.environment, data.folderPath);
+                    await this.createRunProfile(data.name, data.environment, data.parallel, data.folderPath);
                     break;
                 case 'runProfile':
                     await this.runProfile(data.id, data.folderPath);
@@ -485,7 +485,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async createRunProfile(name: string, environment: string, folderPath?: string): Promise<void> {
+    private async createRunProfile(name: string, environment: string, parallel: number, folderPath?: string): Promise<void> {
         const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
             || vscode.workspace.workspaceFolders?.[0];
         const trimmedName = name.trim();
@@ -494,7 +494,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             return;
         }
         const store = new WorkspaceEntityStore(folder.uri.fsPath);
-        store.save('run-profiles', { name: trimmedName, environment: environment.trim(), parallel: 1 });
+        const environmentName = environment.trim();
+        const workerCount = Number.isFinite(parallel) ? Math.max(1, Math.floor(parallel)) : 1;
+        if (environmentName && !store.list<{ name?: string }>('environments').some(item => item.name === environmentName)) {
+            store.save('environments', { name: environmentName });
+        }
+        store.save('run-profiles', { name: trimmedName, environment: environmentName, parallel: workerCount });
         await this.sendManagementSnapshot(folder.uri.fsPath);
     }
 
@@ -1312,6 +1317,8 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
         case 'createRunProfile':
             return typeof message.name === 'string'
                 && typeof message.environment === 'string'
+                && typeof message.parallel === 'number'
+                && Number.isFinite(message.parallel)
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'runProfile':
             return typeof message.id === 'string' && (message.folderPath === undefined || typeof message.folderPath === 'string');
