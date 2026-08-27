@@ -6,7 +6,7 @@ export interface QualityFinding extends WorkspaceEntity {
     title: string;
     severity: 'low' | 'normal' | 'high' | 'critical';
     state: QualityState;
-    source: 'coverage' | 'health' | 'flakiness' | 'spec-diff' | 'ci';
+    source: 'coverage' | 'health' | 'flakiness' | 'spec-diff' | 'ci' | 'bug-hunter';
     description?: string;
     sourceRef?: string;
 }

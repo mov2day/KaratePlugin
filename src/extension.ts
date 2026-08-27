@@ -1611,6 +1611,20 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
                     ? await writeBugHunterReproFeature(result.reproFeature, specPath)
                     : undefined;
 
+                const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(specPath));
+                if (workspaceFolder) {
+                    const workflow = new QualityWorkflowService(new WorkspaceEntityStore(workspaceFolder.uri.fsPath));
+                    for (const finding of result.findings) {
+                        workflow.upsertOpen({
+                            title: `Bug Hunter: ${finding.category} on ${finding.endpoint.method} ${finding.endpoint.path}`,
+                            severity: finding.severity === 'medium' ? 'normal' : finding.severity,
+                            source: 'bug-hunter',
+                            sourceRef: `${specPath}:${finding.category}:${finding.endpoint.method}:${finding.endpoint.path}`,
+                            description: `Observed: ${finding.observed}. Expected: ${finding.expected}.`
+                        });
+                    }
+                }
+
                 showBugHunterReport(result, reproFile);
 
                 const message = result.findings.length > 0
