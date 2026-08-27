@@ -136,6 +136,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 case 'runProfile':
                     await this.runProfile(data.id, data.folderPath);
                     break;
+                case 'saveTraceability':
+                    await this.saveTraceability(data.featurePath, data.scenarioName, data.owner, data.status, data.zephyrKey, data.folderPath);
+                    break;
                 case 'webviewShellError':
                     this._telemetry.send('webview_shell_error', { area: data.area, error: data.message });
                     break;
@@ -517,6 +520,17 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             environment: profile.environment,
             parallel: profile.parallel
         });
+    }
+
+    private async saveTraceability(featurePath: string, scenarioName: string, owner: string, status: string, zephyrKey: string, folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        if (!folder || !featurePath || !scenarioName) return;
+        const store = new WorkspaceEntityStore(folder.uri.fsPath);
+        const existing = store.list<{ id: string; featurePath?: string; scenarioName?: string }>('traceability')
+            .find(item => item.featurePath === featurePath && item.scenarioName === scenarioName);
+        store.save('traceability', { featurePath, scenarioName, owner: owner.trim(), status: status.trim(), zephyrKey: zephyrKey.trim() }, existing?.id);
+        await this.sendManagementSnapshot(folder.uri.fsPath);
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {
@@ -1322,6 +1336,9 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'runProfile':
             return typeof message.id === 'string' && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        case 'saveTraceability':
+            return ['featurePath', 'scenarioName', 'owner', 'status', 'zephyrKey'].every(key => typeof message[key] === 'string')
+                && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'webviewShellError':
             return typeof message.area === 'string' && typeof message.message === 'string';
         // Legacy generation messages remain supported for existing callers. Their command

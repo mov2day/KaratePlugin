@@ -326,4 +326,5 @@ export type WebviewMessage =
     | { command: 'advanceQualityFinding'; id: string; nextState: 'New' | 'Investigating' | 'Fixed' | 'Verified'; folderPath?: string }
     | { command: 'createRunProfile'; name: string; environment: string; parallel: number; folderPath?: string }
     | { command: 'runProfile'; id: string; folderPath?: string }
+    | { command: 'saveTraceability'; featurePath: string; scenarioName: string; owner: string; status: string; zephyrKey: string; folderPath?: string }
     | { command: 'webviewShellError'; area: string; message: string };

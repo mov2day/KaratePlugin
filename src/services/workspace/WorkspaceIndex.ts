@@ -8,7 +8,7 @@ export interface ManagementSnapshot {
     findings: Array<Record<string, unknown>>;
     runProfiles: Array<Record<string, unknown>>;
     environments: Array<Record<string, unknown>>;
-    features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number }> }>;
+    features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number; owner?: string; status?: string; zephyrKey?: string }> }>;
 }
 
 /** Keeps UI queries off the filesystem hot path and refreshes on editor or Git file changes. */
@@ -22,7 +22,7 @@ export class WorkspaceIndex implements vscode.Disposable {
     private runProfiles: Array<Record<string, unknown>> = [];
     private environments: Array<Record<string, unknown>> = [];
     private featureCount = 0;
-    private features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number }> }> = [];
+    private features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number; owner?: string; status?: string; zephyrKey?: string }> }> = [];
     private refreshTimer: NodeJS.Timeout | undefined;
 
     constructor(private readonly folder: vscode.WorkspaceFolder) {
@@ -69,12 +69,15 @@ export class WorkspaceIndex implements vscode.Disposable {
             .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
         this.environments = this.store.list<Record<string, unknown>>('environments')
             .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
+        const traceability = new Map(this.store.list<{ featurePath?: string; scenarioName?: string; owner?: string; status?: string; zephyrKey?: string }>('traceability')
+            .filter(item => item.featurePath && item.scenarioName)
+            .map(item => [`${item.featurePath}\u0000${item.scenarioName}`, item]));
         const featureUris = await vscode.workspace.findFiles(new vscode.RelativePattern(this.folder, '**/*.feature'), '**/{node_modules,.git}/**');
         this.featureCount = featureUris.length;
         this.features = await Promise.all(featureUris.slice(0, 1500).map(async uri => {
             const document = await vscode.workspace.openTextDocument(uri);
             const tags: string[] = [];
-            const scenarios: Array<{ name: string; tags: string[]; line: number }> = [];
+            const scenarios: Array<{ name: string; tags: string[]; line: number; owner?: string; status?: string; zephyrKey?: string }> = [];
             document.getText().split(/\r?\n/).forEach((line, index) => {
                 const trimmed = line.trim();
                 if (trimmed.startsWith('@')) {
@@ -83,7 +86,10 @@ export class WorkspaceIndex implements vscode.Disposable {
                 }
                 const header = trimmed.match(/^Scenario(?: Outline)?:\s*(.+)$/);
                 if (header) {
-                    scenarios.push({ name: header[1].trim(), tags: [...tags], line: index + 1 });
+                    const name = header[1].trim();
+                    const featurePath = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, '/');
+                    const linked = traceability.get(`${featurePath}\u0000${name}`);
+                    scenarios.push({ name, tags: [...tags], line: index + 1, owner: linked?.owner, status: linked?.status, zephyrKey: linked?.zephyrKey });
                     tags.length = 0;
                 } else if (trimmed && !trimmed.startsWith('#')) {
                     tags.length = 0;
