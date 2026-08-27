@@ -146,12 +146,29 @@ Saved to File System
 
 ## Extension Telemetry
 
-This extension does **NOT**:
-- ❌ Collect usage analytics
-- ❌ Send telemetry data
-- ❌ Track user behavior
-- ❌ Store data on external servers
-- ❌ Share data with third parties (except Copilot/Confluence when explicitly enabled)
+Telemetry is **off by default**. It sends nothing unless both
+`karateDsl.telemetry.enabled` and VS Code's own telemetry setting are enabled,
+and an official collector endpoint is configured.
+
+When opted in, the extension sends only diagnostic event metadata such as the
+extension/VS Code version, platform, a random per-activation session ID, and
+redacted error details. A manual bug report can include the last 200 redacted
+log lines and an optional description through the private collector; raw logs
+are never added to the public GitHub issue.
+
+Telemetry never includes feature contents, workspace paths, API request or
+response bodies, scenario names/tags, Zephyr identifiers, or credentials.
+Delivery is bounded, fire-and-forget, and failures never affect activation or
+command execution. The collector validates a fixed event allowlist and uses
+IP-plus-session rate limiting before writing to its configured Vercel KV/Upstash
+store.
+
+### Collector deployment
+
+Deploy `api/telemetry.js` to Vercel and configure `KV_REST_API_URL` and
+`KV_REST_API_TOKEN` with Vercel KV or Upstash REST credentials. Then set the
+deployed HTTPS endpoint in `karateDsl.telemetry.endpoint`; leaving it blank
+keeps delivery disabled even when telemetry is opted in.
 
 ## Questions?
 
