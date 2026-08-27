@@ -88,6 +88,14 @@ suite('Workspace Entity Store', () => {
         assert.doesNotThrow(() => store.save('environments', { name: 'staging' }));
     });
 
+    test('reports an active workspace lock instead of writing concurrently', () => {
+        const store = new WorkspaceEntityStore(root);
+        store.initialize();
+        fs.writeFileSync(path.join(root, '.karate-test-management', 'locks', 'workspace.lock'), 'another process');
+
+        assert.throws(() => store.save('environments', { name: 'staging' }), /state is busy/);
+    });
+
     test('keeps sibling workspace migrations isolated', () => {
         const sibling = fs.mkdtempSync(path.join(os.tmpdir(), 'karate-workspace-sibling-'));
         try {
