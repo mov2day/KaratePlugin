@@ -107,7 +107,8 @@ export class WorkspaceIndex implements vscode.Disposable {
                     const featurePath = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, '/');
                     const linked = traceability.get(`${featurePath}\u0000${name}`);
                     const stability = flakiness.get(`${featurePath}\u0000${name}`);
-                    scenarios.push({ name, tags: [...tags], line: index + 1, owner: linked?.owner, status: linked?.status, zephyrKey: linked?.zephyrKey, ...stability });
+                    const tagZephyrKey = tags.map(tag => tag.match(/^@zephyr-([A-Z][A-Z_0-9]+-T[0-9]+)$/i)?.[1]).find(Boolean);
+                    scenarios.push({ name, tags: [...tags], line: index + 1, owner: linked?.owner, status: linked?.status, zephyrKey: linked?.zephyrKey || tagZephyrKey, ...stability });
                     tags.length = 0;
                 } else if (trimmed && !trimmed.startsWith('#')) {
                     tags.length = 0;
