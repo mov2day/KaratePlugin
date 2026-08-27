@@ -27,6 +27,7 @@ const forbidden = [
   /^out\/test\//,
   /^out\/debug\//,
   /^api\//,
+  /^scripts\/test-telemetry-collector\.cjs$/,
   /^vercel\.json$/,
   /\.ts$/,
   /\.map$/,
