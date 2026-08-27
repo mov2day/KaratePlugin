@@ -1078,7 +1078,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const showExecutionReportCommand = vscode.commands.registerCommand(
         'karate-dsl.showExecutionReport',
         async () => {
-            await executionReportProvider.showReport();
+            await webviewProvider.showManagementArea('runs');
         }
     );
 
