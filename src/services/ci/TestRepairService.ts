@@ -61,9 +61,14 @@ export class TestRepairService {
 
             const cleanFix = this.cleanResponse(fixedContent);
 
+            const updatedContent = this.replaceScenario(originalContent, payload, cleanFix);
+            if (!updatedContent) {
+                vscode.window.showErrorMessage(`CI Repair: refused to apply a fix because "${payload.scenarioName}" was not uniquely identified.`);
+                return false;
+            }
+
             if (this.shouldAutoApply()) {
                 // Auto-apply: replace scenario in file
-                const updatedContent = this.replaceScenario(originalContent, payload.scenarioName, cleanFix);
                 fs.writeFileSync(featurePath, updatedContent);
                 logger.info(`TestRepairService: auto-applied fix to ${featurePath}`);
                 vscode.window.showInformationMessage(
@@ -71,13 +76,13 @@ export class TestRepairService {
                 );
             } else {
                 // Show diff
-                await this.showDiff(featurePath, originalContent, payload.scenarioName, cleanFix);
+                await this.showDiff(featurePath, originalContent, payload.scenarioName, updatedContent);
             }
 
             // Open the file and highlight the scenario
             const doc = await vscode.workspace.openTextDocument(featurePath);
             const editor = await vscode.window.showTextDocument(doc);
-            const scenarioLine = this.findScenarioLine(doc.getText(), payload.scenarioName);
+            const scenarioLine = this.findScenarioLine(doc.getText(), payload);
             if (scenarioLine >= 0) {
                 const range = new vscode.Range(scenarioLine, 0, scenarioLine, 0);
                 editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
@@ -131,17 +136,19 @@ OUTPUT
         return prompt;
     }
 
-    private replaceScenario(content: string, scenarioName: string, fixedScenario: string): string {
-        const replaced = this.scenarioLocator.replace(content, { name: scenarioName }, fixedScenario);
+    private replaceScenario(content: string, payload: CIFailurePayload, fixedScenario: string): string | undefined {
+        const replaced = this.scenarioLocator.replace(content, {
+            name: payload.scenarioName,
+            tags: payload.scenarioTags,
+            line: payload.scenarioLine
+        }, fixedScenario);
         if (!replaced) {
-            logger.warn(`TestRepairService: could not uniquely locate scenario "${scenarioName}"`);
-            return content;
+            logger.warn(`TestRepairService: could not uniquely locate scenario "${payload.scenarioName}"`);
         }
         return replaced;
     }
 
-    private async showDiff(filePath: string, originalContent: string, scenarioName: string, fixedScenario: string): Promise<void> {
-        const updatedContent = this.replaceScenario(originalContent, scenarioName, fixedScenario);
+    private async showDiff(filePath: string, originalContent: string, scenarioName: string, updatedContent: string): Promise<void> {
 
         // Create temp files for diff
         const originalUri = vscode.Uri.parse(`untitled:${filePath}.original`);
@@ -168,8 +175,8 @@ OUTPUT
         }
     }
 
-    private findScenarioLine(content: string, scenarioName: string): number {
-        return this.scenarioLocator.find(content, { name: scenarioName })?.startLine ?? -1;
+    private findScenarioLine(content: string, payload: CIFailurePayload): number {
+        return this.scenarioLocator.find(content, { name: payload.scenarioName, tags: payload.scenarioTags, line: payload.scenarioLine })?.startLine ?? -1;
     }
 
     private cleanResponse(response: string): string {

@@ -9,6 +9,8 @@ export interface CIFailurePayload {
     source: 'github-actions' | 'jenkins' | 'gitlab-ci' | 'generic';
     featurePath: string;          // relative to workspace root
     scenarioName: string;
+    scenarioTags?: string[];
+    scenarioLine?: number;
     failedStep: string;
     errorMessage: string;
     httpRequest?: {
