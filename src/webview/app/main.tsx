@@ -70,7 +70,7 @@ function App() {
                     <span class={`codicon codicon-${area.icon}`} aria-hidden="true" /> <span>{area.label}</span>
                 </button>)}
             </nav>
-            <button class="rail-item rail-report" onClick={() => send('executeExtensionCommand', { commandId: 'karate-dsl.reportBug' })}>
+            <button class="rail-item rail-report" onClick={() => send('reportBug', { activeArea })}>
                 <span class="codicon codicon-comment-discussion" aria-hidden="true" /> <span>Report a bug</span>
             </button>
         </aside>

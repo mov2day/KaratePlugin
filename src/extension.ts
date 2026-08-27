@@ -1644,13 +1644,13 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         }
     );
 
-    const reportBugCommand = vscode.commands.registerCommand('karate-dsl.reportBug', async () => {
+    const reportBugCommand = vscode.commands.registerCommand('karate-dsl.reportBug', async (activeArea?: string) => {
         const description = await vscode.window.showInputBox({
             title: 'Report a Karate extension issue',
             prompt: 'Optional: describe what went wrong',
             placeHolder: 'What did you expect to happen?'
         });
-        telemetry.send('user_reported_bug', { recentLogLines: logger.getRecentLines(), userDescription: description || '' });
+        telemetry.send('user_reported_bug', { activeArea: activeArea || 'unknown', recentLogLines: logger.getRecentLines(), userDescription: description || '' });
         const issueBody = encodeURIComponent([
             `Extension version: ${context.extension.packageJSON.version}`,
             `VS Code: ${vscode.version}`,
