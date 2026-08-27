@@ -144,34 +144,13 @@ Saved to File System
 - Generated tests contain only example data
 - No production credentials or real data included
 
-## Extension Telemetry
+## Bug reporting
 
-Telemetry is **off by default**. It sends nothing unless both
-`karateDsl.telemetry.enabled` and VS Code's own telemetry setting are enabled.
-The default official collector endpoint is hosted on Vercel; users can blank
-the endpoint setting to prevent delivery entirely.
-
-When opted in, the extension sends only diagnostic event metadata such as the
-extension/VS Code version, platform, a random per-activation session ID, and
-redacted error details. A manual bug report can include the last 200 redacted
-log lines and an optional description through the private collector; raw logs
-are never added to the public GitHub issue.
-
-Telemetry never includes feature contents, workspace paths, API request or
-response bodies, scenario names/tags, Zephyr identifiers, or credentials.
-Delivery is bounded, fire-and-forget, and failures never affect activation or
-command execution. The collector validates a fixed event allowlist and uses
-IP-plus-session rate limiting before writing to its configured Vercel KV/Upstash
-store.
-
-### Collector deployment
-
-The official collector is deployed at
-`https://karate-telemetry-collector.vercel.app/api/telemetry` on Vercel's free
-Hobby plan. Its deployment requires a free Vercel KV/Upstash integration that
-provides `KV_REST_API_URL` and `KV_REST_API_TOKEN`. Leaving
-`karateDsl.telemetry.endpoint` blank keeps delivery disabled even when
-telemetry is opted in.
+The extension does not collect or transmit usage telemetry. Selecting **Report
+a bug** opens a GitHub issue with the extension version, VS Code version,
+platform, and an optional description that you enter. It never attaches logs,
+feature contents, workspace paths, API request or response bodies, scenario
+names/tags, Zephyr identifiers, or credentials.
 
 ## Questions?
 

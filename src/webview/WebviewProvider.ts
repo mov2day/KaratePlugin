@@ -17,7 +17,6 @@ import { SharedStyleService } from '../services/SharedStyleService';
 import { WorkspaceIndex } from '../services/workspace/WorkspaceIndex';
 import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore';
 import { QualityState, QualityWorkflowService } from '../services/workspace/QualityWorkflowService';
-import { TelemetryService } from '../services/telemetry/TelemetryService';
 import { EnhancedCoverageReport, EnhancedCoverageService } from '../services/enhancedCoverageService';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
@@ -28,7 +27,6 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _generationService: GenerationService | undefined;
     private _learnedStyle: KarateStyle | null = null;
     private readonly _workspaceIndexes = new Map<string, WorkspaceIndex>();
-    private readonly _telemetry: TelemetryService;
     private _activeManagementFolderPath: string | undefined;
     private _pendingManagementArea: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations' | undefined;
     private _managementReady = false;
@@ -45,7 +43,6 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     constructor(private readonly _extensionUri: vscode.Uri, private readonly _context: vscode.ExtensionContext) {
         // Initialize SpecHashManager for AI-Powered Test Maintenance
         this._specHashManager = new SpecHashManager(_context);
-        this._telemetry = new TelemetryService(_context);
     }
 
     public postMessageToWebview(message: any) {
@@ -184,9 +181,6 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'reportBug':
                     await this.executeShellCommandWithArguments('karate-dsl.reportBug', data.activeArea);
-                    break;
-                case 'webviewShellError':
-                    this._telemetry.send('webview_shell_error', { area: data.area, error: data.message });
                     break;
             }
         });
@@ -536,7 +530,6 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             await vscode.commands.executeCommand(commandId, ...args);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            this._telemetry.send('command_error', { commandId, error: message });
             this.sendError(`Could not complete this action: ${message}`);
         } finally {
             if (isExecution) this.postMessageToWebview({ type: 'executionState', running: false });
@@ -1552,8 +1545,6 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'managementReady': return true;
         case 'reportBug': return typeof message.activeArea === 'string';
-        case 'webviewShellError':
-            return typeof message.area === 'string' && typeof message.message === 'string';
         // Legacy generation messages remain supported for existing callers. Their command
         // handlers retain their own validation and all shell-originating operations use the
         // stricter cases above.

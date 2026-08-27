@@ -332,5 +332,4 @@ export type WebviewMessage =
     | { command: 'saveTraceability'; featurePath: string; scenarioName: string; owner: string; status: string; zephyrKey: string; folderPath?: string }
     | { command: 'openScenario'; featurePath: string; line: number; folderPath?: string }
     | { command: 'managementReady' }
-    | { command: 'reportBug'; activeArea: string }
-    | { command: 'webviewShellError'; area: string; message: string };
+    | { command: 'reportBug'; activeArea: string };

@@ -819,16 +819,6 @@
           "type": "boolean",
           "default": false,
           "description": "Allow Bug Hunter probes for POST, PUT, PATCH, and DELETE endpoints."
-        },
-        "karateDsl.telemetry.enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Send anonymous, redacted diagnostic events when VS Code telemetry is also enabled."
-        },
-        "karateDsl.telemetry.endpoint": {
-          "type": "string",
-          "default": "https://karate-telemetry-collector.vercel.app/api/telemetry",
-          "markdownDescription": "Official Karate telemetry collector endpoint. Telemetry still requires opt-in and VS Code telemetry to be enabled; leave blank to prevent delivery."
         }
       }
     }

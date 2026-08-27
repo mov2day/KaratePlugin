@@ -9,16 +9,10 @@ Do not publish until every item below is complete.
    `karate-test-generator-1.5.2.vsix`
 2. Verify its SHA-256 checksum is
    `d7c9787fe86474dda489e1230cb0c2afc4cbd8b35ba36bb5a19d3fac68fd4c9e`.
-3. Confirm Vercel Hobby project `karate-telemetry-collector` has its free
-   Vercel KV/Upstash integration providing `KV_REST_API_URL` and
-   `KV_REST_API_TOKEN`. Confirm the endpoint rejects malformed events and
-   accepts a valid redacted activation event.
-4. Confirm `karateDsl.telemetry.endpoint` remains set to the official deployed
-   HTTPS URL for release validation. Telemetry remains off by default and the
-   extension must continue to activate and run commands if that endpoint is
-   unavailable.
-5. Run `npm run verify`, then package a fresh VSIX with `npx vsce package`.
-6. Run the extension-host suite in a desktop environment where Electron starts
+3. Confirm **Report a bug** opens a prefilled GitHub issue without attaching
+   workspace data or diagnostic logs.
+4. Run `npm run verify`, then package a fresh VSIX with `npx vsce package`.
+5. Run the extension-host suite in a desktop environment where Electron starts
    successfully. The current automation host can verify the package but aborts
    before suite execution, so it is not evidence for this check.
 7. Manually smoke-test the six management areas in light and dark VS Code
@@ -28,10 +22,9 @@ Do not publish until every item below is complete.
 
 1. Publish the verified 2.0.0 VSIX to the stable Marketplace channel.
 2. Publish the 2.0.0 release notes with the migration, data-location, and
-   telemetry privacy notes.
-3. For the first 48–72 hours, alert on every error event. Treat
-   `migration_failed` as the highest priority and review shell and command
-   error rates by area each day.
+   bug-reporting privacy notes.
+3. Monitor Marketplace reviews and incoming GitHub issues during the first
+   48–72 hours, prioritising migration and shell failures.
 
 ## Rollback rehearsal
 
