@@ -33,6 +33,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _pendingManagementArea: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations' | undefined;
     private _managementReady = false;
     private _pendingHealthReport: Record<string, unknown> | undefined;
+    private _pendingBugHunterReport: Record<string, unknown> | undefined;
 
     /**
      * Process feature content through ReusabilityEngine.
@@ -63,6 +64,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         this._pendingHealthReport = report;
         await this.showManagementArea('quality');
         this.postPendingHealthReport();
+    }
+
+    public async showBugHunterReport(report: Record<string, unknown>): Promise<void> {
+        this._pendingBugHunterReport = report;
+        await this.showManagementArea('operations');
+        this.postPendingBugHunterReport();
     }
 
     public resolveWebviewView(
@@ -167,6 +174,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     await this.sendManagementSnapshot(this._activeManagementFolderPath);
                     this.postPendingManagementArea();
                     this.postPendingHealthReport();
+                    this.postPendingBugHunterReport();
                     break;
                 case 'reportBug':
                     await this.executeShellCommandWithArguments('karate-dsl.reportBug', data.activeArea);
@@ -482,6 +490,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         if (!this._pendingHealthReport || !this._view || !this._managementReady) return;
         this.postMessageToWebview({ type: 'healthReport', data: this._pendingHealthReport });
         this._pendingHealthReport = undefined;
+    }
+
+    private postPendingBugHunterReport(): void {
+        if (!this._pendingBugHunterReport || !this._view || !this._managementReady) return;
+        this.postMessageToWebview({ type: 'bugHunterReport', data: this._pendingBugHunterReport });
+        this._pendingBugHunterReport = undefined;
     }
 
     private withFolderMetadata(folder: vscode.WorkspaceFolder, snapshot: ReturnType<WorkspaceIndex['snapshot']>) {

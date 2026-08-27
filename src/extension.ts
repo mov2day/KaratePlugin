@@ -1598,7 +1598,6 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
 
                 const authHeader = await resolveBugHunterAuthHeader(context);
                 const { ApiBugHunterService } = await import('./services/bugHunter/ApiBugHunterService');
-                const { showBugHunterReport } = await import('./webview/BugHunterReportProvider');
                 const service = new ApiBugHunterService();
 
                 const result = await vscode.window.withProgress({
@@ -1638,7 +1637,31 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
                     }
                 }
 
-                showBugHunterReport(result, reproFile);
+                await webviewProvider.showBugHunterReport({
+                    baseUrl: result.baseUrl,
+                    totalProbes: result.totalProbes,
+                    executedProbes: result.executedProbes,
+                    skippedProbes: result.skippedProbes,
+                    completedAt: result.completedAt,
+                    reproFile: reproFile ? path.basename(reproFile) : undefined,
+                    findings: result.findings.map(finding => ({
+                        category: finding.category,
+                        severity: finding.severity,
+                        method: finding.endpoint.method,
+                        path: finding.endpoint.path,
+                        expected: finding.expected,
+                        observed: finding.observed
+                    })),
+                    probes: result.probes.map(probe => ({
+                        name: probe.name,
+                        method: probe.method,
+                        path: probe.path,
+                        category: probe.category,
+                        status: probe.status,
+                        reason: probe.reason,
+                        responseStatus: probe.responseStatus
+                    }))
+                });
 
                 const message = result.findings.length > 0
                     ? `API Bug Hunter found ${result.findings.length} issue(s).`
