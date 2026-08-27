@@ -49,6 +49,11 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    public async showManagementArea(area: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations'): Promise<void> {
+        await vscode.commands.executeCommand('karateGenerator.mainView.focus');
+        this.postMessageToWebview({ type: 'navigateManagement', area });
+    }
+
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
         context: vscode.WebviewViewResolveContext,

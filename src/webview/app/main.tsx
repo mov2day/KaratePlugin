@@ -42,6 +42,7 @@ function App() {
         const onMessage = (event: MessageEvent<{ type?: string; data?: Snapshot; message?: string }>) => {
             if (event.data.type === 'managementSnapshot') setSnapshot(event.data.data || {});
             if ((event.data.type === 'error' || event.data.type === 'success') && event.data.message) setNotice({ kind: event.data.type, text: event.data.message });
+            if (event.data.type === 'navigateManagement' && areas.some(area => area.id === (event.data as { area?: Area }).area)) setActiveArea((event.data as { area: Area }).area);
         };
         window.addEventListener('message', onMessage);
         send('getManagementSnapshot');

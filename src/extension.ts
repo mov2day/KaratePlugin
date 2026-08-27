@@ -1072,31 +1072,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const showTestHistoryCommand = vscode.commands.registerCommand(
         'karate-dsl.showTestHistory',
         async () => {
-            if (!testHistoryService) {
-                vscode.window.showWarningMessage('No workspace folder open');
-                return;
-            }
-
-            const history = await testHistoryService.getHistory(10);
-            if (history.length === 0) {
-                vscode.window.showInformationMessage('No test execution history available');
-                return;
-            }
-
-            const items = history.map(h => ({
-                label: `$(${h.status === 'success' ? 'check' : 'error'}) ${new Date(h.timestamp).toLocaleString()}`,
-                description: `${h.summary.passed}/${h.summary.totalScenarios} passed (${h.summary.passPercentage.toFixed(1)}%)`,
-                detail: `Duration: ${h.summary.executionTime}`,
-                result: h
-            }));
-
-            const selected = await vscode.window.showQuickPick(items, {
-                placeHolder: 'Select a test run to view'
-            });
-
-            if (selected) {
-                await executionReportProvider.showReport(selected.result);
-            }
+            await webviewProvider.showManagementArea('runs');
         }
     );
 
