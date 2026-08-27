@@ -88,7 +88,22 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Register Health Command
     context.subscriptions.push(
-        vscode.commands.registerCommand('karate-dsl.analyzeProjectHealth', () => {
+        vscode.commands.registerCommand('karate-dsl.analyzeProjectHealth', async () => {
+            const folder = vscode.workspace.workspaceFolders?.[0];
+            if (folder) {
+                const { ProjectAnalyzer } = await import('./services/health/ProjectAnalyzer');
+                const health = await new ProjectAnalyzer().analyzeWorkspace();
+                const workflow = new QualityWorkflowService(new WorkspaceEntityStore(folder.uri.fsPath));
+                for (const file of health.orphanedFiles) {
+                    workflow.upsertOpen({
+                        title: `Unreferenced reusable feature: ${file}`,
+                        severity: 'normal',
+                        source: 'health',
+                        sourceRef: `orphaned-feature:${file}`,
+                        description: 'This feature has no scenarios and is not read by another feature. Review whether it is unused or needs wiring.'
+                    });
+                }
+            }
             const { HealthDashboardPanel } = require('./services/health/HealthDashboardPanel');
             HealthDashboardPanel.createOrShow(context.extensionUri);
         })
