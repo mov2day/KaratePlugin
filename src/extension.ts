@@ -193,6 +193,19 @@ export async function activate(context: vscode.ExtensionContext) {
                 tierCounts[scenario.tier]++;
             }
 
+            if (workspaceRoot) {
+                const workflow = new QualityWorkflowService(new WorkspaceEntityStore(workspaceRoot));
+                for (const scenario of report.scenarios.filter(item => item.tier === 'flaky' || item.tier === 'broken')) {
+                    workflow.upsertOpen({
+                        title: `${scenario.tier === 'broken' ? 'Broken' : 'Flaky'} test: ${scenario.scenarioName}`,
+                        severity: scenario.tier === 'broken' ? 'high' : 'normal',
+                        source: 'flakiness',
+                        sourceRef: `${scenario.featurePath}:${scenario.scenarioName}`,
+                        description: `${scenario.runCount} runs · ${(scenario.passRate * 100).toFixed(0)}% pass rate · flakiness score ${scenario.flakiness.toFixed(3)} · ${scenario.trend} trend.`
+                    });
+                }
+            }
+
             result.flakiness = {
                 threshold: report.threshold,
                 thresholds: report.thresholds,
