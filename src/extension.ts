@@ -5,7 +5,6 @@ import { generateFromOpenAPI } from './commands/generateFromOpenAPI';
 import { generateFromConfluence } from './commands/generateFromConfluence';
 import { generateCombined } from './commands/generateCombined';
 import { KarateWebviewProvider } from './webview/WebviewProvider';
-import { ExecutionReportProvider } from './webview/ExecutionReportProvider';
 import { SpecWatcher } from './services/specWatcher';
 import { SpecHashManager } from './services/specHashManager';
 import { SpecDiffAnalyzer } from './services/specDiffAnalyzer';
@@ -154,11 +153,6 @@ export async function activate(context: vscode.ExtensionContext) {
             webviewProvider
         )
     );
-
-    // Create coverage dashboard provider (for standalone panel only)
-
-    // Create execution report provider
-    const executionReportProvider = new ExecutionReportProvider(context.extensionUri);
 
     // Initialize test executor
     const testExecutor = new TestExecutor(context.extensionPath);
@@ -871,7 +865,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     decorationProvider.updateResult(result);
 
                     // Show report
-                    await executionReportProvider.showReport(result);
+                    await webviewProvider.showManagementArea('runs');
                     await publishZephyrResult(result);
 
                     const flakySummary = result.flakiness
@@ -957,7 +951,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     decorationProvider.updateResult(result);
 
                     // Show report
-                    await executionReportProvider.showReport(result);
+                    await webviewProvider.showManagementArea('runs');
                     await publishZephyrResult(result);
 
                     if (result.status === 'success') {
@@ -1021,7 +1015,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     if (testHistoryService) await testHistoryService.saveResult(result);
                     codeLensProvider.updateResult(result);
                     decorationProvider.updateResult(result);
-                    await executionReportProvider.showReport(result);
+                    await webviewProvider.showManagementArea('runs');
                     await publishZephyrResult(result);
 
                     const flakySummary = result.flakiness
@@ -1069,7 +1063,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     if (testHistoryService) await testHistoryService.saveResult(result);
                     codeLensProvider.updateResult(result);
                     decorationProvider.updateResult(result);
-                    await executionReportProvider.showReport(result);
+                    await webviewProvider.showManagementArea('runs');
                     await publishZephyrResult(result);
 
                     const flakySummary = result.flakiness
