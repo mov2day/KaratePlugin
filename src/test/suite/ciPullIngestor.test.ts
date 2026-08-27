@@ -107,6 +107,7 @@ response status: 500
 
         assert.ok(payload);
         assert.strictEqual(payload?.featurePath, 'src/test/karate/pets.feature');
+        assert.strictEqual(payload?.scenarioLine, 42);
         assert.strictEqual(payload?.scenarioName, 'get pet by id');
         assert.ok(payload?.errorMessage.includes('status code was'));
         assert.strictEqual(payload?.httpRequest?.method, 'GET');
