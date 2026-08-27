@@ -15,10 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Indexed test library search, scenario traceability (owner, lifecycle status, Zephyr key), executable run profiles, live run drill-down, and guarded Quality finding transitions.
 - Quality work queue inputs from coverage, specification changes, project health, and Bug Hunter results.
 - Locally bundled webview assets, strict CSP, opt-in failure telemetry, and package checks for webview debug/CDN regressions.
+- In-shell coverage analysis, project-health summaries, Bug Hunter outcomes, CI repair queue routing, and safe run replay.
+- A deployable Vercel telemetry collector with strict event validation, IP-plus-session rate limits, and Vercel KV/Upstash persistence.
 
 ### Changed
 - Run history is retained as entity-per-file workspace data and follows `karateDsl.execution.historyLimit`.
 - Scenario repair uses exact matching rather than substring replacement; ambiguous repairs are refused.
+- Completed executions now return to the Runs area instead of opening a separate report panel; coverage and health summaries persist with workspace state.
 - This is a major UI redesign. Existing command IDs and settings remain available.
 
 ## [1.5.2] - 2026-06-19
