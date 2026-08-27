@@ -1283,6 +1283,17 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
     let ciWebhookIngestor: CIFailureIngestor | undefined;
     let ciPullIngestor: GitHubActionsPullIngestor | undefined;
     const repairService = new TestRepairService();
+    const queueCiFailure = (payload: import('./services/ci/CIFailureIngestor').CIFailurePayload) => {
+        const folder = vscode.workspace.workspaceFolders?.[0];
+        if (!folder) return;
+        new QualityWorkflowService(new WorkspaceEntityStore(folder.uri.fsPath)).upsertOpen({
+            title: `CI failure: ${payload.scenarioName}`,
+            severity: 'high',
+            source: 'ci',
+            sourceRef: `${payload.source}:${payload.runId || 'current'}:${payload.featurePath}:${payload.scenarioName}`,
+            description: `${payload.featurePath} · ${payload.failedStep}. ${payload.errorMessage}`
+        });
+    };
 
     const disposeCiIngestors = () => {
         ciWebhookIngestor?.dispose();
@@ -1308,6 +1319,7 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
             ciWebhookIngestor = new CIFailureIngestor();
             ciWebhookIngestor.onFailureReceived(async payload => {
                 logger.info(`CI webhook failure received: ${payload.scenarioName}`);
+                queueCiFailure(payload);
                 await repairService.repair(payload);
             });
             ciWebhookIngestor.start();
@@ -1317,6 +1329,7 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
             ciPullIngestor = new GitHubActionsPullIngestor(context);
             ciPullIngestor.onFailureReceived(async payload => {
                 logger.info(`CI pull failure received: ${payload.scenarioName}`);
+                queueCiFailure(payload);
                 await repairService.repair(payload);
             });
             ciPullIngestor.start();
