@@ -42,7 +42,8 @@
 .layout-toggle, .primary-action { min-width: 30px; min-height: 30px; border: 0; border-radius: 4px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .layout-toggle { background: transparent; color: var(--vscode-descriptionForeground); }
 .layout-toggle:hover { background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-foreground); }
-.layout-toggle-label, .run-action-label { display: none; }
+.layout-toggle-label { display: inline; font-size: 12px; }
+.run-action-label { display: none; }
 .expanded-layout-note { display: none; }
 .data-panel { overflow-x: auto; }
 .data-panel table { min-width: 520px; }
@@ -64,6 +65,7 @@
 }
 
 @media (max-width: 759px) {
+  .topbar > .topbar-actions { display: flex; }
   .layout-expanded .expanded-layout-note { display: flex; gap: 7px; align-items: center; margin: 8px 12px -2px; padding: 8px; border-left: 2px solid var(--vscode-focusBorder); color: var(--vscode-descriptionForeground); font-size: 11px; }
   .area, .global-search-results { padding-left: 14px; padding-right: 14px; }
   .area { padding-top: 16px; }

@@ -73,13 +73,7 @@ function App() {
     const [runActive, setRunActive] = useState(false);
     const [query, setQuery] = useState('');
     const [notice, setNotice] = useState<{ kind: 'error' | 'success'; text: string }>();
-    const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => vscode.getState<{ layoutMode?: LayoutMode }>()?.layoutMode || 'compact');
-
-    const toggleLayout = () => {
-        const next = layoutMode === 'compact' ? 'expanded' : 'compact';
-        setLayoutMode(next);
-        vscode.setState({ layoutMode: next });
-    };
+    const layoutMode: LayoutMode = document.body.dataset.managementLayout === 'expanded' ? 'expanded' : 'compact';
 
     useEffect(() => {
         const onMessage = (event: MessageEvent<{ type?: string; data?: Snapshot | CoverageSnapshot | HealthSnapshot | BugHunterSnapshot; message?: string }>) => {
@@ -123,9 +117,8 @@ function App() {
                 <label class="workspace-picker"><span class="eyebrow">WORKSPACE</span><select value={snapshot.folderPath || ''} onChange={event => send('getManagementSnapshot', { folderPath: (event.target as HTMLSelectElement).value })}>{(snapshot.folders || [{ name: snapshot.folderName || 'Karate project', path: snapshot.folderPath || '' }]).map(folder => <option value={folder.path}>{folder.name}</option>)}</select></label>
                 <label class="search"><span class="codicon codicon-search" aria-hidden="true" /><span class="sr-only">Search runs</span><input value={query} onInput={event => setQuery((event.target as HTMLInputElement).value)} placeholder="Search tests, runs, findings" /></label>
                 <button class={`run-status ${runActive ? 'is-running' : latestRun ? (latestRun.status === 'success' ? 'is-success' : 'is-failed') : ''}`} onClick={() => setActiveArea('runs')} title="Open runs">{runActive ? <><span class="codicon codicon-loading codicon-modifier-spin" aria-hidden="true" /> Running tests</> : latestRun ? <><span class={`codicon codicon-${latestRun.status === 'success' ? 'pass' : 'error'}`} aria-hidden="true" /> Latest: {latestRun.status === 'success' ? 'passed' : latestRun.status}</> : <><span class="codicon codicon-circle-outline" aria-hidden="true" /> No runs yet</>}</button>
-                <div class="topbar-actions"><button class="layout-toggle" aria-pressed={layoutMode === 'expanded'} title={layoutMode === 'expanded' ? 'Use compact sidebar layout' : 'Use expanded layout when this view has room'} onClick={toggleLayout}><span class={`codicon codicon-${layoutMode === 'expanded' ? 'collapse-all' : 'expand-all'}`} aria-hidden="true" /><span class="layout-toggle-label">{layoutMode === 'expanded' ? 'Compact' : 'Expanded'}</span></button><button class="primary-action" disabled={runActive} onClick={() => send('executeExtensionCommand', { commandId: 'karate-dsl.runFolder' })}><span class="codicon codicon-play" aria-hidden="true" /> <span class="run-action-label">{runActive ? 'Running…' : 'Run tests'}</span></button></div>
+                <div class="topbar-actions">{layoutMode === 'compact' ? <button class="layout-toggle" title="Open the full test management workspace in an editor tab" onClick={() => send('openExpandedWorkspace')}><span class="codicon codicon-open-preview" aria-hidden="true" /><span class="layout-toggle-label">Open</span></button> : <button class="layout-toggle" title="Return to the compact sidebar" onClick={() => send('focusManagementSidebar')}><span class="codicon codicon-layout-sidebar-left" aria-hidden="true" /><span class="layout-toggle-label">Sidebar</span></button>}<button class="primary-action" disabled={runActive} onClick={() => send('executeExtensionCommand', { commandId: 'karate-dsl.runFolder' })}><span class="codicon codicon-play" aria-hidden="true" /> <span class="run-action-label">{runActive ? 'Running…' : 'Run tests'}</span></button></div>
             </header>
-            <div class="expanded-layout-note" role="status"><span class="codicon codicon-layout" aria-hidden="true" /> Expanded layout is available when you widen this sidebar or move the view to the panel.</div>
             {query.trim() && <GlobalSearch snapshot={snapshot} query={query} onNavigate={setActiveArea} />}
             {activeArea === 'overview' && <Overview snapshot={snapshot} failedRuns={failedRuns} onNavigate={setActiveArea} />}
             {activeArea === 'library' && <Library featureCount={snapshot.featureCount || 0} features={snapshot.features || []} query={query} folderPath={snapshot.folderPath} />}

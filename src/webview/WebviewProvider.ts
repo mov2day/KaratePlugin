@@ -22,6 +22,8 @@ import { EnhancedCoverageReport, EnhancedCoverageService } from '../services/enh
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'karateGenerator.mainView';
     private _view?: vscode.WebviewView;
+    private _expandedPanel?: vscode.WebviewPanel;
+    private readonly _managementWebviews = new Set<vscode.Webview>();
     private _historyManager: HistoryManager | undefined;
     private _templateManager: TemplateManager | undefined;
     private _generationService: GenerationService | undefined;
@@ -46,9 +48,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     public postMessageToWebview(message: any) {
-        if (this._view) {
-            this._view.webview.postMessage(message);
-        }
+        for (const webview of this._managementWebviews) webview.postMessage(message);
     }
 
     public async showManagementArea(area: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations'): Promise<void> {
@@ -82,7 +82,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             localResourceRoots: [this._extensionUri]
         };
 
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview, 'sidebar');
+        this._managementWebviews.add(webviewView.webview);
+        webviewView.onDidDispose(() => this._managementWebviews.delete(webviewView.webview));
 
         // Initialize managers
         // Initialize managers
@@ -90,8 +92,32 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         this._templateManager = new TemplateManager(this._context);
         this._generationService = new GenerationService(this._context, this._historyManager, this._specHashManager);
 
-        // Handle messages from the webview
-        webviewView.webview.onDidReceiveMessage(async (data: unknown) => {
+        this.bindMessageHandler(webviewView.webview);
+    }
+
+    public openExpandedWorkspace(): void {
+        if (this._expandedPanel) {
+            this._expandedPanel.reveal(vscode.ViewColumn.Active);
+            return;
+        }
+        const panel = vscode.window.createWebviewPanel(
+            'karateManagementWorkspace',
+            'Karate Test Management',
+            vscode.ViewColumn.Active,
+            { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [this._extensionUri] }
+        );
+        this._expandedPanel = panel;
+        panel.webview.html = this._getHtmlForWebview(panel.webview, 'expanded');
+        this._managementWebviews.add(panel.webview);
+        this.bindMessageHandler(panel.webview);
+        panel.onDidDispose(() => {
+            this._managementWebviews.delete(panel.webview);
+            if (this._expandedPanel === panel) this._expandedPanel = undefined;
+        });
+    }
+
+    private bindMessageHandler(webview: vscode.Webview): void {
+        webview.onDidReceiveMessage(async (data: unknown) => {
             if (!isWebviewMessage(data)) {
                 this.sendError('The test management workspace received an invalid request.');
                 return;
@@ -181,6 +207,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'reportBug':
                     await this.executeShellCommandWithArguments('karate-dsl.reportBug', data.activeArea);
+                    break;
+                case 'openExpandedWorkspace':
+                    this.openExpandedWorkspace();
+                    break;
+                case 'focusManagementSidebar':
+                    await vscode.commands.executeCommand('karateGenerator.mainView.focus');
                     break;
             }
         });
@@ -364,7 +396,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     private sendMessage(message: any) {
-        this._view?.webview.postMessage(message);
+        for (const webview of this._managementWebviews) webview.postMessage(message);
     }
 
     private async sendHistory() {
@@ -725,11 +757,11 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview) {
+    private _getHtmlForWebview(webview: vscode.Webview, layout: 'sidebar' | 'expanded' = 'sidebar') {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'test-management.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'test-management.css'));
         const nonce = crypto.randomBytes(16).toString('base64');
-        return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};"><link rel="stylesheet" href="${styleUri}"><title>Karate Test Management</title></head><body><div id="root"></div><script nonce="${nonce}" src="${scriptUri}"></script></body></html>`;
+        return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};"><link rel="stylesheet" href="${styleUri}"><title>Karate Test Management</title></head><body data-management-layout="${layout}"><div id="root"></div><script nonce="${nonce}" src="${scriptUri}"></script></body></html>`;
 
         const legacyScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const legacyStyleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'style.css'));
@@ -1545,6 +1577,7 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'managementReady': return true;
         case 'reportBug': return typeof message.activeArea === 'string';
+        case 'openExpandedWorkspace': case 'focusManagementSidebar': return true;
         // Legacy generation messages remain supported for existing callers. Their command
         // handlers retain their own validation and all shell-originating operations use the
         // stricter cases above.
