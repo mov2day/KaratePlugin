@@ -18,6 +18,7 @@ import { WorkspaceIndex } from '../services/workspace/WorkspaceIndex';
 import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore';
 import { QualityState, QualityWorkflowService } from '../services/workspace/QualityWorkflowService';
 import { TelemetryService } from '../services/telemetry/TelemetryService';
+import { EnhancedCoverageReport, EnhancedCoverageService } from '../services/enhancedCoverageService';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'karateGenerator.mainView';
@@ -145,6 +146,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'rerunRun':
                     await this.rerunRun(data.options, data.folderPath);
+                    break;
+                case 'analyzeCoverage':
+                    await this.analyzeCoverage(data.folderPath);
                     break;
                 case 'saveTraceability':
                     await this.saveTraceability(data.featurePath, data.scenarioName, data.owner, data.status, data.zephyrKey, data.folderPath);
@@ -565,6 +569,72 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             folderPath: folder.uri.fsPath,
             options: { ...options, target: Array.isArray(options.target) ? resolvedTargets : resolvedTargets[0], workingDirectory: folder.uri.fsPath }
         });
+    }
+
+    private async analyzeCoverage(folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        if (!folder) {
+            this.sendError('Open a workspace folder before analysing coverage.');
+            return;
+        }
+        const specs = await vscode.window.showOpenDialog({
+            canSelectMany: true,
+            defaultUri: folder.uri,
+            title: 'Select OpenAPI specifications to analyse',
+            openLabel: 'Analyse coverage',
+            filters: { 'OpenAPI Specification': ['json', 'yaml', 'yml'] }
+        });
+        if (!specs?.length) return;
+        try {
+            const featureUris = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*.feature'), '**/{node_modules,.git}/**');
+            const report = await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Analysing Karate coverage',
+                cancellable: false
+            }, () => new EnhancedCoverageService().analyzeMultipleSpecs(specs.map(spec => spec.fsPath), featureUris.map(feature => feature.fsPath), false));
+            this.recordCoverageFindings(folder, report);
+            this.sendMessage({ type: 'coverageReport', data: this.serializeCoverageReport(report) });
+            await this.sendManagementSnapshot(folder.uri.fsPath);
+            this.sendMessage({ type: 'success', message: `Coverage analysis complete: ${report.percentage.toFixed(1)}% across ${report.totalEndpoints} endpoints.` });
+        } catch (error) {
+            this.sendError(`Coverage analysis failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    private recordCoverageFindings(folder: vscode.WorkspaceFolder, report: EnhancedCoverageReport): void {
+        const workflow = new QualityWorkflowService(new WorkspaceEntityStore(folder.uri.fsPath));
+        for (const endpoint of report.endpoints.filter(endpoint => !endpoint.covered)) {
+            const method = endpoint.method.toUpperCase();
+            workflow.recordCoverageGap({
+                title: `Missing coverage: ${method} ${endpoint.path}`,
+                severity: 'normal',
+                description: endpoint.missingTests.join('\n') || `No Karate scenario covers ${method} ${endpoint.path}.`,
+                sourceRef: `${method} ${endpoint.path}`
+            });
+        }
+    }
+
+    private serializeCoverageReport(report: EnhancedCoverageReport) {
+        return {
+            specName: report.specName,
+            percentage: report.percentage,
+            totalEndpoints: report.totalEndpoints,
+            coveredEndpoints: report.coveredEndpoints,
+            endpoints: report.endpoints.map(endpoint => ({
+                path: endpoint.path,
+                method: endpoint.method,
+                covered: endpoint.covered,
+                scenarios: endpoint.scenarios,
+                missingTests: endpoint.missingTests
+            })),
+            methodBreakdown: Array.from(report.methodBreakdown.entries()).map(([method, stats]) => ({
+                method,
+                total: stats.total,
+                covered: stats.covered,
+                percentage: stats.total ? (stats.covered / stats.total) * 100 : 0
+            }))
+        };
     }
 
     private async saveTraceability(featurePath: string, scenarioName: string, owner: string, status: string, zephyrKey: string, folderPath?: string): Promise<void> {
@@ -1383,6 +1453,8 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
             return typeof message.id === 'string' && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'rerunRun':
             return isExecutionOptions(message.options) && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        case 'analyzeCoverage':
+            return message.folderPath === undefined || typeof message.folderPath === 'string';
         case 'saveTraceability':
             return ['featurePath', 'scenarioName', 'owner', 'status', 'zephyrKey'].every(key => typeof message[key] === 'string')
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');

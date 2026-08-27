@@ -5,7 +5,6 @@ import { generateFromOpenAPI } from './commands/generateFromOpenAPI';
 import { generateFromConfluence } from './commands/generateFromConfluence';
 import { generateCombined } from './commands/generateCombined';
 import { KarateWebviewProvider } from './webview/WebviewProvider';
-import { CoverageDashboardProvider } from './webview/CoverageDashboardProvider';
 import { ExecutionReportProvider } from './webview/ExecutionReportProvider';
 import { SpecWatcher } from './services/specWatcher';
 import { SpecHashManager } from './services/specHashManager';
@@ -152,7 +151,6 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     // Create coverage dashboard provider (for standalone panel only)
-    const coverageDashboardProvider = new CoverageDashboardProvider(context.extensionUri);
 
     // Create execution report provider
     const executionReportProvider = new ExecutionReportProvider(context.extensionUri);
@@ -709,7 +707,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const showCoverageDashboardCommand = vscode.commands.registerCommand(
         'karate-dsl.showCoverageDashboard',
         async () => {
-            await coverageDashboardProvider.showDashboard();
+            await webviewProvider.showManagementArea('quality');
         }
     );
 
