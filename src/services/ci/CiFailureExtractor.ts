@@ -32,7 +32,7 @@ export class CiFailureExtractor {
             || 'Unknown failed step';
 
         const candidateTexts = this.collectCandidateTexts(input);
-        const featurePath = this.extractFeaturePath(candidateTexts);
+        const featureReference = this.extractFeatureReference(candidateTexts);
         const scenarioName = this.extractScenarioName(candidateTexts)
             || input.run.display_title
             || input.run.name
@@ -40,7 +40,7 @@ export class CiFailureExtractor {
         const errorMessage = this.extractErrorMessage(candidateTexts)
             || `GitHub Actions run ${input.run.id} failed`;
 
-        if (!featurePath) {
+        if (!featureReference) {
             logger.warn(`CiFailureExtractor: unable to infer feature path for run ${input.run.id}`);
             return null;
         }
@@ -50,7 +50,8 @@ export class CiFailureExtractor {
 
         return {
             source: 'github-actions',
-            featurePath,
+            featurePath: featureReference.path,
+            scenarioLine: featureReference.line,
             scenarioName,
             failedStep,
             errorMessage,
@@ -93,18 +94,20 @@ export class CiFailureExtractor {
         }
     }
 
-    private extractFeaturePath(texts: string[]): string | null {
-        const featureRegex = /([A-Za-z0-9_\-./\\]+\.feature)(?::\d+)?/;
+    private extractFeatureReference(texts: string[]): { path: string; line?: number } | null {
+        const featureRegex = /([A-Za-z0-9_\-./\\]+\.feature)(?::(\d+))?/;
         for (const text of texts) {
             const match = text.match(featureRegex);
             if (!match) {
                 continue;
             }
             const candidate = match[1].replace(/\\/g, '/').replace(/^\.\//, '');
+            const line = match[2] ? Number(match[2]) : undefined;
+            const reference = { path: candidate.startsWith('/') ? candidate.slice(1) : candidate, line };
             if (candidate.startsWith('/')) {
-                return candidate.slice(1);
+                return reference;
             }
-            return candidate;
+            return reference;
         }
         return null;
     }
