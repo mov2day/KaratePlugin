@@ -120,6 +120,14 @@ suite('Quality Workflow', () => {
         assert.strictEqual(second.id, first.id);
         assert.strictEqual(second.severity, 'high');
     });
+
+    test('updates an open spec-diff finding with the same source reference', () => {
+        const workflow = new QualityWorkflowService(new WorkspaceEntityStore(root));
+        const first = workflow.upsertOpen({ title: 'Review deleted endpoint', severity: 'high', source: 'spec-diff', sourceRef: 'spec:/orders:DELETE' });
+        const second = workflow.upsertOpen({ title: 'Review removed endpoint', severity: 'critical', source: 'spec-diff', sourceRef: 'spec:/orders:DELETE' });
+        assert.strictEqual(second.id, first.id);
+        assert.strictEqual(second.severity, 'critical');
+    });
 });
 
 suite('Scenario Locator', () => {

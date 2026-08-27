@@ -41,12 +41,17 @@ export class QualityWorkflowService {
 
     /** Keeps recurring coverage scans actionable without creating duplicate open work. */
     recordCoverageGap(input: Pick<QualityFinding, 'title' | 'severity' | 'description' | 'sourceRef'>): QualityFinding {
+        return this.upsertOpen({ ...input, source: 'coverage' });
+    }
+
+    /** Updates an open finding with the same external source identity. */
+    upsertOpen(input: Omit<QualityFinding, 'id' | 'createdAt' | 'updatedAt' | 'state'> & { state?: QualityState }): QualityFinding {
         const existing = this.store.list<QualityFinding>('findings').find(finding =>
-            finding.source === 'coverage' && finding.sourceRef === input.sourceRef && finding.state !== 'Verified'
+            finding.source === input.source && finding.sourceRef === input.sourceRef && finding.state !== 'Verified'
         );
         if (existing) {
             return this.store.save('findings', { ...existing, ...input }, existing.id) as QualityFinding;
         }
-        return this.create({ ...input, source: 'coverage' });
+        return this.create(input);
     }
 }

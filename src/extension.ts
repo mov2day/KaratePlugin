@@ -37,6 +37,7 @@ import { TestExecutionResult } from './types';
 import { KarateV2Migrator } from './services/KarateV2Migrator';
 import { ZephyrScalePublisher, ZEPHYR_TOKEN_KEY } from './services/zephyr/ZephyrScalePublisher';
 import { WorkspaceEntityStore } from './services/workspace/WorkspaceEntityStore';
+import { QualityWorkflowService } from './services/workspace/QualityWorkflowService';
 import { TelemetryService } from './services/telemetry/TelemetryService';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -1780,6 +1781,22 @@ async function handleSpecChange(
         if (affected.length === 0) {
             logger.info('No test impact detected');
             return;
+        }
+
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(specPath));
+        if (workspaceFolder) {
+            const workflow = new QualityWorkflowService(new WorkspaceEntityStore(workspaceFolder.uri.fsPath));
+            for (const impact of affected) {
+                const change = impact.endpointChange;
+                const reference = [specPath, change?.method || '', change?.path || impact.scenarioName, impact.suggestedAction].join(':');
+                workflow.upsertOpen({
+                    title: `Spec change: ${impact.scenarioName}`,
+                    severity: impact.changeImpact === 'high' ? 'high' : impact.changeImpact === 'medium' ? 'normal' : 'low',
+                    source: 'spec-diff',
+                    sourceRef: reference,
+                    description: `${impact.reason} Suggested action: ${impact.suggestedAction}.`
+                });
+            }
         }
 
         // Check if this spec is currently being processed
