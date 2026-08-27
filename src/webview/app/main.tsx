@@ -44,6 +44,7 @@ interface Snapshot {
     findings?: Array<{ id: string; title?: string; state?: string; severity?: string; source?: string }>;
     runProfiles?: Array<{ id: string; name?: string; environment?: string }>;
     environments?: Array<{ id: string; name?: string }>;
+    coverageReports?: CoverageSnapshot[];
 }
 
 const vscode = acquireVsCodeApi();
@@ -71,7 +72,11 @@ function App() {
 
     useEffect(() => {
         const onMessage = (event: MessageEvent<{ type?: string; data?: Snapshot | CoverageSnapshot | HealthSnapshot | BugHunterSnapshot; message?: string }>) => {
-            if (event.data.type === 'managementSnapshot') setSnapshot((event.data.data as Snapshot) || {});
+            if (event.data.type === 'managementSnapshot') {
+                const next = (event.data.data as Snapshot) || {};
+                setSnapshot(next);
+                if (next.coverageReports?.[0]) setCoverage(next.coverageReports[0]);
+            }
             if (event.data.type === 'coverageReport') setCoverage(event.data.data as CoverageSnapshot);
             if (event.data.type === 'healthReport') setHealth(event.data.data as HealthSnapshot);
             if (event.data.type === 'bugHunterReport') setBugHunter(event.data.data as BugHunterSnapshot);

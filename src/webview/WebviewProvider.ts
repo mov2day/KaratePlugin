@@ -625,7 +625,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 cancellable: false
             }, () => new EnhancedCoverageService().analyzeMultipleSpecs(specs.map(spec => spec.fsPath), featureUris.map(feature => feature.fsPath), false));
             this.recordCoverageFindings(folder, report);
-            this.sendMessage({ type: 'coverageReport', data: this.serializeCoverageReport(report) });
+            const serialized = this.serializeCoverageReport(report);
+            new WorkspaceEntityStore(folder.uri.fsPath).save('actions', { kind: 'coverage-report', ...serialized });
+            this.sendMessage({ type: 'coverageReport', data: serialized });
             await this.sendManagementSnapshot(folder.uri.fsPath);
             this.sendMessage({ type: 'success', message: `Coverage analysis complete: ${report.percentage.toFixed(1)}% across ${report.totalEndpoints} endpoints.` });
         } catch (error) {
