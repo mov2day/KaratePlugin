@@ -102,9 +102,14 @@ export async function activate(context: vscode.ExtensionContext) {
                         description: 'This feature has no scenarios and is not read by another feature. Review whether it is unused or needs wiring.'
                     });
                 }
+                await webviewProvider.showHealthReport({
+                    totalFiles: health.totalFiles,
+                    totalScenarios: health.totalScenarios,
+                    dryScore: health.dryScore,
+                    orphanedFiles: health.orphanedFiles,
+                    dependencyCount: health.dependencies.length
+                });
             }
-            const { HealthDashboardPanel } = require('./services/health/HealthDashboardPanel');
-            HealthDashboardPanel.createOrShow(context.extensionUri);
         })
     );
 

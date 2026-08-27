@@ -31,6 +31,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private readonly _telemetry: TelemetryService;
     private _activeManagementFolderPath: string | undefined;
     private _pendingManagementArea: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations' | undefined;
+    private _managementReady = false;
+    private _pendingHealthReport: Record<string, unknown> | undefined;
 
     /**
      * Process feature content through ReusabilityEngine.
@@ -57,12 +59,19 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         this.postPendingManagementArea();
     }
 
+    public async showHealthReport(report: Record<string, unknown>): Promise<void> {
+        this._pendingHealthReport = report;
+        await this.showManagementArea('quality');
+        this.postPendingHealthReport();
+    }
+
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
         context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken,
     ) {
         this._view = webviewView;
+        this._managementReady = false;
 
         webviewView.webview.options = {
             enableScripts: true,
@@ -154,8 +163,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     await this.saveTraceability(data.featurePath, data.scenarioName, data.owner, data.status, data.zephyrKey, data.folderPath);
                     break;
                 case 'managementReady':
+                    this._managementReady = true;
                     await this.sendManagementSnapshot(this._activeManagementFolderPath);
                     this.postPendingManagementArea();
+                    this.postPendingHealthReport();
                     break;
                 case 'reportBug':
                     await this.executeShellCommandWithArguments('karate-dsl.reportBug', data.activeArea);
@@ -465,6 +476,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         if (!this._pendingManagementArea || !this._view) return;
         this.postMessageToWebview({ type: 'navigateManagement', area: this._pendingManagementArea });
         this._pendingManagementArea = undefined;
+    }
+
+    private postPendingHealthReport(): void {
+        if (!this._pendingHealthReport || !this._view || !this._managementReady) return;
+        this.postMessageToWebview({ type: 'healthReport', data: this._pendingHealthReport });
+        this._pendingHealthReport = undefined;
     }
 
     private withFolderMetadata(folder: vscode.WorkspaceFolder, snapshot: ReturnType<WorkspaceIndex['snapshot']>) {
