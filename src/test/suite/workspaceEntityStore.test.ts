@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import { ScenarioLocator } from '../../services/ci/ScenarioLocator';
 import { WorkspaceEntityStore } from '../../services/workspace/WorkspaceEntityStore';
 import { QualityWorkflowService } from '../../services/workspace/QualityWorkflowService';
+import { normalizeHistoryLimit } from '../../services/execution/historyRetention';
 
 suite('Workspace Entity Store', () => {
     let root: string;
@@ -162,5 +163,15 @@ Scenario: create order
         const updated = locator.replace(content, { name: 'create order', tags: ['@first'] }, 'Scenario: repaired');
         assert.ok(updated?.includes('Scenario: repaired'));
         assert.ok(updated?.includes('Scenario: create order safely'));
+    });
+});
+
+suite('History Retention', () => {
+    test('honors configured limits while normalizing invalid values safely', () => {
+        assert.strictEqual(normalizeHistoryLimit(10), 10);
+        assert.strictEqual(normalizeHistoryLimit(75.9), 75);
+        assert.strictEqual(normalizeHistoryLimit(undefined), 50);
+        assert.strictEqual(normalizeHistoryLimit(Number.NaN), 50);
+        assert.strictEqual(normalizeHistoryLimit(0), 1);
     });
 });

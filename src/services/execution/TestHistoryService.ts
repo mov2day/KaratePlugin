@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { TestExecutionResult } from '../../types';
 import { logger } from '../../utils/logger';
 import { WorkspaceEntityStore } from '../workspace/WorkspaceEntityStore';
+import { normalizeHistoryLimit } from './historyRetention';
 
 /**
  * Manages test execution history and persistence
@@ -78,7 +79,7 @@ export class TestHistoryService {
     private async cleanupOldHistory(): Promise<void> {
         try {
             const configuredLimit = vscode.workspace.getConfiguration('karateDsl').get<number>('execution.historyLimit', 50);
-            const historyLimit = Math.max(1, configuredLimit || 50);
+            const historyLimit = normalizeHistoryLimit(configuredLimit);
             const runs = this.store.list<TestExecutionResult & { id: string }>('runs')
                 .sort((a, b) => b.timestamp - a.timestamp);
             for (const staleRun of runs.slice(historyLimit)) {
