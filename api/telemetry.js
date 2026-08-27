@@ -41,6 +41,10 @@ module.exports = async function telemetry(request, response) {
 };
 
 function readJson(request) {
+  if (request.body && typeof request.body === 'object') return Promise.resolve(request.body);
+  if (typeof request.body === 'string') {
+    try { return Promise.resolve(JSON.parse(request.body)); } catch { return Promise.reject(new Error('invalid_json')); }
+  }
   return new Promise((resolve, reject) => {
     let size = 0;
     let body = '';
