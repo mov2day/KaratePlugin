@@ -91,7 +91,8 @@ export async function activate(context: vscode.ExtensionContext) {
             if (folder) {
                 const { ProjectAnalyzer } = await import('./services/health/ProjectAnalyzer');
                 const health = await new ProjectAnalyzer().analyzeWorkspace();
-                const workflow = new QualityWorkflowService(new WorkspaceEntityStore(folder.uri.fsPath));
+                const store = new WorkspaceEntityStore(folder.uri.fsPath);
+                const workflow = new QualityWorkflowService(store);
                 for (const file of health.orphanedFiles) {
                     workflow.upsertOpen({
                         title: `Unreferenced reusable feature: ${file}`,
@@ -101,13 +102,15 @@ export async function activate(context: vscode.ExtensionContext) {
                         description: 'This feature has no scenarios and is not read by another feature. Review whether it is unused or needs wiring.'
                     });
                 }
-                await webviewProvider.showHealthReport({
+                const healthReport = {
                     totalFiles: health.totalFiles,
                     totalScenarios: health.totalScenarios,
                     dryScore: health.dryScore,
                     orphanedFiles: health.orphanedFiles,
                     dependencyCount: health.dependencies.length
-                });
+                };
+                store.save('actions', { kind: 'health-report', ...healthReport });
+                await webviewProvider.showHealthReport(healthReport);
             }
         })
     );

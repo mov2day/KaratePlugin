@@ -9,6 +9,7 @@ export interface ManagementSnapshot {
     runProfiles: Array<Record<string, unknown>>;
     environments: Array<Record<string, unknown>>;
     coverageReports: Array<Record<string, unknown>>;
+    healthReports: Array<Record<string, unknown>>;
     features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number; owner?: string; status?: string; zephyrKey?: string }> }>;
 }
 
@@ -23,6 +24,7 @@ export class WorkspaceIndex implements vscode.Disposable {
     private runProfiles: Array<Record<string, unknown>> = [];
     private environments: Array<Record<string, unknown>> = [];
     private coverageReports: Array<Record<string, unknown>> = [];
+    private healthReports: Array<Record<string, unknown>> = [];
     private featureCount = 0;
     private features: Array<{ path: string; scenarios: Array<{ name: string; tags: string[]; line: number; owner?: string; status?: string; zephyrKey?: string }> }> = [];
     private refreshTimer: NodeJS.Timeout | undefined;
@@ -49,6 +51,7 @@ export class WorkspaceIndex implements vscode.Disposable {
             runProfiles: this.runProfiles,
             environments: this.environments,
             coverageReports: this.coverageReports,
+            healthReports: this.healthReports,
             features: this.features
         };
     }
@@ -72,8 +75,13 @@ export class WorkspaceIndex implements vscode.Disposable {
             .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
         this.environments = this.store.list<Record<string, unknown>>('environments')
             .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
-        this.coverageReports = this.store.list<Record<string, unknown>>('actions')
+        const actions = this.store.list<Record<string, unknown>>('actions');
+        this.coverageReports = actions
             .filter(action => action.kind === 'coverage-report')
+            .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
+            .slice(0, 10);
+        this.healthReports = actions
+            .filter(action => action.kind === 'health-report')
             .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
             .slice(0, 10);
         const traceability = new Map(this.store.list<{ featurePath?: string; scenarioName?: string; owner?: string; status?: string; zephyrKey?: string }>('traceability')

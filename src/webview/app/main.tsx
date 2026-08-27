@@ -45,6 +45,7 @@ interface Snapshot {
     runProfiles?: Array<{ id: string; name?: string; environment?: string }>;
     environments?: Array<{ id: string; name?: string }>;
     coverageReports?: CoverageSnapshot[];
+    healthReports?: HealthSnapshot[];
 }
 
 const vscode = acquireVsCodeApi();
@@ -76,6 +77,7 @@ function App() {
                 const next = (event.data.data as Snapshot) || {};
                 setSnapshot(next);
                 if (next.coverageReports?.[0]) setCoverage(next.coverageReports[0]);
+                if (next.healthReports?.[0]) setHealth(next.healthReports[0]);
             }
             if (event.data.type === 'coverageReport') setCoverage(event.data.data as CoverageSnapshot);
             if (event.data.type === 'healthReport') setHealth(event.data.data as HealthSnapshot);
