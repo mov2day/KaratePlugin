@@ -45,12 +45,19 @@ export class TelemetryService {
     }
 
     private sanitize(value: Record<string, unknown>): Record<string, unknown> {
-        return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.sanitizeValue(item)]));
+        return this.sanitizeValue(value) as Record<string, unknown>;
     }
 
     private sanitizeValue(value: unknown): unknown {
-        if (typeof value !== 'string') return value;
-        const redacted = Logger.redact(value);
-        return redacted.replace(/(?:[A-Za-z]:)?[/\\][^\s:]+(?:[/\\][^\s:]+)*/g, match => path.basename(match));
+        if (typeof value === 'string') {
+            const redacted = Logger.redact(value);
+            return redacted.replace(/(?:[A-Za-z]:)?[/\\][^\s:]+(?:[/\\][^\s:]+)*/g, match =>
+                match.includes('\\') ? path.win32.basename(match) : path.basename(match));
+        }
+        if (Array.isArray(value)) return value.map(item => this.sanitizeValue(item));
+        if (value && typeof value === 'object') {
+            return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.sanitizeValue(item)]));
+        }
+        return value;
     }
 }
