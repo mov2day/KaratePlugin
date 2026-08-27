@@ -407,6 +407,8 @@ export class KarateMcpHostService implements vscode.Disposable {
                     properties: {
                         feature_path: { type: 'string' },
                         scenario_name: { type: 'string' },
+                        scenario_tags: { type: 'array', items: { type: 'string' } },
+                        scenario_line: { type: 'number', minimum: 1 },
                         error_message: { type: 'string' },
                         ci_run_id: { type: 'string' },
                         apply: { type: 'boolean' }

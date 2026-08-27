@@ -151,6 +151,8 @@ export class KarateMcpToolService {
         const errorMessage = this.readStringArg(args, 'error_message');
         const apply = this.readBooleanArg(args, 'apply', false);
         const runId = this.readStringArg(args, 'ci_run_id');
+        const scenarioTags = this.readStringArrayArg(args, 'scenario_tags');
+        const scenarioLine = this.readNumberArg(args, 'scenario_line');
 
         if (!featurePathValue || !scenarioName || !errorMessage) {
             return this.invalidArgs('Missing required arguments: feature_path, scenario_name, error_message');
@@ -169,6 +171,8 @@ export class KarateMcpToolService {
             source: 'generic',
             featurePath: this.workspaceRelative(featurePath),
             scenarioName,
+            scenarioTags,
+            scenarioLine: scenarioLine && Number.isInteger(scenarioLine) && scenarioLine > 0 ? scenarioLine : undefined,
             failedStep: 'Unknown failed step',
             errorMessage,
             timestamp: Date.now(),
@@ -195,7 +199,7 @@ export class KarateMcpToolService {
         }
 
         const cleanedRepair = this.cleanResponse(rawRepair);
-        const updatedContent = this.replaceScenario(originalContent, scenarioName, cleanedRepair);
+        const updatedContent = this.replaceScenario(originalContent, payload, cleanedRepair);
         if (updatedContent === originalContent) {
             return {
                 ok: false,
@@ -486,8 +490,12 @@ Return the complete fixed Scenario block. Pure Karate DSL only.`;
             .trim();
     }
 
-    private replaceScenario(content: string, scenarioName: string, fixedScenario: string): string {
-        return this.scenarioLocator.replace(content, { name: scenarioName }, fixedScenario) || content;
+    private replaceScenario(content: string, payload: CIFailurePayload, fixedScenario: string): string {
+        return this.scenarioLocator.replace(content, {
+            name: payload.scenarioName,
+            tags: payload.scenarioTags,
+            line: payload.scenarioLine
+        }, fixedScenario) || content;
     }
 
     private buildScenarioDiff(before: string, after: string, filePath: string): string {
