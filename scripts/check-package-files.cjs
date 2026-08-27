@@ -26,6 +26,8 @@ const forbidden = [
   /^src\//,
   /^out\/test\//,
   /^out\/debug\//,
+  /^api\//,
+  /^vercel\.json$/,
   /\.ts$/,
   /\.map$/,
   /\.bak$/,
