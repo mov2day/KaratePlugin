@@ -1,5 +1,5 @@
 :root { color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font-family: var(--vscode-font-family); }
-* { box-sizing: border-box; } body { margin: 0; font-size: 13px; } button, input { font: inherit; } button { cursor: pointer; } button:focus-visible, input:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
+* { box-sizing: border-box; } body { margin: 0; font-size: 13px; } button, input, select { font: inherit; } button { cursor: pointer; } button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
 .management-shell { min-height: 100vh; display: grid; grid-template-columns: 168px minmax(0, 1fr); background: var(--vscode-editor-background); }
 .rail { padding: 12px 8px; background: var(--vscode-sideBar-background); border-right: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border)); display: flex; flex-direction: column; gap: 14px; }
 .rail-brand { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; font-weight: 700; letter-spacing: -.02em; }
