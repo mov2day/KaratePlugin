@@ -7,6 +7,7 @@ import { ScenarioLocator } from '../../services/ci/ScenarioLocator';
 import { WorkspaceEntityStore } from '../../services/workspace/WorkspaceEntityStore';
 import { QualityWorkflowService } from '../../services/workspace/QualityWorkflowService';
 import { normalizeHistoryLimit } from '../../services/execution/historyRetention';
+import { toWorkspaceAbsolutePath, toWorkspaceRelativePath } from '../../services/workspace/workspacePaths';
 
 suite('Workspace Entity Store', () => {
     let root: string;
@@ -173,5 +174,19 @@ suite('History Retention', () => {
         assert.strictEqual(normalizeHistoryLimit(undefined), 50);
         assert.strictEqual(normalizeHistoryLimit(Number.NaN), 50);
         assert.strictEqual(normalizeHistoryLimit(0), 1);
+    });
+});
+
+suite('Workspace Path Persistence', () => {
+    test('stores execution paths relative to the workspace and rehydrates them on demand', () => {
+        const root = path.join(path.sep, 'workspace');
+        assert.strictEqual(toWorkspaceRelativePath(root, path.join(root, 'features', 'orders.feature:12')), 'features/orders.feature:12');
+        assert.strictEqual(toWorkspaceRelativePath(root, root), '.');
+        assert.strictEqual(toWorkspaceAbsolutePath(root, 'features/orders.feature:12'), path.join(root, 'features', 'orders.feature:12'));
+    });
+
+    test('refuses to persist execution paths outside the workspace', () => {
+        assert.throws(() => toWorkspaceRelativePath(path.join(path.sep, 'workspace'), path.join(path.sep, 'outside', 'test.feature')),
+            /outside its workspace/);
     });
 });

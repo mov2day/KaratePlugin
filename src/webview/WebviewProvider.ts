@@ -9,7 +9,7 @@ import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
 import { SpecHashManager, SpecMetadata } from '../services/specHashManager';
 import { GenerationService } from '../services/GenerationService';
-import { GenerationOptions, KarateConfig, HistoryItem, KarateTemplate, WebviewMessage, KarateStyle } from '../types';
+import { GenerationOptions, KarateConfig, HistoryItem, KarateTemplate, TestExecutionOptions, WebviewMessage, KarateStyle } from '../types';
 import { HistoryManager } from '../services/historyManager';
 import { TemplateManager } from '../services/templateManager';
 import { StyleAnalyzer } from '../services/styleAnalyzer';
@@ -142,6 +142,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'runProfile':
                     await this.runProfile(data.id, data.folderPath);
+                    break;
+                case 'rerunRun':
+                    await this.rerunRun(data.options, data.folderPath);
                     break;
                 case 'saveTraceability':
                     await this.saveTraceability(data.featurePath, data.scenarioName, data.owner, data.status, data.zephyrKey, data.folderPath);
@@ -539,6 +542,28 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             folderPath: folder.uri.fsPath,
             environment: profile.environment,
             parallel: profile.parallel
+        });
+    }
+
+    private async rerunRun(options: TestExecutionOptions, folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        if (!folder) return;
+        const resolveTarget = (target: string): string | undefined => {
+            if (path.isAbsolute(target)) return undefined;
+            const absolute = path.resolve(folder.uri.fsPath, target);
+            const relative = path.relative(folder.uri.fsPath, absolute);
+            return (relative === '' || (!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))) ? absolute : undefined;
+        };
+        const targets = Array.isArray(options.target) ? options.target.map(resolveTarget) : [resolveTarget(options.target)];
+        if (targets.some(target => !target)) {
+            this.sendError('This historic run refers to a path outside the selected workspace. It cannot be rerun safely.');
+            return;
+        }
+        const resolvedTargets = targets as string[];
+        await this.executeShellCommandWithArguments('karate-dsl.runFolder', {
+            folderPath: folder.uri.fsPath,
+            options: { ...options, target: Array.isArray(options.target) ? resolvedTargets : resolvedTargets[0], workingDirectory: folder.uri.fsPath }
         });
     }
 
@@ -1356,6 +1381,8 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'runProfile':
             return typeof message.id === 'string' && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        case 'rerunRun':
+            return isExecutionOptions(message.options) && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'saveTraceability':
             return ['featurePath', 'scenarioName', 'owner', 'status', 'zephyrKey'].every(key => typeof message[key] === 'string')
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
@@ -1373,4 +1400,17 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
             return true;
         default: return false;
     }
+}
+
+function isExecutionOptions(value: unknown): value is TestExecutionOptions {
+    if (!value || typeof value !== 'object') return false;
+    const options = value as Record<string, unknown>;
+    return typeof options.type === 'string'
+        && ['feature', 'features', 'folder', 'tags', 'scenario'].includes(options.type)
+        && (typeof options.target === 'string' || (Array.isArray(options.target) && options.target.every(target => typeof target === 'string')))
+        && (options.tags === undefined || (Array.isArray(options.tags) && options.tags.every(tag => typeof tag === 'string')))
+        && (options.environment === undefined || typeof options.environment === 'string')
+        && (options.parallel === undefined || (typeof options.parallel === 'number' && Number.isFinite(options.parallel)))
+        && (options.buildTool === undefined || (typeof options.buildTool === 'string' && ['maven', 'gradle', 'cli'].includes(options.buildTool)))
+        && (options.workingDirectory === undefined || typeof options.workingDirectory === 'string');
 }

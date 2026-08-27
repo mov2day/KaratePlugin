@@ -33,7 +33,7 @@ import { CIFailureIngestor } from './services/ci/CIFailureIngestor';
 import { TestRepairService } from './services/ci/TestRepairService';
 import { GitHubActionsPullIngestor } from './services/ci/GitHubActionsPullIngestor';
 import { KarateMcpHostService } from './services/mcp/KarateMcpHostService';
-import { TestExecutionResult } from './types';
+import { TestExecutionOptions, TestExecutionResult } from './types';
 import { KarateV2Migrator } from './services/KarateV2Migrator';
 import { ZephyrScalePublisher, ZEPHYR_TOKEN_KEY } from './services/zephyr/ZephyrScalePublisher';
 import { WorkspaceEntityStore } from './services/workspace/WorkspaceEntityStore';
@@ -982,10 +982,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
     const runFolderCommand = vscode.commands.registerCommand(
         'karate-dsl.runFolder',
-        async (target?: vscode.Uri | { folderPath?: string; environment?: string; parallel?: number }) => {
+        async (target?: vscode.Uri | { folderPath?: string; environment?: string; parallel?: number; options?: TestExecutionOptions }) => {
             try {
                 const profile = target && !(target instanceof vscode.Uri) ? target : undefined;
-                const folderPath = target instanceof vscode.Uri ? target.fsPath : profile?.folderPath || workspaceRoot;
+                const replayOptions = profile?.options;
+                const folderPath = target instanceof vscode.Uri
+                    ? target.fsPath
+                    : profile?.folderPath || replayOptions?.workingDirectory || workspaceRoot;
                 if (!folderPath) {
                     vscode.window.showWarningMessage('No folder selected');
                     return;
@@ -993,10 +996,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
                 await vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
-                    title: `Running all tests in ${path.basename(folderPath)}...`,
+                    title: replayOptions ? `Rerunning tests in ${path.basename(folderPath)}...` : `Running all tests in ${path.basename(folderPath)}...`,
                     cancellable: true
                 }, async (progress, token) => {
-                    const result = await testExecutor.execute({
+                    const result = await testExecutor.execute(replayOptions ? {
+                        ...replayOptions,
+                        environment: profile?.environment || replayOptions.environment,
+                        parallel: profile?.parallel || replayOptions.parallel,
+                        workingDirectory: folderPath
+                    } : {
                         type: 'folder',
                         target: folderPath,
                         buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',

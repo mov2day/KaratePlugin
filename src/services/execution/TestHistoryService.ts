@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { TestExecutionResult } from '../../types';
 import { logger } from '../../utils/logger';
 import { WorkspaceEntityStore } from '../workspace/WorkspaceEntityStore';
+import { toWorkspaceAbsolutePath, toWorkspaceRelativePath } from '../workspace/workspacePaths';
 import { normalizeHistoryLimit } from './historyRetention';
 
 /**
@@ -27,7 +28,7 @@ export class TestHistoryService {
     async saveResult(result: TestExecutionResult): Promise<void> {
         try {
             this.ensureHistoryDir();
-            this.store.save('runs', result, result.id);
+            this.store.save('runs', this.forWorkspaceStorage(result), result.id);
             logger.info(`Saved test result to history: ${result.id}.json`);
 
             // Clean up old history
@@ -45,7 +46,8 @@ export class TestHistoryService {
             this.ensureHistoryDir();
 
             const results = this.store.list<TestExecutionResult & { createdAt: number; updatedAt: number }>('runs')
-                .sort((a, b) => b.timestamp - a.timestamp) as TestExecutionResult[];
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .map(result => this.forExecution(result));
             return limit ? results.slice(0, limit) : results;
         } catch (error) {
             logger.error('Failed to get test history', error as Error);
@@ -58,7 +60,8 @@ export class TestHistoryService {
      */
     async getResultById(id: string): Promise<TestExecutionResult | null> {
         try {
-            return (this.store.get('runs', id) as TestExecutionResult | undefined) || null;
+            const result = this.store.get<TestExecutionResult>('runs', id);
+            return result ? this.forExecution(result) : null;
         } catch (error) {
             logger.error(`Failed to get test result: ${id}`, error as Error);
             return null;
@@ -89,6 +92,47 @@ export class TestHistoryService {
         } catch (error) {
             logger.warn('Failed to cleanup old history', error as Error);
         }
+    }
+
+    /**
+     * Workspace state is Git-tracked and therefore must not bind a teammate's
+     * history to this machine. Persist only paths relative to the workspace.
+     */
+    private forWorkspaceStorage(result: TestExecutionResult): TestExecutionResult {
+        const options = result.options;
+        return {
+            ...result,
+            options: {
+                ...options,
+                target: Array.isArray(options.target)
+                    ? options.target.map(target => this.toRelativePath(target))
+                    : this.toRelativePath(options.target),
+                workingDirectory: options.workingDirectory ? this.toRelativePath(options.workingDirectory) : undefined
+            }
+        };
+    }
+
+    /** Rehydrate persisted run targets only at the execution-service boundary. */
+    private forExecution(result: TestExecutionResult): TestExecutionResult {
+        const options = result.options;
+        return {
+            ...result,
+            options: {
+                ...options,
+                target: Array.isArray(options.target)
+                    ? options.target.map(target => this.toAbsolutePath(target))
+                    : this.toAbsolutePath(options.target),
+                workingDirectory: options.workingDirectory ? this.toAbsolutePath(options.workingDirectory) : undefined
+            }
+        };
+    }
+
+    private toRelativePath(value: string): string {
+        return toWorkspaceRelativePath(this.workspaceRoot, value);
+    }
+
+    private toAbsolutePath(value: string): string {
+        return toWorkspaceAbsolutePath(this.workspaceRoot, value);
     }
 
     /**
