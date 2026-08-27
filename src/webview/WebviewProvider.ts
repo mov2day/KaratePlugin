@@ -163,6 +163,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 case 'rerunRun':
                     await this.rerunRun(data.options, data.folderPath);
                     break;
+                case 'requestScenarioRepair':
+                    await this.requestScenarioRepair(data.featurePath, data.scenarioName, data.errorMessage, data.scenarioTags, data.scenarioLine, data.folderPath);
+                    break;
                 case 'analyzeCoverage':
                     await this.analyzeCoverage(data.folderPath);
                     break;
@@ -604,6 +607,29 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             folderPath: folder.uri.fsPath,
             options: { ...options, target: Array.isArray(options.target) ? resolvedTargets : resolvedTargets[0], workingDirectory: folder.uri.fsPath }
         });
+    }
+
+    private async requestScenarioRepair(featurePath: string, scenarioName: string, errorMessage: string, scenarioTags?: string[], scenarioLine?: number, folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        if (!folder || !featurePath || !scenarioName) return;
+        try {
+            const { TestRepairService } = await import('../services/ci/TestRepairService');
+            const repaired = await new TestRepairService().repair({
+                source: 'generic',
+                featurePath,
+                scenarioName,
+                scenarioTags,
+                scenarioLine,
+                failedStep: 'Failed scenario from execution history',
+                errorMessage: errorMessage || 'No execution error detail was recorded.',
+                timestamp: Date.now()
+            }, folder.uri.fsPath);
+            if (repaired) this.sendMessage({ type: 'success', message: `Repair review prepared for ${scenarioName}.` });
+            await this.sendManagementSnapshot(folder.uri.fsPath);
+        } catch (error) {
+            this.sendError(`Could not prepare repair: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     private async analyzeCoverage(folderPath?: string): Promise<void> {
@@ -1490,6 +1516,11 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
             return typeof message.id === 'string' && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'rerunRun':
             return isExecutionOptions(message.options) && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        case 'requestScenarioRepair':
+            return ['featurePath', 'scenarioName', 'errorMessage'].every(key => typeof message[key] === 'string')
+                && (message.scenarioTags === undefined || (Array.isArray(message.scenarioTags) && message.scenarioTags.every(tag => typeof tag === 'string')))
+                && (message.scenarioLine === undefined || (typeof message.scenarioLine === 'number' && Number.isInteger(message.scenarioLine) && message.scenarioLine > 0))
+                && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'analyzeCoverage':
             return message.folderPath === undefined || typeof message.folderPath === 'string';
         case 'saveTraceability':

@@ -327,6 +327,7 @@ export type WebviewMessage =
     | { command: 'createRunProfile'; name: string; environment: string; parallel: number; folderPath?: string }
     | { command: 'runProfile'; id: string; folderPath?: string }
     | { command: 'rerunRun'; options: TestExecutionOptions; folderPath?: string }
+    | { command: 'requestScenarioRepair'; featurePath: string; scenarioName: string; errorMessage: string; scenarioTags?: string[]; scenarioLine?: number; folderPath?: string }
     | { command: 'analyzeCoverage'; folderPath?: string }
     | { command: 'saveTraceability'; featurePath: string; scenarioName: string; owner: string; status: string; zephyrKey: string; folderPath?: string }
     | { command: 'managementReady' }

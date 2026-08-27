@@ -17,8 +17,8 @@ export class TestRepairService {
     /**
      * Attempt to repair a failing test based on CI failure payload.
      */
-    async repair(payload: CIFailurePayload): Promise<boolean> {
-        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    async repair(payload: CIFailurePayload, selectedWorkspaceRoot?: string): Promise<boolean> {
+        const workspaceRoot = selectedWorkspaceRoot || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         if (!workspaceRoot) {
             logger.error('TestRepairService: no workspace folder');
             return false;
