@@ -514,7 +514,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
 
     private async executeShellCommand(commandId: unknown): Promise<void> {
         const allowed = new Set([
-            'karate-dsl.runFolder', 'karate-dsl.showCoverageDashboard', 'karate-dsl.analyzeProjectHealth',
+            'karate-dsl.runFolder', 'karate-dsl.showCoverageDashboard', 'karate-dsl.analyzeProjectHealth', 'karate-dsl.checkSpecChanges',
             'karate-dsl.generateFromOpenAPI', 'karate-dsl.importPostmanCollection', 'karate-dsl.importHar',
             'karate-dsl.generateFromGraphQL', 'karate-dsl.generateFromJira', 'karate-dsl.generateFromConfluence',
             'karate-dsl.generateCombined', 'karate-dsl.generateFromDirectory', 'karate-dsl.startRecording',
@@ -540,6 +540,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendError(`Could not complete this action: ${message}`);
         } finally {
             if (isExecution) this.postMessageToWebview({ type: 'executionState', running: false });
+            if (commandId === 'karate-dsl.checkSpecChanges') await this.sendManagementSnapshot(this._activeManagementFolderPath);
         }
     }
 

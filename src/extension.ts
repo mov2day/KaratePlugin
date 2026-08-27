@@ -612,6 +612,7 @@ export async function activate(context: vscode.ExtensionContext) {
             if (changesFound === 0) {
                 vscode.window.showInformationMessage('✅ All tracked specs are up to date!');
             }
+            await webviewProvider.showManagementArea('quality');
         }
     );
 
