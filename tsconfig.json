@@ -12,6 +12,7 @@
         "sourceMap": true,
         "rootDir": "src",
         "strict": true,
+        "allowUnreachableCode": false,
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,

@@ -763,6 +763,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         const nonce = crypto.randomBytes(16).toString('base64');
         return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};"><link rel="stylesheet" href="${styleUri}"><title>Karate Test Management</title></head><body data-management-layout="${layout}"><div id="root"></div><script nonce="${nonce}" src="${scriptUri}"></script></body></html>`;
 
+        // Retired v1 markup is kept as a non-compiled source-history reference.
+        /*
         const legacyScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const legacyStyleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'style.css'));
 
@@ -1538,6 +1540,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     <script src="${scriptUri}"></script>
 </body>
 </html>`;
+        */
     }
 }
 

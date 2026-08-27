@@ -229,8 +229,9 @@ export class WorkspaceEntityStore {
                     if ((lockError as NodeJS.ErrnoException).code !== 'ENOENT') throw lockError;
                     continue;
                 }
-                const started = Date.now();
-                while (Date.now() - started < 25) { /* short synchronous retry window */ }
+                // Do not spin on the extension host's single JavaScript thread. A later
+                // action can retry safely, while a stale lock is recovered above.
+                break;
             }
         }
         if (descriptor === undefined) throw new Error('Workspace state is busy; retry the operation.');
