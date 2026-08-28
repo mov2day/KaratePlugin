@@ -20,6 +20,8 @@ vercel.json
 .karate-test-management/**
 .karate-test-history/**
 target/**
+output/**
+design-qa.md
 **/*.bak
 **/.DS_Store
 .DS_Store

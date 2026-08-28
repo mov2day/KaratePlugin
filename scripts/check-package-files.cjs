@@ -32,6 +32,8 @@ const forbidden = [
   /^\.karate-test-management\//,
   /^\.karate-test-history\//,
   /^target\//,
+  /^output\//,
+  /^design-qa\.md$/,
   /\.ts$/,
   /\.map$/,
   /\.bak$/,

@@ -10,7 +10,8 @@ esbuild.buildSync({
   target: ['es2020'],
   format: 'iife',
   outfile: 'media/test-management.js',
-  loader: { '.css': 'css' }
+  loader: { '.css': 'css', '.ttf': 'file' },
+  assetNames: '[name]'
 });
 
 fs.copyFileSync('node_modules/chart.js/dist/chart.umd.js', 'media/chart.umd.js');
