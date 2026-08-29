@@ -5,24 +5,32 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - 2026-08-27
+## [2.0.0] - 2026-08-29
 
 ### Theme: Karate Test Management Workspace
 
 ### Added
-- A compact, keyboard-first Test Management workspace with Overview, Test Library, Runs, Quality, Create & Import, and Operations areas.
+- A professional, keyboard-first Test Management workspace with Overview, Test Library, Runs, Quality, Create & Import, and Operations areas.
+- A compact Activity Bar view for everyday access plus a dedicated expanded workspace for full test-management workflows.
 - Git-friendly, UUID-based workspace state under `.karate-test-management/`, including safe legacy-history migration and per-folder multi-root isolation.
 - Indexed test library search, scenario traceability (owner, lifecycle status, Zephyr key), executable run profiles, live run drill-down, and guarded Quality finding transitions.
 - Quality work queue inputs from coverage, specification changes, project health, and Bug Hunter results.
-- Locally bundled webview assets, strict CSP, opt-in failure telemetry, and package checks for webview debug/CDN regressions.
+- Locally bundled webview assets, strict CSP, application branding, and package checks for webview debug/CDN regressions.
 - In-shell coverage analysis, project-health summaries, Bug Hunter outcomes, CI repair queue routing, and safe run replay.
-- A deployable Vercel telemetry collector with strict event validation, IP-plus-session rate limits, and Vercel KV/Upstash persistence.
+- A user-invoked bug reporter that collects redacted diagnostics and opens a clean public issue without exposing raw logs.
 
 ### Changed
 - Run history is retained as entity-per-file workspace data and follows `karateDsl.execution.historyLimit`.
 - Scenario repair uses exact matching rather than substring replacement; ambiguous repairs are refused.
 - Completed executions now return to the Runs area instead of opening a separate report panel; coverage and health summaries persist with workspace state.
+- Execution now discovers the nearest runnable project and selects standalone CLI, Maven, Gradle, or a configured custom runner consistently for feature, folder, tag, and CodeLens scenario runs.
+- Coverage analysis accepts an OpenAPI specification by itself; feature selection is optional and enables exact scenario mapping when available.
 - This is a major UI redesign. Existing command IDs and settings remain available.
+
+### Fixed
+- Restored feature and scenario CodeLens execution, including exact scenario line/name targeting.
+- Restored simple-project execution and custom Maven/Gradle runner configurations across workspace layouts.
+- Restored v1.5.2 functional paths for generation, coverage, project health, Bug Hunter, and execution inside the redesigned workspace.
 
 ## [1.5.2] - 2026-06-19
 

@@ -23,21 +23,33 @@
   </style>
   <link rel="stylesheet" href="../../media/test-management.css">
 </head>
-<body data-management-layout="expanded">
+<body data-management-layout="expanded" data-app-icon="../../resources/icon.png">
   <div id="root"></div>
   <script>
     document.body.dataset.managementLayout = new URLSearchParams(location.search).get('layout') || 'expanded';
     const snapshot = {
       folderName: 'KaratePlugin', folderPath: '/workspace/KaratePlugin', folders: [{ name: 'KaratePlugin', path: '/workspace/KaratePlugin' }],
-      featureCount: 1, features: [{ path: 'users-api.feature', scenarios: [{ name: 'Create user returns 201', tags: ['@positive'], line: 8, status: 'Active', flakiness: .98, flakinessTier: 'stable', flakinessRuns: 12 }] }],
-      runs: [{ id: 'a13f9c2e-demo', timestamp: Date.now() - 120000, status: 'failed', summary: { passPercentage: 0, passed: 0, failed: 1 } }], findings: []
+      featureCount: 18,
+      features: [
+        { path: 'features/users/users-api.feature', scenarios: [{ name: 'Create user returns 201', tags: ['@smoke', '@positive'], line: 8, owner: 'API Platform', status: 'Active', zephyrKey: 'KAR-142', flakiness: .98, flakinessTier: 'stable', flakinessRuns: 24 }] },
+        { path: 'features/orders/order-lifecycle.feature', scenarios: [{ name: 'Submit and approve an order', tags: ['@regression'], line: 14, owner: 'Checkout', status: 'Active', zephyrKey: 'KAR-188', flakiness: .86, flakinessTier: 'watch', flakinessRuns: 18 }] }
+      ],
+      runs: [
+        { id: 'a13f9c2e-demo', timestamp: Date.now() - 120000, status: 'failed', summary: { totalScenarios: 48, passPercentage: 94, passed: 45, failed: 3, executionTime: '1m 42s' } },
+        { id: '7e41b986-demo', timestamp: Date.now() - 86400000, status: 'success', summary: { totalScenarios: 48, passPercentage: 100, passed: 48, failed: 0, executionTime: '1m 36s' } }
+      ],
+      findings: [
+        { id: 'finding-1', title: 'Add coverage for DELETE /users/{id}', state: 'New', severity: 'High', source: 'coverage' },
+        { id: 'finding-2', title: 'Review changed order response schema', state: 'Investigating', severity: 'Medium', source: 'spec-diff' },
+        { id: 'finding-3', title: 'Stabilise payment retry scenario', state: 'Fixed', severity: 'Medium', source: 'flakiness' }
+      ]
     };
     window.acquireVsCodeApi = () => ({
       postMessage(message) {
         if (message.command === 'getManagementSnapshot') setTimeout(() => window.postMessage({ type: 'managementSnapshot', data: snapshot }, '*'), 0);
         if (message.command === 'getTemplates') setTimeout(() => window.postMessage({ type: 'templates', data: [] }, '*'), 0);
         if (message.command === 'getHistory') setTimeout(() => window.postMessage({ type: 'history', data: [] }, '*'), 0);
-        if (message.command === 'managementReady') setTimeout(() => window.postMessage({ type: 'navigateManagement', area: 'create' }, '*'), 10);
+        if (message.command === 'managementReady') setTimeout(() => window.postMessage({ type: 'navigateManagement', area: 'overview' }, '*'), 10);
       },
       getState() { return undefined; },
       setState(state) { return state; }

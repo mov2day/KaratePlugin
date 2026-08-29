@@ -1,11 +1,19 @@
 {
   "name": "karate-test-generator",
-  "displayName": "Karate API Test Generator",
-  "description": "Professional Karate Test Generator & Maintenance with Multi-AI - Transform OpenAPI, Postman, Confluence, GraphQL, and Jira into automated tests",
+  "displayName": "Karate Test Management",
+  "description": "Generate, run, manage, and improve Karate API tests from one professional VS Code workspace",
   "version": "2.0.0",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
+  "homepage": "https://github.com/mov2day/KaratePlugin#readme",
+  "bugs": {
+    "url": "https://github.com/mov2day/KaratePlugin/issues"
+  },
+  "galleryBanner": {
+    "color": "#17191c",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.108.0"
   },
@@ -19,40 +27,28 @@
     "karate",
     "karate dsl",
     "karate api",
+    "karate test management",
     "api testing",
-    "api test generator",
+    "test management",
+    "test execution",
     "openapi",
     "swagger",
-    "openapi test generator",
     "rest api testing",
     "bdd",
-    "qa automation",
     "contract testing",
     "test automation",
+    "qa automation",
     "postman",
-    "postman converter",
-    "postman to karate",
-    "postman to karate converter",
-    "postman migration",
-    "postman migration to karate",
-    "AI Test Generator",
-    "AI Test Automation",
-    "AI Test Automation for API",
-    "GitHub Copilot",
-    "AI",
-    "contract testing",
-    "automated testing",
-    "Karate DSL",
-    "Gherkin",
-    "Karate executor",
-    "Karate test runner",
-    "Karate test report",
-    "Karate test coverage",
+    "graphql",
+    "har",
+    "maven",
+    "gradle",
+    "zephyr scale",
+    "api test coverage",
     "api bug hunter",
-    "api fuzzing",
-    "api security testing",
-    "owasp api security",
-    "openapi fuzz testing"
+    "github copilot",
+    "ai test generation",
+    "gherkin"
   ],
   "repository": {
     "type": "git",
@@ -75,7 +71,7 @@
       },
       {
         "command": "karate-dsl.openPanel",
-        "title": "Karate: Open Test Generator"
+        "title": "Karate: Open Test Management"
       },
       {
         "command": "karate-dsl.generateFromExplorer",
