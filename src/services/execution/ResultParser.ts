@@ -132,14 +132,16 @@ export class ResultParser {
             }
         }
 
-        const relativePath = path.relative(workingDirectory, featureData.packageQualifiedName || featureData.relativePath || featureData.name || '');
+        const reportedPath = featureData.relativePath || '';
+        const relativePath = reportedPath || `${String(featureData.packageQualifiedName || featureData.name || '').replace(/\./g, path.sep)}.feature`;
+        const absolutePath = path.resolve(workingDirectory, relativePath);
 
         logger.info(`[ResultParser] Parsed feature: ${featureData.name}, scenarios: ${scenarios.length}, passed: ${passed}, failed: ${failed}`);
 
         return {
             name: featureData.name || path.basename(relativePath, '.feature'),
             relativePath: featureData.relativePath || relativePath,
-            absolutePath: featureData.packageQualifiedName || '',
+            absolutePath,
             scenarios,
             duration: featureData.durationMillis || 0,
             passed,
@@ -323,7 +325,7 @@ export class ResultParser {
      * This is more robust than hardcoding paths since Karate's output structure can vary
      * Note: Karate 1.5+ uses karate-summary-json.txt, older versions use karate-summary.json
      */
-    static findReportDirectory(workingDirectory: string): string | null {
+    static findReportDirectory(workingDirectory: string, minimumModifiedTime: number = 0): string | null {
         // Start by looking in common build output directories
         const searchRoots = [
             path.join(workingDirectory, 'target'),
@@ -344,7 +346,7 @@ export class ResultParser {
             logger.info(`[ResultParser] Searching recursively in: ${searchRoot}`);
 
             for (const filename of summaryFilenames) {
-                const summaryFile = this.findFileRecursive(searchRoot, filename, 5); // Max 5 levels deep
+                const summaryFile = this.findFileRecursive(searchRoot, filename, 5, 0, minimumModifiedTime); // Max 5 levels deep
 
                 if (summaryFile) {
                     const reportDir = path.dirname(summaryFile);
@@ -361,7 +363,7 @@ export class ResultParser {
     /**
      * Recursively search for a file within a directory
      */
-    private static findFileRecursive(dir: string, filename: string, maxDepth: number, currentDepth: number = 0): string | null {
+    private static findFileRecursive(dir: string, filename: string, maxDepth: number, currentDepth: number = 0, minimumModifiedTime: number = 0): string | null {
         if (currentDepth > maxDepth) {
             return null;
         }
@@ -373,6 +375,7 @@ export class ResultParser {
             for (const entry of entries) {
                 if (entry.isFile() && entry.name === filename) {
                     const foundPath = path.join(dir, entry.name);
+                    if (fs.statSync(foundPath).mtimeMs + 1000 < minimumModifiedTime) continue;
                     logger.info(`[ResultParser] Found ${filename} at: ${foundPath}`);
                     return foundPath;
                 }
@@ -382,7 +385,7 @@ export class ResultParser {
             for (const entry of entries) {
                 if (entry.isDirectory() && !entry.name.startsWith('.')) { // Skip hidden directories
                     const subdirPath = path.join(dir, entry.name);
-                    const result = this.findFileRecursive(subdirPath, filename, maxDepth, currentDepth + 1);
+                    const result = this.findFileRecursive(subdirPath, filename, maxDepth, currentDepth + 1, minimumModifiedTime);
                     if (result) {
                         return result;
                     }

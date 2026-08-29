@@ -1,11 +1,15 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { randomUUID } from 'crypto';
 import { TestExecutionOptions, TestExecutionResult } from '../../types';
-import { BuildToolExecutor, BuildToolConfig } from './BuildToolExecutor';
+import { BuildToolExecutor } from './BuildToolExecutor';
 import { KarateCliExecutor } from './KarateCliExecutor';
 import { ResultParser } from './ResultParser';
 import { logger } from '../../utils/logger';
+import { ProjectExecutionResolver } from './ProjectExecutionResolver';
+import { readExecutionSettings } from './ExecutionSettings';
+import { ProcessResult } from './ProcessRunner';
 
 /**
  * Main orchestrator for Karate test execution
@@ -29,78 +33,39 @@ export class TestExecutor {
         logger.info(`Target: ${JSON.stringify(options.target)}`);
         logger.info(`Build tool: ${options.buildTool}`);
 
-        // Debug: log user configuration
-        const execConfig = vscode.workspace.getConfiguration('karateDsl.execution');
-        const systemProps = execConfig.get<Record<string, string>>('systemProperties', {});
-        const userJvmArgs = execConfig.get<string[]>('jvmArgs', []);
-        const userKarateArgs = execConfig.get<string[]>('karateArgs', []);
-        logger.info(`[DEBUG] User systemProperties: ${JSON.stringify(systemProps)}`);
-        logger.info(`[DEBUG] User jvmArgs: ${JSON.stringify(userJvmArgs)}`);
-        logger.info(`[DEBUG] User karateArgs: ${JSON.stringify(userKarateArgs)}`);
-        logger.info(`[DEBUG] options.environment: ${options.environment || '(not set)'}`);
         try {
-            // Determine working directory
-            const workingDirectory = options.workingDirectory || this.getWorkspaceRoot();
-            if (!workingDirectory) {
+            const workspaceRoot = options.workingDirectory || this.getWorkspaceRoot(options);
+            if (!workspaceRoot) {
                 throw new Error('No workspace folder found. Please open a workspace.');
             }
-
-            // Execute tests based on build tool preference
-            let success = false;
-            let output = '';
-
-            if (options.buildTool === 'cli') {
-                // Use direct CLI execution
-                ({ success, output } = await KarateCliExecutor.execute(
-                    { ...options, workingDirectory },
-                    this.extensionPath,
-                    cancellationToken
-                ));
+            const settings = readExecutionSettings(this.getSettingsScope(options, workspaceRoot));
+            const project = ProjectExecutionResolver.resolve(options, workspaceRoot, settings);
+            const resolvedOptions: TestExecutionOptions = {
+                ...options,
+                buildTool: project.strategy,
+                workingDirectory: project.projectRoot,
+                runnerClass: project.runnerClass,
+                runnerMethod: project.runnerMethod,
+                configDir: project.configDir
+            };
+            const outputDirectory = path.join(project.projectRoot, 'target', 'karate-plugin-runs', executionId);
+            fs.mkdirSync(outputDirectory, { recursive: true });
+            let processResult: ProcessResult;
+            if (project.strategy === 'cli') {
+                processResult = await KarateCliExecutor.execute(resolvedOptions, this.extensionPath, project, settings, outputDirectory, cancellationToken);
             } else {
-                // Try to detect and use build tool
-                const buildConfig = BuildToolExecutor.detectBuildTool(workingDirectory);
-
-                if (buildConfig) {
-                    const preferredTool = options.buildTool || buildConfig.toolType;
-
-                    if (preferredTool === 'maven' && buildConfig.toolType === 'maven') {
-                        ({ success, output } = await BuildToolExecutor.executeMaven(
-                            { ...options, workingDirectory },
-                            buildConfig,
-                            cancellationToken
-                        ));
-                    } else if (preferredTool === 'gradle' && buildConfig.toolType === 'gradle') {
-                        ({ success, output } = await BuildToolExecutor.executeGradle(
-                            { ...options, workingDirectory },
-                            buildConfig,
-                            cancellationToken
-                        ));
-                    } else {
-                        // Fallback to CLI if preferred tool doesn't match detected
-                        ({ success, output } = await KarateCliExecutor.execute(
-                            { ...options, workingDirectory },
-                            this.extensionPath,
-                            cancellationToken
-                        ));
-                    }
-                } else {
-                    // No build tool found, use CLI
-                    logger.info('No build tool detected, using Karate CLI');
-                    ({ success, output } = await KarateCliExecutor.execute(
-                        { ...options, workingDirectory },
-                        this.extensionPath,
-                        cancellationToken
-                    ));
-                }
+                const plan = project.strategy === 'maven'
+                    ? BuildToolExecutor.buildMavenPlan(resolvedOptions, project, settings, outputDirectory)
+                    : BuildToolExecutor.buildGradlePlan(resolvedOptions, project, settings, outputDirectory);
+                processResult = await BuildToolExecutor.execute(plan, cancellationToken);
             }
 
-            // Parse results - findReportDirectory now recursively searches for karate-summary.json
-            const reportDir = ResultParser.findReportDirectory(workingDirectory);
+            const reportDir = ResultParser.findReportDirectory(outputDirectory, startTime);
             logger.info(`Report directory found: ${reportDir}`);
 
             if (!reportDir) {
-                logger.warn('Could not find karate-summary.json in target or build directories');
-                return this.createErrorResult(executionId, startTime, options, 'Report file not found. Test may have failed to execute.');
+                const detail = this.outputTail(processResult.output);
+                return this.createErrorResult(executionId, startTime, resolvedOptions, `Karate did not produce a report${processResult.exitCode === null ? '' : ` (exit ${processResult.exitCode})`}.${detail}`);
             }
 
             const summaryFile = ResultParser.findSummaryFile(reportDir);
@@ -108,18 +73,24 @@ export class TestExecutor {
 
             if (!summaryFile) {
                 logger.warn('Report directory found but karate-summary.json is missing');
-                return this.createErrorResult(executionId, startTime, options, 'Summary file not found in report directory');
+                return this.createErrorResult(executionId, startTime, resolvedOptions, 'Summary file not found in this execution report directory');
             }
 
             // Parse the summary
-            const parsedResult = ResultParser.parseKarateSummary(summaryFile, workingDirectory);
+            const parsedResult = ResultParser.parseKarateSummary(summaryFile, project.projectRoot);
+            if (parsedResult.summary!.totalScenarios === 0) {
+                return this.createErrorResult(executionId, startTime, resolvedOptions, 'No scenarios matched the selected feature, line, folder, or tags.');
+            }
+            if (!processResult.success && parsedResult.status === 'success') {
+                return this.createErrorResult(executionId, startTime, resolvedOptions, `The ${project.strategy} process failed even though its report contained no failed scenario.${this.outputTail(processResult.output)}`);
+            }
 
             // Build final result
             const duration = Date.now() - startTime;
             const result: TestExecutionResult = {
                 id: executionId,
                 timestamp: startTime,
-                options,
+                options: resolvedOptions,
                 summary: parsedResult.summary!,
                 features: parsedResult.features!,
                 duration,
@@ -132,6 +103,7 @@ export class TestExecutor {
             return result;
 
         } catch (error) {
+            if (error instanceof vscode.CancellationError) throw error;
             logger.error('Test execution failed', error as Error);
 
             // Provide more specific error messages
@@ -180,12 +152,28 @@ export class TestExecutor {
     /**
      * Get workspace root directory
      */
-    private getWorkspaceRoot(): string | undefined {
+    private getWorkspaceRoot(options?: TestExecutionOptions): string | undefined {
+        const target = options && (Array.isArray(options.target) ? options.target[0] : options.target);
+        if (target) {
+            const legacyPath = target.replace(/:(\d+)$/, '');
+            const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(legacyPath));
+            if (folder) return folder.uri.fsPath;
+        }
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (workspaceFolders && workspaceFolders.length > 0) {
             return workspaceFolders[0].uri.fsPath;
         }
         return undefined;
+    }
+
+    private getSettingsScope(options: TestExecutionOptions, workspaceRoot: string): string {
+        const target = Array.isArray(options.target) ? options.target[0] : options.target;
+        return target ? target.replace(/:(\d+)$/, '') : workspaceRoot;
+    }
+
+    private outputTail(output: string): string {
+        const lines = output.trim().split(/\r?\n/).filter(Boolean).slice(-12);
+        return lines.length ? `\n${lines.join('\n')}` : '';
     }
 
     /**

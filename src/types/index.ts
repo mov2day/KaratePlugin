@@ -71,12 +71,17 @@ export interface ConfluenceTestCase {
 // Test Execution Types
 export interface TestExecutionOptions {
     type: 'feature' | 'features' | 'folder' | 'tags' | 'scenario';
-    target: string | string[]; // file path(s), folder path, or scenario identifier
+    target: string | string[]; // file path(s) or folder path; scenario metadata is kept separately
     tags?: string[]; // for tag-based execution
     environment?: string; // e.g., 'dev', 'staging', 'prod'
-    buildTool?: 'maven' | 'gradle' | 'cli'; // execution method
+    buildTool?: 'auto' | 'maven' | 'gradle' | 'cli'; // execution method
     parallel?: number; // parallel thread count
     workingDirectory?: string; // project root for build tools
+    scenarioLine?: number; // one-based source line for exact scenario execution
+    scenarioName?: string; // display/debug identity; line remains authoritative
+    runnerClass?: string; // explicit Java runner override for Maven/Gradle
+    runnerMethod?: string; // optional JUnit runner method override
+    configDir?: string; // directory containing karate-config.js
 }
 
 export interface TestExecutionResult {

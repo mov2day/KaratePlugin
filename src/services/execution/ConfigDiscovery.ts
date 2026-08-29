@@ -25,8 +25,8 @@ interface DiscoveredFile {
 
 /**
  * Centralized config file discovery for Karate projects
- * Uses VS Code workspace search for universal discovery across any project structure
- * Includes LLM-powered execution parameter suggestions
+ * Discovery is scoped to one resolved project root. Execution must remain
+ * deterministic: AI suggestions are never part of command construction.
  */
 export class ConfigDiscovery {
 
@@ -136,31 +136,14 @@ export class ConfigDiscovery {
             }
         }
 
-        // Use VS Code workspace search to find all karate-config files
+        // Search only the resolved project. Workspace-wide searches can cross
+        // multi-root boundaries and select a sibling project's configuration.
         if (!config.configJsPath) {
-            const configFiles = await this.findFilesInWorkspace('**/karate-config.{js,java}');
-            if (configFiles.length > 0) {
-                // Prefer the one closest to workingDir, or in standard locations
-                config.configJsPath = this.selectBestConfig(configFiles, workingDir);
-                logger.info(`Found ${configFiles.length} karate-config files, selected: ${config.configJsPath}`);
-            }
+            config.configJsPath = this.findConfigFileSync(workingDir);
         }
 
-        // Find runner classes via workspace search
-        const runnerFiles = await this.findFilesInWorkspace('**/*Runner.java');
-        const testRunnerFiles = await this.findFilesInWorkspace('**/*Test.java');
-        const allRunnerFiles = [...runnerFiles, ...testRunnerFiles];
-
-        for (const file of allRunnerFiles) {
-            const content = fs.readFileSync(file.fsPath, 'utf-8');
-            if (this.isKarateRunner(content)) {
-                const className = this.extractClassName(file.fsPath, workingDir);
-                if (className && !config.runnerClasses.includes(className)) {
-                    config.runnerClasses.push(className);
-                }
-            }
-        }
-        logger.info(`Found ${config.runnerClasses.length} Karate runner classes via workspace search`);
+        config.runnerClasses = this.findRunnerClasses(workingDir);
+        logger.info(`Found ${config.runnerClasses.length} Karate runner classes in resolved project`);
 
         // Build classpath entries
         config.classpathEntries = this.buildClasspath(workingDir, config.configJsPath);
@@ -189,194 +172,6 @@ export class ConfigDiscovery {
         })}`);
 
         return config;
-    }
-
-    /**
-     * Use LLM to analyze project and suggest optimal execution parameters
-     */
-    static async suggestExecutionParams(
-        workingDir: string,
-        featurePath: string,
-        config: KarateConfig
-    ): Promise<{ classpath: string[]; javaArgs: string[]; karateArgs: string[] }> {
-        const result = {
-            classpath: [...config.classpathEntries],
-            javaArgs: [] as string[],
-            karateArgs: [] as string[]
-        };
-
-        try {
-            // Import CopilotService dynamically
-            const { CopilotService } = await import('../copilotService');
-            const isAvailable = await CopilotService.isCopilotAvailable();
-
-            if (!isAvailable) {
-                logger.info('Copilot not available, using default execution params');
-                return result;
-            }
-
-            // Gather project context
-            const projectInfo = await this.gatherProjectContext(workingDir, featurePath, config);
-
-            // Ask LLM for execution suggestions
-            const prompt = `Analyze this Karate project structure and suggest optimal execution parameters:
-
-PROJECT CONTEXT:
-${projectInfo}
-
-CURRENT CONFIG:
-- Config file: ${config.configJsPath || 'Not found'}
-- Runner classes: ${config.runnerClasses.join(', ') || 'None found'}
-- Classpath entries: ${config.classpathEntries.length} directories
-- Feature to run: ${featurePath}
-
-TASK: Suggest the best execution approach. Return JSON only:
-{
-  "additionalClasspath": ["any additional directories needed"],
-  "javaArgs": ["-D flags if needed"],
-  "karateArgs": ["--tags, --threads, etc if needed"],
-  "reasoning": "brief explanation"
-}`;
-
-            const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
-            if (models.length > 0) {
-                const messages = [vscode.LanguageModelChatMessage.User(prompt)];
-                const response = await models[0].sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
-
-                let responseText = '';
-                for await (const fragment of response.text) {
-                    responseText += fragment;
-                }
-
-                // Parse JSON from response
-                const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    const suggestions = JSON.parse(jsonMatch[0]);
-
-                    if (suggestions.additionalClasspath) {
-                        for (const cp of suggestions.additionalClasspath) {
-                            const fullPath = path.isAbsolute(cp) ? cp : path.join(workingDir, cp);
-                            if (fs.existsSync(fullPath) && !result.classpath.includes(fullPath)) {
-                                result.classpath.push(fullPath);
-                            }
-                        }
-                    }
-
-                    if (suggestions.javaArgs) {
-                        result.javaArgs.push(...suggestions.javaArgs);
-                    }
-
-                    if (suggestions.karateArgs) {
-                        result.karateArgs.push(...suggestions.karateArgs);
-                    }
-
-                    logger.info(`LLM execution suggestions: ${suggestions.reasoning || 'No reasoning provided'}`);
-                }
-            }
-        } catch (error) {
-            logger.warn('Failed to get LLM execution suggestions', error as Error);
-        }
-
-        return result;
-    }
-
-    /**
-     * Gather project context for LLM analysis
-     */
-    private static async gatherProjectContext(
-        workingDir: string,
-        featurePath: string,
-        config: KarateConfig
-    ): Promise<string> {
-        const lines: string[] = [];
-
-        // List key directories
-        lines.push('Directory Structure:');
-        const dirs = ['src', 'test', 'tests', 'target', 'build'];
-        for (const dir of dirs) {
-            const fullPath = path.join(workingDir, dir);
-            if (fs.existsSync(fullPath)) {
-                lines.push(`  /${dir}/ exists`);
-                // List first-level subdirs
-                try {
-                    const subdirs = fs.readdirSync(fullPath, { withFileTypes: true })
-                        .filter(d => d.isDirectory())
-                        .map(d => d.name)
-                        .slice(0, 5);
-                    if (subdirs.length > 0) {
-                        lines.push(`    subdirs: ${subdirs.join(', ')}`);
-                    }
-                } catch { /* ignore */ }
-            }
-        }
-
-        // Check for build files
-        const buildFiles = ['pom.xml', 'build.gradle', 'build.gradle.kts', 'package.json'];
-        lines.push('\nBuild Files:');
-        for (const file of buildFiles) {
-            if (fs.existsSync(path.join(workingDir, file))) {
-                lines.push(`  ${file} found`);
-            }
-        }
-
-        // Feature file location
-        lines.push(`\nFeature File: ${path.relative(workingDir, featurePath)}`);
-
-        // Config file content preview (if exists)
-        if (config.configJsPath && fs.existsSync(config.configJsPath)) {
-            lines.push(`\nConfig File (${path.basename(config.configJsPath)}) preview:`);
-            const content = fs.readFileSync(config.configJsPath, 'utf-8');
-            lines.push(content.substring(0, 500) + (content.length > 500 ? '...' : ''));
-        }
-
-        return lines.join('\n');
-    }
-
-    /**
-     * Find files using VS Code workspace API - searches entire workspace
-     */
-    private static async findFilesInWorkspace(pattern: string): Promise<vscode.Uri[]> {
-        try {
-            const files = await vscode.workspace.findFiles(pattern, '**/node_modules/**', 100);
-            return files;
-        } catch (error) {
-            logger.error(`Workspace search failed for pattern: ${pattern}`, error as Error);
-            return [];
-        }
-    }
-
-    /**
-     * Select the best config file from multiple found
-     */
-    private static selectBestConfig(files: vscode.Uri[], workingDir: string): string {
-        // Priority: closest to workingDir, then standard locations
-        const priorityPaths = [
-            'src/test/java/karate-config.js',
-            'src/test/resources/karate-config.js',
-            'karate-config.js'
-        ];
-
-        // Check priority paths first
-        for (const priority of priorityPaths) {
-            const match = files.find(f => f.fsPath.endsWith(priority.replace(/\//g, path.sep)));
-            if (match) {
-                return match.fsPath;
-            }
-        }
-
-        // Otherwise, find the one closest to the workingDir
-        let bestFile = files[0].fsPath;
-        let shortestRelative = path.relative(workingDir, files[0].fsPath).length;
-
-        for (const file of files) {
-            const relative = path.relative(workingDir, file.fsPath);
-            if (relative.length < shortestRelative) {
-                shortestRelative = relative.length;
-                bestFile = file.fsPath;
-            }
-        }
-
-        return bestFile;
     }
 
     /**
@@ -461,7 +256,7 @@ TASK: Suggest the best execution approach. Return JSON only:
         for (const searchDir of searchDirs) {
             const fullPath = path.join(workingDir, searchDir);
             if (fs.existsSync(fullPath)) {
-                const found = this.findRunnersInDir(fullPath, fullPath);
+                const found = this.findRunnersInDir(fullPath);
                 runners.push(...found);
             }
         }
@@ -472,7 +267,7 @@ TASK: Suggest the best execution approach. Return JSON only:
     /**
      * Find runners recursively in a directory
      */
-    private static findRunnersInDir(dir: string, baseDir: string): string[] {
+    private static findRunnersInDir(dir: string): string[] {
         const runners: string[] = [];
 
         try {
@@ -484,13 +279,13 @@ TASK: Suggest the best execution approach. Return JSON only:
                 if (entry.isDirectory()) {
                     const skipDirs = ['node_modules', '.git', 'target', 'build', 'out'];
                     if (!skipDirs.includes(entry.name)) {
-                        runners.push(...this.findRunnersInDir(fullPath, baseDir));
+                        runners.push(...this.findRunnersInDir(fullPath));
                     }
                 } else if (entry.isFile() && entry.name.endsWith('.java')) {
                     try {
                         const content = fs.readFileSync(fullPath, 'utf-8');
                         if (this.isKarateRunner(content)) {
-                            const className = this.extractClassName(fullPath, path.dirname(baseDir));
+                            const className = this.extractClassName(content, fullPath);
                             if (className) {
                                 runners.push(className);
                             }
@@ -521,28 +316,11 @@ TASK: Suggest the best execution approach. Return JSON only:
     /**
      * Extract fully qualified class name from file path
      */
-    private static extractClassName(filePath: string, baseDir: string): string | undefined {
-        // Find java source root
-        const javaRoots = ['src/test/java', 'src/main/java', 'test', 'tests'];
-
-        for (const root of javaRoots) {
-            const rootPath = path.join(baseDir, root);
-            if (filePath.startsWith(rootPath)) {
-                const relativePath = path.relative(rootPath, filePath);
-                return relativePath
-                    .replace(/\\/g, '/')
-                    .replace(/\.java$/, '')
-                    .replace(/\//g, '.');
-            }
-        }
-
-        // Fallback: try to extract from file path structure
-        const match = filePath.match(/(?:java|test|tests)[\/\\](.+)\.java$/);
-        if (match) {
-            return match[1].replace(/[\/\\]/g, '.');
-        }
-
-        return undefined;
+    private static extractClassName(content: string, filePath: string): string | undefined {
+        const className = content.match(/\b(?:class|record)\s+([A-Za-z_$][\w$]*)/)?.[1] || path.basename(filePath, '.java');
+        if (!className) return undefined;
+        const packageName = content.match(/\bpackage\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*;/)?.[1];
+        return packageName ? `${packageName}.${className}` : className;
     }
 
     /**
@@ -649,8 +427,9 @@ TASK: Suggest the best execution approach. Return JSON only:
             }
         }
 
-        // Return the first runner as fallback
-        return runners[0];
+        // A single project runner is safe. Multiple unmatched runners are
+        // ambiguous and must be resolved by an explicit runnerClass setting.
+        return runners.length === 1 ? runners[0] : undefined;
     }
 
     /**

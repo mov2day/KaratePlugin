@@ -2,9 +2,13 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as https from 'https';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
 import { TestExecutionOptions } from '../../types';
 import { logger } from '../../utils/logger';
+import { buildKarateArguments } from './ExecutionArguments';
+import { ExecutionRuntimeSettings, readExecutionSettings } from './ExecutionSettings';
+import { ProcessResult, ProcessRunner } from './ProcessRunner';
+import { ResolvedExecutionProject } from './ProjectExecutionResolver';
 
 /**
  * Direct Karate CLI executor using standalone JAR
@@ -26,17 +30,17 @@ export class KarateCliExecutor {
         return path.join(extensionPath, 'lib', `karate-${version}.jar`);
     }
 
-    private static resolveJar(extensionPath: string): KarateJarResolution {
-        const config = vscode.workspace.getConfiguration('karateDsl.execution');
-        const configuredPath = (config.get<string>('jarPath', '') || '').trim();
+    private static resolveJar(extensionPath: string, settings?: ExecutionRuntimeSettings, projectRoot?: string): KarateJarResolution {
+        const scope = projectRoot || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || extensionPath;
+        const resolvedSettings = settings || readExecutionSettings(scope);
+        const configuredPath = (resolvedSettings.jarPath || '').trim();
         if (configuredPath) {
-            const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath || extensionPath;
-            const jarPath = path.isAbsolute(configuredPath) ? configuredPath : path.join(workspaceRoot, configuredPath);
+            const jarPath = path.isAbsolute(configuredPath) ? configuredPath : path.join(scope, configuredPath);
             const version = path.basename(jarPath).match(/^karate-(.+)\.jar$/)?.[1] || 'custom';
             return { jarPath, version, bundled: false, customPath: true };
         }
 
-        const configuredVersion = (config.get<string>('karateVersion', '') || '').trim();
+        const configuredVersion = (resolvedSettings.karateVersion || '').trim();
         if (configuredVersion) {
             return {
                 jarPath: this.getJarPath(extensionPath, configuredVersion),
@@ -57,8 +61,8 @@ export class KarateCliExecutor {
     /**
      * Check if Karate JAR exists, download if needed
      */
-    static async ensureKarateJar(extensionPath: string): Promise<KarateJarResolution> {
-        const selected = this.resolveJar(extensionPath);
+    static async ensureKarateJar(extensionPath: string, settings?: ExecutionRuntimeSettings, projectRoot?: string): Promise<KarateJarResolution> {
+        const selected = this.resolveJar(extensionPath, settings, projectRoot);
 
         if (selected.customPath) {
             if (!fs.existsSync(selected.jarPath)) {
@@ -89,8 +93,8 @@ export class KarateCliExecutor {
     /**
      * Clear JAR cache - useful for troubleshooting
      */
-    static clearJarCache(extensionPath: string): boolean {
-        const selected = this.resolveJar(extensionPath);
+    static clearJarCache(extensionPath: string, projectRoot?: string): boolean {
+        const selected = this.resolveJar(extensionPath, undefined, projectRoot);
         if (selected.bundled) {
             return false;
         }
@@ -260,196 +264,33 @@ export class KarateCliExecutor {
     static async execute(
         options: TestExecutionOptions,
         extensionPath: string,
+        project: ResolvedExecutionProject,
+        settings: ExecutionRuntimeSettings,
+        outputDirectory: string,
         cancellationToken?: vscode.CancellationToken
-    ): Promise<{ success: boolean; output: string }> {
-        // Ensure JAR is available
-        const jar = await this.ensureKarateJar(extensionPath);
+    ): Promise<ProcessResult> {
+        const jar = await this.ensureKarateJar(extensionPath, settings, project.projectRoot);
         await this.ensureJavaVersion(jar.version);
-
-        // Use ConfigDiscovery for comprehensive classpath handling
-        const workingDir = options.workingDirectory || '';
-
-        // Import ConfigDiscovery dynamically to avoid circular dependencies
         const { ConfigDiscovery } = await import('./ConfigDiscovery');
-
-        // Use async discovery for comprehensive workspace search
-        const karateConfig = await ConfigDiscovery.discoverAsync(workingDir);
-
-        // Log discovered config
+        const karateConfig = await ConfigDiscovery.discoverAsync(project.projectRoot);
         logger.info(`Config discovery: configJs=${karateConfig.configJsPath}, runners=${karateConfig.runnerClasses.length}, classpath=${karateConfig.classpathEntries.length}`);
-
-        // Get LLM-powered execution suggestions for optimal parameters
-        const featurePath = typeof options.target === 'string' ? options.target : (options.target as string[])[0] || '';
-        let executionParams = {
-            classpath: karateConfig.classpathEntries,
-            javaArgs: [] as string[],
-            karateArgs: [] as string[]
-        };
-
-        try {
-            executionParams = await ConfigDiscovery.suggestExecutionParams(workingDir, featurePath, karateConfig);
-            logger.info(`LLM suggested ${executionParams.javaArgs.length} Java args, ${executionParams.karateArgs.length} Karate args`);
-        } catch (error) {
-            logger.warn('LLM suggestion failed, using default params', error as Error);
+        const discoveredClasspath = karateConfig.classpathEntries;
+        for (const configured of settings.additionalClasspath) {
+            const fullPath = path.isAbsolute(configured) ? configured : path.join(project.projectRoot, configured);
+            if (!fs.existsSync(fullPath)) throw new Error(`Configured classpath entry was not found: ${fullPath}`);
+            if (!discoveredClasspath.includes(fullPath)) discoveredClasspath.push(fullPath);
         }
-
-        // Build command arguments - classpath MUST come before main class
-        const args: string[] = [];
-
-        // Add LLM-suggested Java args
-        args.push(...executionParams.javaArgs);
-
-        // Build classpath: include JAR and all discovered/suggested entries
-        const classpathEntries = [jar.jarPath, ...executionParams.classpath];
-        const classpathStr = classpathEntries.join(path.delimiter);
-        args.push('-cp', classpathStr);
-        logger.info(`Using classpath: ${classpathStr}`);
-
-        // Use Karate CLI main class
-        args.push('com.intuit.karate.Main');
-
-        // Add features/paths based on execution type
-        switch (options.type) {
-            case 'feature':
-                args.push(options.target as string);
-                break;
-
-            case 'features': {
-                const features = options.target as string[];
-                args.push(...features);
-                break;
-            }
-
-            case 'folder':
-                args.push(options.target as string);
-                break;
-
-            case 'tags':
-                if (options.tags && options.tags.length > 0) {
-                    args.push('--tags');
-                    const tagFilter = options.tags.map(t => `@${t.replace(/^@/, '')}`).join(',');
-                    args.push(tagFilter);
-                }
-                break;
-
-            case 'scenario': {
-                // For scenario execution, line-based targeting (:lineNumber) doesn't work reliably in Karate 1.5+
-                // Extract just the file path and run the whole feature
-                const target = options.target as string;
-                const filePath = target.split(':')[0];
-                args.push(filePath);
-                logger.info(`Running feature for scenario (line targeting removed): ${filePath}`);
-                break;
-            }
-        }
-
-        // Add parallel threads
-        if (options.parallel && options.parallel > 1) {
-            args.push('--threads', options.parallel.toString());
-        }
-
-        // Add user-configured parameters from settings
-        const execConfig = vscode.workspace.getConfiguration('karateDsl.execution');
-
-        // User system properties - ALL go as -D JVM flags (including karate.env)
-        const systemProperties = execConfig.get<Record<string, string>>('systemProperties', {});
-        for (const [key, value] of Object.entries(systemProperties)) {
-            args.unshift(`-D${key}=${value}`);
-        }
-        if (Object.keys(systemProperties).length > 0) {
-            logger.info(`User system properties: ${Object.entries(systemProperties).map(([k, v]) => `${k}=${v}`).join(', ')}`);
-        }
-
-        // Add environment: user systemProperties karate.env takes priority
-        // Also pass as --env flag for Karate CLI compatibility
-        if (systemProperties['karate.env']) {
-            args.push('--env', systemProperties['karate.env']);
-            logger.info(`Using user-configured karate.env: ${systemProperties['karate.env']}`);
-        } else if (options.environment) {
-            args.push('--env', options.environment);
-        }
-
-        // Add output directory
-        const outputDir = path.join(workingDir, 'target', 'karate-reports');
-        args.push('--output', outputDir);
-
-        // Add LLM-suggested Karate args
-        if (executionParams.karateArgs.length > 0) {
-            args.push(...executionParams.karateArgs);
-        }
-
-        // User JVM args (insert before -cp)
-        const userJvmArgs = execConfig.get<string[]>('jvmArgs', []);
-        if (userJvmArgs.length > 0) {
-            args.unshift(...userJvmArgs);
-            logger.info(`User JVM args: ${userJvmArgs.join(' ')}`);
-        }
-
-        // User Karate CLI args (append at the end)
-        const userKarateArgs = execConfig.get<string[]>('karateArgs', []);
-        if (userKarateArgs.length > 0) {
-            args.push(...userKarateArgs);
-            logger.info(`User Karate args: ${userKarateArgs.join(' ')}`);
-        }
-
-        logger.info(`Karate output directory: ${outputDir}`);
-        logger.info(`Executing Karate CLI: java ${args.join(' ')}`);
-
-        return this.executeCommand('java', args, workingDir, cancellationToken);
-    }
-
-    /**
-     * Execute Java command
-     */
-    private static async executeCommand(
-        executable: string,
-        args: string[],
-        cwd: string,
-        cancellationToken?: vscode.CancellationToken
-    ): Promise<{ success: boolean; output: string }> {
-        return new Promise((resolve, reject) => {
-            let output = '';
-            let errorOutput = '';
-
-            const process: ChildProcess = spawn(executable, args, {
-                cwd,
-                shell: true
-            });
-
-            // Handle cancellation
-            if (cancellationToken) {
-                cancellationToken.onCancellationRequested(() => {
-                    process.kill();
-                    reject(new Error('Test execution cancelled by user'));
-                });
-            }
-
-            process.stdout?.on('data', (data) => {
-                const text = data.toString();
-                output += text;
-                logger.info(text);
-            });
-
-            process.stderr?.on('data', (data) => {
-                const text = data.toString();
-                errorOutput += text;
-                logger.error(text);
-            });
-
-            process.on('close', (code) => {
-                const fullOutput = output + '\n' + errorOutput;
-
-                if (code === 0) {
-                    resolve({ success: true, output: fullOutput });
-                } else {
-                    resolve({ success: false, output: fullOutput });
-                }
-            });
-
-            process.on('error', (error) => {
-                logger.error('Karate CLI execution error', error);
-                reject(error);
-            });
-        });
+        const args = [
+            ...settings.jvmArgs,
+            ...Object.entries(settings.systemProperties).map(([key, value]) => `-D${key}=${value}`),
+            '-cp', [jar.jarPath, ...discoveredClasspath].join(path.delimiter),
+            'com.intuit.karate.Main',
+            ...buildKarateArguments(options, project.configDir)
+        ];
+        const environment = settings.systemProperties['karate.env'] || options.environment;
+        if (environment) args.push('--env', environment);
+        args.push('--output', outputDirectory, ...settings.karateArgs);
+        logger.info(`Executing Karate CLI in ${project.projectRoot}; report output ${outputDirectory}`);
+        return ProcessRunner.run('java', args, project.projectRoot, cancellationToken);
     }
 }

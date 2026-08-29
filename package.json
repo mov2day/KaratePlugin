@@ -445,12 +445,13 @@
         "karateDsl.execution.defaultBuildTool": {
           "type": "string",
           "enum": [
+            "auto",
             "cli",
             "maven",
             "gradle"
           ],
-          "default": "cli",
-          "description": "Default build tool to use for test execution"
+          "default": "auto",
+          "description": "Execution strategy. Auto discovers the nearest Maven or Gradle module and otherwise uses the standalone CLI."
         },
         "karateDsl.execution.parallelThreads": {
           "type": "number",
@@ -474,7 +475,27 @@
         "karateDsl.execution.configPath": {
           "type": "string",
           "default": "",
-          "description": "Custom path to karate-config.js or Java runner class (relative to workspace root)"
+          "description": "Custom path to karate-config.js or its containing directory (relative to the discovered project root). Legacy Java class values remain supported."
+        },
+        "karateDsl.execution.runnerClass": {
+          "type": "string",
+          "default": "",
+          "description": "Fully-qualified Java runner class for Maven or Gradle execution. Leave blank to discover it from the project."
+        },
+        "karateDsl.execution.runnerMethod": {
+          "type": "string",
+          "default": "",
+          "description": "Optional JUnit runner method to execute within the configured runner class."
+        },
+        "karateDsl.execution.mavenGoal": {
+          "type": "string",
+          "default": "test",
+          "description": "Maven goal used for Karate execution, for example test or verify."
+        },
+        "karateDsl.execution.gradleTask": {
+          "type": "string",
+          "default": "test",
+          "description": "Gradle task used for Karate execution."
         },
         "karateDsl.execution.additionalClasspath": {
           "type": "array",
