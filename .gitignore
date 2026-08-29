@@ -4,3 +4,17 @@ out
 *.vsix
 .DS_Store
 .env
+/.agents
+/.karate-test-management
+
+# Generated build and UI preview artifacts
+/output/
+/target/
+
+# Local development and planning material
+/.codex/
+/.planning/
+/DEVELOPMENT.md
+/SETUP.md
+/design-qa.md
+/docs/RELEASE.md
