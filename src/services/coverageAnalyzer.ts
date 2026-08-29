@@ -240,7 +240,7 @@ Focus on:
             // Try AIProviderRegistry first (respects user's provider setting)
             const { AIProviderRegistry } = await import('./ai/AIProviderRegistry');
             const registry = AIProviderRegistry.getInstance();
-            const response = await registry.complete(prompt, { maxTokens: 2048, temperature: 0.3 });
+            const response = await registry.complete(prompt, { maxTokens: 2048, temperature: 0.3, task: 'generate-missing-test' });
 
             if (response) {
                 const scenarios = response
@@ -391,7 +391,7 @@ Focus on:
         try {
             const { AIProviderRegistry } = await import('./ai/AIProviderRegistry');
             const registry = AIProviderRegistry.getInstance();
-            const isAvailable = await registry.isAnyAvailable();
+            const isAvailable = await registry.isConfiguredProviderAvailable();
 
             if (isAvailable) {
                 const prompt = `Does this Karate test scenario test the endpoint ${method} ${endpoint.path}?
@@ -403,7 +403,8 @@ Answer ONLY "yes" or "no".`;
 
                 const response = await registry.complete(prompt, {
                     maxTokens: 10,
-                    temperature: 0
+                    temperature: 0,
+                    task: 'analyze-coverage'
                 });
 
                 const isMatch = response.trim().toLowerCase().startsWith('yes');

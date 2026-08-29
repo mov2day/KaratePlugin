@@ -131,7 +131,7 @@ export async function generateFromJira(context: vscode.ExtensionContext): Promis
             try {
                 const { AIProviderRegistry } = await import('../services/ai/AIProviderRegistry');
                 const registry = AIProviderRegistry.getInstance();
-                const isAvailable = await registry.isAnyAvailable();
+                const isAvailable = await registry.isConfiguredProviderAvailable();
 
                 if (isAvailable) {
                     progress.report({ message: 'Enhancing with AI...' });
@@ -148,7 +148,7 @@ RULES:
 - Return complete Karate feature file, no markdown
 
 Transform now:`,
-                        { maxTokens: 4096, temperature: 0.3 }
+                        { maxTokens: 4096, temperature: 0.3, task: 'generate-requirements' }
                     );
 
                     if (enhanced.trim()) {

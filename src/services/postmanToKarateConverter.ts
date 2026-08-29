@@ -668,26 +668,13 @@ Return ONLY the Karate assertion lines.`;
                 messages.push(vscode.default.LanguageModelChatMessage.User(prompt));
             }
 
-            const selector = await CopilotService['getChatModelSelector']();
-            const models = await vscode.default.lm.selectChatModels(selector);
-
-            if (models.length === 0) {
-                return this.convertTestScript(safeScript, variables);
-            }
-
-            const model = models[0];
-
-            // Pass script content as reference to avoid token limits
-            const response = await model.sendRequest(
-                messages,
-                {},
-                new vscode.default.CancellationTokenSource().token
-            );
-
-            let result = '';
-            for await (const fragment of response.text) {
-                result += fragment;
-            }
+            const { AIProviderRegistry } = await import('./ai/AIProviderRegistry');
+            const promptText = messages.map(message => message.content.toString()).join('\n\n');
+            const result = await AIProviderRegistry.getInstance().complete(promptText, {
+                maxTokens: 4096,
+                temperature: 0.2,
+                task: 'generate-postman'
+            });
 
             // Parse the response into assertion lines
             const assertions = result
@@ -820,26 +807,13 @@ NO explanations, NO code blocks, just the Karate statements.`;
                 messages.push(vscode.default.LanguageModelChatMessage.User(prompt));
             }
 
-            const selector = await CopilotService['getChatModelSelector']();
-            const models = await vscode.default.lm.selectChatModels(selector);
-
-            if (models.length === 0) {
-                return this.convertPreRequestScript(script);
-            }
-
-            const model = models[0];
-
-            // Pass script content as reference to avoid token limits
-            const response = await model.sendRequest(
-                messages,
-                {},
-                new vscode.default.CancellationTokenSource().token
-            );
-
-            let result = '';
-            for await (const fragment of response.text) {
-                result += fragment;
-            }
+            const { AIProviderRegistry } = await import('./ai/AIProviderRegistry');
+            const promptText = messages.map(message => message.content.toString()).join('\n\n');
+            const result = await AIProviderRegistry.getInstance().complete(promptText, {
+                maxTokens: 2048,
+                temperature: 0.2,
+                task: 'generate-postman'
+            });
 
             // Parse the response
             const lines = result

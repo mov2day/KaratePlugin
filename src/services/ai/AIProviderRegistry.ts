@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
-import { AIProvider, AIProviderId } from './AIProvider';
+import { AIModelDescriptor, AIProvider, AIProviderId, CompletionOptions } from './AIProvider';
 import { CopilotProvider } from './CopilotProvider';
 import { ClaudeAPIProvider } from './ClaudeAPIProvider';
 import { OllamaProvider } from './OllamaProvider';
 import { logger } from '../../utils/logger';
+import { KaratePromptComposer } from './KaratePromptComposer';
 
 /**
  * Thrown when user chooses "Continue without AI" — callers should
@@ -29,12 +30,14 @@ export class AIProviderRegistry {
     private static instance: AIProviderRegistry;
 
     private providers = new Map<AIProviderId, AIProvider>();
+    private copilotProvider: CopilotProvider;
     private claudeProvider: ClaudeAPIProvider;
     private statusBarItem: vscode.StatusBarItem | undefined;
     private aiSkippedForSession = false;
 
     private constructor() {
-        this.providers.set('copilot', new CopilotProvider());
+        this.copilotProvider = new CopilotProvider();
+        this.providers.set('copilot', this.copilotProvider);
         this.claudeProvider = new ClaudeAPIProvider();
         this.providers.set('claude-api', this.claudeProvider);
         this.providers.set('ollama', new OllamaProvider());
@@ -60,6 +63,7 @@ export class AIProviderRegistry {
      */
     initialize(context: vscode.ExtensionContext): void {
         this.claudeProvider.setSecretStorage(context.secrets);
+        this.copilotProvider.initialize(context);
     }
 
     /**
@@ -135,7 +139,7 @@ export class AIProviderRegistry {
     /**
      * Complete a prompt using the active provider with full error handling.
      */
-    async complete(prompt: string, opts?: { maxTokens?: number; temperature?: number; systemPrompt?: string }): Promise<string> {
+    async complete(prompt: string, opts: CompletionOptions = {}): Promise<string> {
         try {
             const provider = await this.getProvider();
             const configured = this.getConfiguredProviderId();
@@ -143,7 +147,11 @@ export class AIProviderRegistry {
                 ? ` (fallback from ${configured})`
                 : '';
             logger.info(`AI request via ${provider.name}${note}`);
-            return await provider.complete(prompt, opts);
+            const composed = KaratePromptComposer.compose(prompt, opts.task, opts.systemPrompt);
+            return await provider.complete(composed.prompt, {
+                ...opts,
+                systemPrompt: composed.systemPrompt
+            });
         } catch (error: any) {
             if (error instanceof AISkippedError) {
                 logger.info('AI skipped — returning empty response');
@@ -165,6 +173,14 @@ export class AIProviderRegistry {
         return false;
     }
 
+    async isConfiguredProviderAvailable(): Promise<boolean> {
+        const configured = this.getConfiguredProviderId();
+        if (configured === 'auto') {
+            return this.isAnyAvailable();
+        }
+        return this.providers.get(configured)?.isAvailable() ?? false;
+    }
+
     /**
      * Get all registered providers with their availability status
      */
@@ -180,9 +196,16 @@ export class AIProviderRegistry {
         return result;
     }
 
+    async getModels(providerId?: AIProviderId): Promise<AIModelDescriptor[]> {
+        const id = providerId ?? this.getConfiguredProviderId();
+        const resolvedId = id === 'auto' ? 'copilot' : id;
+        const provider = this.providers.get(resolvedId);
+        return provider?.listModels ? provider.listModels() : [];
+    }
+
     private getConfiguredProviderId(): AIProviderId | 'auto' {
         const config = vscode.workspace.getConfiguration('karateDsl');
-        const value = config.get<string>('ai.provider') || 'auto';
+        const value = config.get<string>('ai.provider') || 'copilot';
         if (value === 'auto' || value === 'copilot' || value === 'claude-api' || value === 'ollama') {
             return value;
         }

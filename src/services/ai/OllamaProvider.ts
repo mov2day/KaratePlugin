@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
-import { AIProvider, CompletionOptions } from './AIProvider';
+import { AIModelDescriptor, AIProvider, CompletionOptions } from './AIProvider';
 import { logger } from '../../utils/logger';
 
 /**
@@ -13,17 +13,25 @@ export class OllamaProvider implements AIProvider {
 
     async isAvailable(): Promise<boolean> {
         try {
-            const endpoint = this.getEndpoint();
-            const response = await axios.get(`${endpoint}/api/tags`, { timeout: 5000 });
-            return response.status === 200;
+            return (await this.listModels()).length > 0;
         } catch {
             return false;
         }
     }
 
+    async listModels(): Promise<AIModelDescriptor[]> {
+        const response = await axios.get(`${this.getEndpoint()}/api/tags`, { timeout: 5000 });
+        const models = Array.isArray(response.data?.models) ? response.data.models : [];
+        return models.map((model: any) => ({
+            id: String(model.model || model.name),
+            name: String(model.name || model.model),
+            family: model.details?.family
+        })).filter((model: AIModelDescriptor) => model.id.length > 0);
+    }
+
     async complete(prompt: string, opts?: CompletionOptions): Promise<string> {
         const endpoint = this.getEndpoint();
-        const model = this.getModel();
+        const model = await this.getModel();
 
         const body: Record<string, unknown> = {
             model,
@@ -57,8 +65,16 @@ export class OllamaProvider implements AIProvider {
         return config.get<string>('ai.ollamaEndpoint') || 'http://localhost:11434';
     }
 
-    private getModel(): string {
+    private async getModel(): Promise<string> {
         const config = vscode.workspace.getConfiguration('karateDsl');
-        return config.get<string>('ai.ollamaModel') || 'llama3';
+        const configured = config.get<string>('ai.ollamaModel', '').trim();
+        const models = await this.listModels();
+        if (configured && models.some(model => model.id === configured || model.name === configured)) {
+            return configured;
+        }
+        if (models.length === 0) {
+            throw new Error('Ollama is running but has no installed models. Pull a model before using AI enhancement.');
+        }
+        return models[0].id;
     }
 }

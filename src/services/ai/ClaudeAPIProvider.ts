@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
-import { AIProvider, CompletionOptions } from './AIProvider';
+import { AIModelDescriptor, AIProvider, CompletionOptions } from './AIProvider';
 import { logger } from '../../utils/logger';
 
 /**
@@ -12,6 +12,7 @@ export class ClaudeAPIProvider implements AIProvider {
     readonly name = 'Claude API (Anthropic)';
 
     private static readonly API_URL = 'https://api.anthropic.com/v1/messages';
+    private static readonly MODELS_URL = 'https://api.anthropic.com/v1/models';
     private static readonly SECRET_KEY = 'karateDsl.claude.apiKey';
     private static readonly API_VERSION = '2023-06-01';
 
@@ -27,6 +28,30 @@ export class ClaudeAPIProvider implements AIProvider {
     async isAvailable(): Promise<boolean> {
         const apiKey = await this.getApiKey();
         return !!apiKey;
+    }
+
+    async listModels(): Promise<AIModelDescriptor[]> {
+        const apiKey = await this.getApiKey();
+        if (!apiKey) {
+            return [];
+        }
+        try {
+            const response = await axios.get(ClaudeAPIProvider.MODELS_URL, {
+                headers: {
+                    'x-api-key': apiKey,
+                    'anthropic-version': ClaudeAPIProvider.API_VERSION
+                },
+                timeout: 10_000
+            });
+            const models = Array.isArray(response.data?.data) ? response.data.data : [];
+            return models.map((model: any) => ({
+                id: String(model.id),
+                name: String(model.display_name || model.id)
+            })).filter((model: AIModelDescriptor) => model.id.length > 0);
+        } catch (error) {
+            logger.warn('ClaudeAPIProvider: unable to discover models', error as Error);
+            return [];
+        }
     }
 
     async complete(prompt: string, opts?: CompletionOptions): Promise<string> {

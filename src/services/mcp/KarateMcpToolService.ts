@@ -184,6 +184,7 @@ export class KarateMcpToolService {
         const rawRepair = await registry.complete(prompt, {
             maxTokens: 4096,
             temperature: 0.2,
+            task: 'repair-scenario',
             systemPrompt: 'You are a Karate DSL test repair expert. Fix ONLY the broken scenario. Return the complete fixed Scenario block. Pure Karate DSL only. No markdown, no explanations.'
         });
 

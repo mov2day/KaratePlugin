@@ -18,6 +18,7 @@ export class AgentSkillsService {
     private static skillContentCache: Map<string, string> = new Map();
     private static isSupported: boolean | null = null;
     private static extensionPath: string = '';
+    private static readonly MAX_PROMPT_CONTEXT_CHARS = 8_000;
 
     /**
      * Set the extension path (called once during activation)
@@ -224,17 +225,18 @@ export class AgentSkillsService {
         hasCollection?: boolean;
     }): Promise<string[]> {
         const skills = await this.getAvailableSkills();
-        // All bundled skills are relevant for all contexts
-        const bundledSkillNames = [
-            'karate-dsl-reference',
-            'karate-test-patterns',
-            'karate-anti-patterns',
-            'karate-reusability'
-        ];
+        const skillsByContext: Record<typeof context.type, string[]> = {
+            openapi: ['karate-anti-patterns', 'karate-dsl-reference'],
+            postman: ['karate-dsl-reference', 'karate-anti-patterns'],
+            confluence: ['karate-anti-patterns', 'karate-test-patterns'],
+            combined: ['karate-anti-patterns', 'karate-dsl-reference'],
+            coverage: ['karate-anti-patterns'],
+            general: ['karate-dsl-reference']
+        };
 
         // Filter to only include skills that actually exist
         const existingSkills = skills.map(s => s.name);
-        return bundledSkillNames.filter(name => existingSkills.includes(name));
+        return skillsByContext[context.type].filter(name => existingSkills.includes(name));
     }
 
     /**
@@ -254,18 +256,22 @@ export class AgentSkillsService {
             return '';
         }
 
-        let context = '\n\n=== KARATE DSL KNOWLEDGE BASE ===\n';
-        context += 'Use the following reference material for accurate Karate test generation.\n\n';
+        let context = '\n\nKARATE TASK GUIDANCE\n';
+        context += 'Apply only the relevant rules below; preserve established workspace conventions.\n\n';
 
         for (const skill of relevantSkills) {
             const content = this.readSkillContent(skill.path);
             if (content) {
-                context += `--- ${skill.name} ---\n`;
-                context += content + '\n\n';
+                const remaining = this.MAX_PROMPT_CONTEXT_CHARS - context.length;
+                if (remaining <= 0) {
+                    break;
+                }
+                context += `${skill.name}\n`;
+                context += content.slice(0, remaining) + '\n\n';
             }
         }
 
-        context += '=== END KNOWLEDGE BASE ===\n';
+        context += 'END KARATE TASK GUIDANCE\n';
         return context;
     }
 

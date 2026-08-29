@@ -15,7 +15,7 @@ export class FlakinessFixService {
     async suggestFix(scenario: ScenarioFlakiness): Promise<string | undefined> {
         try {
             const registry = AIProviderRegistry.getInstance();
-            const isAvailable = await registry.isAnyAvailable();
+            const isAvailable = await registry.isConfiguredProviderAvailable();
 
             if (!isAvailable) {
                 logger.info('FlakinessFixService: no AI provider available, skipping suggestion');
@@ -26,6 +26,7 @@ export class FlakinessFixService {
             const result = await registry.complete(prompt, {
                 maxTokens: 1024,
                 temperature: 0.3,
+                task: 'analyze-flakiness',
                 systemPrompt: 'You are a QA automation expert specialising in Karate DSL test stabilisation. Suggest concrete fixes for flaky tests. Be specific and actionable. No markdown code blocks.'
             });
 

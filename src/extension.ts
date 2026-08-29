@@ -141,20 +141,10 @@ export async function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // Initialize Copilot transparency logger & models
+    // Initialize AI activity logging. Model discovery is intentionally deferred
+    // until a user starts an AI action so VS Code can handle consent correctly.
     const { CopilotService } = require('./services/copilotService');
     CopilotLogger.initialize(context);
-    CopilotService.initialize();
-
-    // Listen for model configuration changes to re-initialize
-    context.subscriptions.push(
-        vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('karateDsl.copilot.model')) {
-                logger.info('Copilot model configuration changed. Re-initializing...');
-                CopilotService.initialize();
-            }
-        })
-    );
 
     // Register webview provider
     const webviewProvider = new KarateWebviewProvider(context.extensionUri, context);
@@ -328,53 +318,65 @@ export async function activate(context: vscode.ExtensionContext) {
         'karate-dsl.selectCopilotModel',
         async () => {
             try {
-                // Get fresh list of available models
-                const { CopilotService } = await import('./services/copilotService');
-                const models = await CopilotService.getAvailableModels();
-
-                // Add current selection indicator
-                const { ConfigManager } = await import('./utils/configManager');
-                const current = ConfigManager.getCopilotModel();
-
-                const items = models.map(m => ({
-                    label: m,
-                    description: m === current ? '(Current)' : '',
-                    detail: m === 'gpt-5-mini' ? 'Recommended for speed' : (m === 'claude-sonnet-4.5' ? 'Recommended for complex logic' : '')
-                }));
-
-                // Allow custom input
-                items.push({
-                    label: '$(pencil) Enter Custom Model ID...',
-                    description: '',
-                    detail: 'Manually enter a model ID not listed here'
-                });
-
+                const { AIProviderRegistry } = await import('./services/ai/AIProviderRegistry');
+                const models = await AIProviderRegistry.getInstance().getModels('copilot');
+                const config = vscode.workspace.getConfiguration('karateDsl');
+                const current = config.get<string>('ai.copilotModelId', '');
+                const items = [
+                    {
+                        label: '$(sparkle) Automatic (quota-conscious)',
+                        description: current ? '' : 'Current',
+                        detail: 'Select the smallest healthy live model that safely fits each request.',
+                        modelId: ''
+                    },
+                    ...models.map(model => ({
+                        label: model.name,
+                        description: model.id === current ? 'Current' : model.family || '',
+                        detail: `${model.id}${model.maxInputTokens ? ` · ${model.maxInputTokens.toLocaleString()} input tokens` : ''}`,
+                        modelId: model.id
+                    }))
+                ];
                 const selection = await vscode.window.showQuickPick(items, {
-                    placeHolder: 'Select GitHub Copilot Model for Karate Tests'
+                    placeHolder: 'Select a currently available Copilot model'
                 });
-
-                if (selection) {
-                    let modelId = selection.label;
-
-                    if (modelId.includes('Enter Custom Model ID')) {
-                        const input = await vscode.window.showInputBox({
-                            placeHolder: 'e.g., gpt-4-32k',
-                            prompt: 'Enter the exact Model ID/Family'
-                        });
-                        if (!input) return;
-                        modelId = input;
-                    }
-
-                    // Update setting
-                    await vscode.workspace.getConfiguration('karateDsl').update('copilot.model', modelId, vscode.ConfigurationTarget.Global);
-                    vscode.window.showInformationMessage(`Copilot model set to: ${modelId}`);
-                    logger.info(`User selected Copilot model: ${modelId}`);
-                }
+                if (!selection) return;
+                await config.update('ai.copilotModelId', selection.modelId, vscode.ConfigurationTarget.Global);
+                vscode.window.showInformationMessage(selection.modelId
+                    ? `Copilot model set to ${selection.label}`
+                    : 'Copilot model selection set to quota-conscious automatic');
             } catch (error) {
                 vscode.window.showErrorMessage(`Failed to select model: ${error}`);
             }
         }
     );
+
+    const configureAICommand = vscode.commands.registerCommand('karate-dsl.configureAI', async () => {
+        const config = vscode.workspace.getConfiguration('karateDsl');
+        const currentProvider = config.get<string>('ai.provider', 'copilot');
+        const provider = await vscode.window.showQuickPick([
+            { label: 'GitHub Copilot', description: currentProvider === 'copilot' ? 'Current · Recommended' : 'Recommended', value: 'copilot' },
+            { label: 'Ollama', description: currentProvider === 'ollama' ? 'Current · Local' : 'Local', value: 'ollama' },
+            { label: 'Claude API', description: currentProvider === 'claude-api' ? 'Current' : 'Anthropic API key required', value: 'claude-api' },
+            { label: 'Automatic fallback', description: currentProvider === 'auto' ? 'Current · Legacy' : 'Copilot, Claude, then Ollama', value: 'auto' }
+        ], { placeHolder: 'Select the AI provider used by all Karate features' });
+        if (!provider) return;
+        await config.update('ai.provider', provider.value, vscode.ConfigurationTarget.Global);
+
+        if (provider.value === 'copilot') {
+            const currentMode = config.get<string>('ai.modelMode', 'efficient');
+            const mode = await vscode.window.showQuickPick([
+                { label: 'Efficient', description: currentMode === 'efficient' ? 'Current · Default' : 'Default', detail: 'Conservative model selection that protects quota.', value: 'efficient' },
+                { label: 'Balanced', description: currentMode === 'balanced' ? 'Current' : '', detail: 'Uses a middle eligible live model.', value: 'balanced' },
+                { label: 'Highest quality', description: currentMode === 'highest-quality' ? 'Current · Higher quota use' : 'Higher quota use', detail: 'Explicit opt-in. Never selected automatically.', value: 'highest-quality' }
+            ], { placeHolder: 'Choose the Copilot model policy' });
+            if (mode) {
+                await config.update('ai.modelMode', mode.value, vscode.ConfigurationTarget.Global);
+                await vscode.commands.executeCommand('karate-dsl.selectCopilotModel');
+            }
+        } else if (provider.value === 'claude-api') {
+            await vscode.commands.executeCommand('karate-dsl.setClaudeApiKey');
+        }
+    });
 
     const combinedCommand = vscode.commands.registerCommand(
         'karate-dsl.generateCombined',
@@ -1755,6 +1757,7 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         showCoverageDashboardCommand,
         importPostmanCommand,
         selectCopilotModelCommand,
+        configureAICommand,
         showCopilotActivityCommand,
         clearCopilotActivityCommand,
         runFeatureCommand,

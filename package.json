@@ -126,6 +126,10 @@
         "title": "Karate: Select Copilot Model"
       },
       {
+        "command": "karate-dsl.configureAI",
+        "title": "Karate: Configure AI Routing"
+      },
+      {
         "command": "karate-dsl.analyzeProjectHealth",
         "title": "Karate: Analyze Project Health"
       },
@@ -390,28 +394,8 @@
         },
         "karateDsl.copilot.model": {
           "type": "string",
-          "default": "gpt-5-mini",
-          "description": "Select the GitHub Copilot model to use for test generation",
-          "enum": [
-            "gpt-5-mini",
-            "gpt-5.2-codex",
-            "claude-sonnet-4.5",
-            "claude-haiku-4.5",
-            "claude-opus-4.5",
-            "gpt-4o",
-            "gpt-4",
-            "gpt-3.5-turbo"
-          ],
-          "enumDescriptions": [
-            "GPT-5 Mini (Fast & Efficient) - Recommended",
-            "GPT-5.2 Codex (Optimized for Code Generation)",
-            "Claude Sonnet 4.5 (Balanced, Best Coding Model)",
-            "Claude Haiku 4.5 (Fast, Cost-Efficient)",
-            "Claude Opus 4.5 (Maximum Intelligence, Flagship)",
-            "GPT-4 Omni (Vision Support)",
-            "GPT-4 (Legacy)",
-            "GPT-3.5 Turbo (Fast)"
-          ]
+          "default": "",
+          "description": "Deprecated Copilot family preference. Use Karate: Configure AI Routing to select a live model."
         },
         "karateDsl.generation.structuringStrategy": {
           "type": "string",
@@ -551,19 +535,39 @@
         "karateDsl.ai.provider": {
           "type": "string",
           "enum": [
-            "auto",
             "copilot",
             "claude-api",
-            "ollama"
+            "ollama",
+            "auto"
           ],
-          "default": "auto",
-          "description": "Active AI provider: auto (try copilot first), copilot, claude-api, or ollama",
+          "default": "copilot",
+          "description": "AI provider used consistently by generation, coverage, repair, imports, and suggestions",
           "enumDescriptions": [
-            "Auto: Try Copilot first, then Claude API, then Ollama",
             "GitHub Copilot (requires Copilot subscription)",
             "Claude API (requires Anthropic API key)",
-            "Ollama (local inference, requires Ollama running)"
+            "Ollama (local inference, requires Ollama running)",
+            "Legacy automatic fallback: Copilot, Claude API, then Ollama"
           ]
+        },
+        "karateDsl.ai.modelMode": {
+          "type": "string",
+          "enum": [
+            "efficient",
+            "balanced",
+            "highest-quality"
+          ],
+          "default": "efficient",
+          "description": "Copilot model policy. Highest quality is explicit opt-in and can consume more quota.",
+          "enumDescriptions": [
+            "Efficient: smallest healthy live model that safely fits the request",
+            "Balanced: middle eligible live model without automatic premium escalation",
+            "Highest quality: largest eligible live model; use only when explicitly requested"
+          ]
+        },
+        "karateDsl.ai.copilotModelId": {
+          "type": "string",
+          "default": "",
+          "description": "Exact live Copilot model ID. Empty uses availability- and quota-conscious automatic selection."
         },
         "karateDsl.ai.claudeApiModel": {
           "type": "string",
@@ -577,8 +581,8 @@
         },
         "karateDsl.ai.ollamaModel": {
           "type": "string",
-          "default": "llama3",
-          "description": "Model name to use with Ollama"
+          "default": "",
+          "description": "Installed Ollama model name. Empty uses the first model returned by Ollama."
         },
         "karateDsl.ciRepair.enabled": {
           "type": "boolean",
@@ -850,8 +854,9 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run typecheck && npm run lint && npm run package:check",
+    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run test:ai-routing && npm run typecheck && npm run lint && npm run package:check",
     "test:execution": "npm run compile && node ./scripts/test-execution-engine.cjs",
+    "test:ai-routing": "npm run compile && node ./scripts/test-ai-routing.cjs",
     "package:check": "npm run build:webview && npm run clean && npm run build:extension && node ./scripts/check-package-files.cjs",
     "test": "node ./out/test/runTest.js",
     "package": "vsce package"

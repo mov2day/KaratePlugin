@@ -115,7 +115,7 @@ export class ConfigManager {
      */
     static getCopilotModel(): string {
         const config = vscode.workspace.getConfiguration('karateDsl');
-        return config.get<string>('copilot.model', 'gpt-5-mini');
+        return config.get<string>('ai.copilotModelId', '') || config.get<string>('copilot.model', '');
     }
 
     /**
