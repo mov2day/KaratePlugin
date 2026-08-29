@@ -18,6 +18,7 @@ import { WorkspaceIndex } from '../services/workspace/WorkspaceIndex';
 import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore';
 import { QualityState, QualityWorkflowService } from '../services/workspace/QualityWorkflowService';
 import { EnhancedCoverageReport, EnhancedCoverageService } from '../services/enhancedCoverageService';
+import { CoverageDashboardProvider } from './CoverageDashboardProvider';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'karateGenerator.mainView';
@@ -34,6 +35,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _managementReady = false;
     private _pendingHealthReport: Record<string, unknown> | undefined;
     private _pendingBugHunterReport: Record<string, unknown> | undefined;
+    private readonly _coverageSelections = new Map<string, { specPaths: string[]; featurePaths: string[] }>();
+    private readonly _coverageReports = new Map<string, EnhancedCoverageReport>();
 
     /**
      * Process feature content through ReusabilityEngine.
@@ -172,7 +175,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     await this.sendManagementSnapshot(data.folderPath);
                     break;
                 case 'executeExtensionCommand':
-                    await this.executeShellCommand((data as any).commandId);
+                    await this.executeShellCommand(data.commandId, data.folderPath);
                     break;
                 case 'advanceQualityFinding':
                     await this.advanceQualityFinding(data.id, data.nextState, data.folderPath);
@@ -186,11 +189,26 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 case 'rerunRun':
                     await this.rerunRun(data.options, data.folderPath);
                     break;
+                case 'exportRunReport':
+                    await this.exportRunReport(data.id, data.folderPath);
+                    break;
                 case 'requestScenarioRepair':
                     await this.requestScenarioRepair(data.featurePath, data.scenarioName, data.errorMessage, data.scenarioTags, data.scenarioLine, data.folderPath);
                     break;
                 case 'analyzeCoverage':
-                    await this.analyzeCoverage(data.folderPath);
+                    await this.analyzeCoverage(data.specPaths, data.featurePaths, data.useCopilot, data.folderPath);
+                    break;
+                case 'selectCoverageSpecs':
+                    await this.selectCoverageFiles('specs', data.folderPath);
+                    break;
+                case 'selectCoverageFeatures':
+                    await this.selectCoverageFiles('features', data.folderPath);
+                    break;
+                case 'exportCoverageReport':
+                    await this.exportCoverageReport(data.folderPath);
+                    break;
+                case 'generateCoverageTest':
+                    await this.generateCoverageTest(data.endpoint, data.featurePaths, data.useCopilot, data.folderPath);
                     break;
                 case 'saveTraceability':
                     await this.saveTraceability(data.featurePath, data.scenarioName, data.owner, data.status, data.zephyrKey, data.folderPath);
@@ -538,9 +556,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         };
     }
 
-    private async executeShellCommand(commandId: unknown): Promise<void> {
+    private async executeShellCommand(commandId: unknown, folderPath?: string): Promise<void> {
         const allowed = new Set([
-            'karate-dsl.runFolder', 'karate-dsl.showCoverageDashboard', 'karate-dsl.analyzeProjectHealth', 'karate-dsl.checkSpecChanges',
+            'karate-dsl.runFolder', 'karate-dsl.runByTags', 'karate-dsl.showCoverageDashboard', 'karate-dsl.analyzeProjectHealth', 'karate-dsl.checkSpecChanges',
             'karate-dsl.generateFromOpenAPI', 'karate-dsl.importPostmanCollection', 'karate-dsl.importHar',
             'karate-dsl.generateFromGraphQL', 'karate-dsl.generateFromJira', 'karate-dsl.generateFromConfluence',
             'karate-dsl.generateCombined', 'karate-dsl.generateFromDirectory', 'karate-dsl.startRecording',
@@ -552,7 +570,13 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendError('This action is not available from the test management workspace.');
             return;
         }
-        await this.executeShellCommandWithArguments(commandId);
+        if (commandId === 'karate-dsl.runFolder' || commandId === 'karate-dsl.runByTags') {
+            await this.executeShellCommandWithArguments(commandId, { folderPath });
+        } else if (commandId === 'karate-dsl.analyzeProjectHealth' || commandId === 'karate-dsl.checkSpecChanges') {
+            await this.executeShellCommandWithArguments(commandId, folderPath);
+        } else {
+            await this.executeShellCommandWithArguments(commandId);
+        }
     }
 
     private async executeShellCommandWithArguments(commandId: string, ...args: unknown[]): Promise<void> {
@@ -638,6 +662,26 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         });
     }
 
+    private async exportRunReport(id: string, folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        const run = folder ? new WorkspaceEntityStore(folder.uri.fsPath).get<any>('runs', id) : undefined;
+        if (!folder || !run) {
+            this.sendError('This run is no longer available for export.');
+            return;
+        }
+        const saveUri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.joinPath(folder.uri, `karate-run-${id.slice(0, 8)}.html`),
+            filters: { HTML: ['html'] }
+        });
+        if (!saveUri) return;
+        const scenarioRows = (run.features || []).flatMap((feature: any) => (feature.scenarios || []).map((scenario: any) => `
+            <tr><td>${escapeHtml(feature.relativePath || feature.name || '')}</td><td>${escapeHtml(scenario.name || '')}</td><td>${escapeHtml(scenario.status || '')}</td><td>${escapeHtml(scenario.error || '')}</td></tr>`)).join('');
+        const html = `<!doctype html><html><head><meta charset="utf-8"><title>Karate run ${escapeHtml(id)}</title><style>body{font:14px system-ui;margin:32px;color:#202124}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}h1{font-size:22px}.summary{display:flex;gap:24px;margin:20px 0}</style></head><body><h1>Karate test run</h1><p>${escapeHtml(new Date(run.timestamp).toLocaleString())}</p><div class="summary"><strong>${escapeHtml(run.status)}</strong><span>${run.summary?.passed || 0} passed</span><span>${run.summary?.failed || 0} failed</span><span>${escapeHtml(run.summary?.executionTime || '')}</span></div><table><thead><tr><th>Feature</th><th>Scenario</th><th>Status</th><th>Error</th></tr></thead><tbody>${scenarioRows}</tbody></table></body></html>`;
+        await fs.promises.writeFile(saveUri.fsPath, html, 'utf8');
+        this.sendMessage({ type: 'success', message: `Run report exported to ${path.basename(saveUri.fsPath)}.` });
+    }
+
     private async requestScenarioRepair(featurePath: string, scenarioName: string, errorMessage: string, scenarioTags?: string[], scenarioLine?: number, folderPath?: string): Promise<void> {
         const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
             || vscode.workspace.workspaceFolders?.[0];
@@ -661,28 +705,51 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async analyzeCoverage(folderPath?: string): Promise<void> {
+    private async selectCoverageFiles(kind: 'specs' | 'features', folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        if (!folder) {
+            this.sendError('Open a workspace folder before selecting coverage inputs.');
+            return;
+        }
+        const selected = await vscode.window.showOpenDialog({
+            canSelectMany: true,
+            defaultUri: folder.uri,
+            title: kind === 'specs' ? 'Select OpenAPI specifications' : 'Select Karate feature files',
+            openLabel: kind === 'specs' ? 'Use specifications' : 'Use feature files',
+            filters: kind === 'specs'
+                ? { 'OpenAPI Specification': ['json', 'yaml', 'yml'] }
+                : { 'Karate Feature': ['feature'] }
+        });
+        if (!selected?.length) return;
+        const paths = selected.map(item => item.fsPath);
+        const current = this._coverageSelections.get(folder.uri.fsPath) || { specPaths: [], featurePaths: [] };
+        const next = kind === 'specs' ? { ...current, specPaths: paths } : { ...current, featurePaths: paths };
+        this._coverageSelections.set(folder.uri.fsPath, next);
+        this.sendMessage({ type: kind === 'specs' ? 'coverageSpecsSelected' : 'coverageFeaturesSelected', data: paths });
+    }
+
+    private async analyzeCoverage(specPaths: string[], featurePaths: string[], useCopilot: boolean, folderPath?: string): Promise<void> {
         const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
             || vscode.workspace.workspaceFolders?.[0];
         if (!folder) {
             this.sendError('Open a workspace folder before analysing coverage.');
             return;
         }
-        const specs = await vscode.window.showOpenDialog({
-            canSelectMany: true,
-            defaultUri: folder.uri,
-            title: 'Select OpenAPI specifications to analyse',
-            openLabel: 'Analyse coverage',
-            filters: { 'OpenAPI Specification': ['json', 'yaml', 'yml'] }
-        });
-        if (!specs?.length) return;
+        const selected = this._coverageSelections.get(folder.uri.fsPath);
+        const trustedSpecs = selected?.specPaths.filter(item => specPaths.includes(item)) || [];
+        const trustedFeatures = selected?.featurePaths.filter(item => featurePaths.includes(item)) || [];
+        if (!trustedSpecs.length || !trustedFeatures.length) {
+            this.sendError('Select at least one OpenAPI specification and one Karate feature file before analysing coverage.');
+            return;
+        }
         try {
-            const featureUris = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*.feature'), '**/{node_modules,.git}/**');
             const report = await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
                 title: 'Analysing Karate coverage',
                 cancellable: false
-            }, () => new EnhancedCoverageService().analyzeMultipleSpecs(specs.map(spec => spec.fsPath), featureUris.map(feature => feature.fsPath), false));
+            }, () => new EnhancedCoverageService().analyzeMultipleSpecs(trustedSpecs, trustedFeatures, useCopilot));
+            this._coverageReports.set(folder.uri.fsPath, report);
             this.recordCoverageFindings(folder, report);
             const serialized = this.serializeCoverageReport(report);
             new WorkspaceEntityStore(folder.uri.fsPath).save('actions', { kind: 'coverage-report', ...serialized });
@@ -692,6 +759,35 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         } catch (error) {
             this.sendError(`Coverage analysis failed: ${error instanceof Error ? error.message : String(error)}`);
         }
+    }
+
+    private async exportCoverageReport(folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        const report = folder ? this._coverageReports.get(folder.uri.fsPath) : undefined;
+        if (!folder || !report) {
+            this.sendError('Run coverage analysis before exporting a report.');
+            return;
+        }
+        const saveUri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.joinPath(folder.uri, 'karate-coverage-report.html'),
+            filters: { HTML: ['html'] }
+        });
+        if (!saveUri) return;
+        await fs.promises.writeFile(saveUri.fsPath, new EnhancedCoverageService().exportToHtmlWithInsights(report), 'utf8');
+        this.sendMessage({ type: 'success', message: `Coverage report exported to ${path.basename(saveUri.fsPath)}.` });
+    }
+
+    private async generateCoverageTest(endpoint: { path: string; method: string; operationId?: string }, featurePaths: string[], useCopilot: boolean, folderPath?: string): Promise<void> {
+        const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+            || vscode.workspace.workspaceFolders?.[0];
+        const selected = folder ? this._coverageSelections.get(folder.uri.fsPath) : undefined;
+        const trustedFeatures = selected?.featurePaths.filter(item => featurePaths.includes(item)) || [];
+        if (!folder || !trustedFeatures.length) {
+            this.sendError('Select the target feature files again before generating coverage.');
+            return;
+        }
+        await new CoverageDashboardProvider(this._extensionUri).generateTestForEndpoint(endpoint, trustedFeatures, useCopilot);
     }
 
     private recordCoverageFindings(folder: vscode.WorkspaceFolder, report: EnhancedCoverageReport): void {
@@ -716,6 +812,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             endpoints: report.endpoints.map(endpoint => ({
                 path: endpoint.path,
                 method: endpoint.method,
+                operationId: endpoint.operationId,
                 covered: endpoint.covered,
                 scenarios: endpoint.scenarios,
                 missingTests: endpoint.missingTests
@@ -725,7 +822,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 total: stats.total,
                 covered: stats.covered,
                 percentage: stats.total ? (stats.covered / stats.total) * 100 : 0
-            }))
+            })),
+            copilotInsights: report.copilotInsights
         };
     }
 
@@ -760,8 +858,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _getHtmlForWebview(webview: vscode.Webview, layout: 'sidebar' | 'expanded' = 'sidebar') {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'test-management.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'test-management.css'));
+        const appIconUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'resources', 'icon.svg'));
         const nonce = crypto.randomBytes(16).toString('base64');
-        return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};"><link rel="stylesheet" href="${styleUri}"><title>Karate Test Management</title></head><body data-management-layout="${layout}"><div id="root"></div><script nonce="${nonce}" src="${scriptUri}"></script></body></html>`;
+        return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; font-src ${webview.cspSource}; img-src ${webview.cspSource};"><link rel="stylesheet" href="${styleUri}"><title>Karate Test Management</title></head><body data-management-layout="${layout}" data-app-icon="${appIconUri}"><div id="root"></div><script nonce="${nonce}" src="${scriptUri}"></script></body></html>`;
 
         // Retired v1 markup is kept as a non-compiled source-history reference.
         /*
@@ -1549,7 +1648,9 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
     const message = data as Record<string, unknown>;
     switch (message.command) {
         case 'getManagementSnapshot': return message.folderPath === undefined || typeof message.folderPath === 'string';
-        case 'executeExtensionCommand': return typeof message.commandId === 'string';
+        case 'executeExtensionCommand':
+            return typeof message.commandId === 'string'
+                && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'advanceQualityFinding':
             return typeof message.id === 'string'
                 && typeof message.nextState === 'string'
@@ -1565,13 +1666,25 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
             return typeof message.id === 'string' && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'rerunRun':
             return isExecutionOptions(message.options) && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        case 'exportRunReport':
+            return typeof message.id === 'string' && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'requestScenarioRepair':
             return ['featurePath', 'scenarioName', 'errorMessage'].every(key => typeof message[key] === 'string')
                 && (message.scenarioTags === undefined || (Array.isArray(message.scenarioTags) && message.scenarioTags.every(tag => typeof tag === 'string')))
                 && (message.scenarioLine === undefined || (typeof message.scenarioLine === 'number' && Number.isInteger(message.scenarioLine) && message.scenarioLine > 0))
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
-        case 'analyzeCoverage':
+        case 'selectCoverageSpecs': case 'selectCoverageFeatures': case 'exportCoverageReport':
             return message.folderPath === undefined || typeof message.folderPath === 'string';
+        case 'analyzeCoverage':
+            return Array.isArray(message.specPaths) && message.specPaths.every(item => typeof item === 'string')
+                && Array.isArray(message.featurePaths) && message.featurePaths.every(item => typeof item === 'string')
+                && typeof message.useCopilot === 'boolean'
+                && (message.folderPath === undefined || typeof message.folderPath === 'string');
+        case 'generateCoverageTest':
+            return isCoverageEndpoint(message.endpoint)
+                && Array.isArray(message.featurePaths) && message.featurePaths.every(item => typeof item === 'string')
+                && typeof message.useCopilot === 'boolean'
+                && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'saveTraceability':
             return ['featurePath', 'scenarioName', 'owner', 'status', 'zephyrKey'].every(key => typeof message[key] === 'string')
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
@@ -1604,4 +1717,18 @@ function isExecutionOptions(value: unknown): value is TestExecutionOptions {
         && (options.parallel === undefined || (typeof options.parallel === 'number' && Number.isFinite(options.parallel)))
         && (options.buildTool === undefined || (typeof options.buildTool === 'string' && ['maven', 'gradle', 'cli'].includes(options.buildTool)))
         && (options.workingDirectory === undefined || typeof options.workingDirectory === 'string');
+}
+
+function isCoverageEndpoint(value: unknown): value is { path: string; method: string; operationId?: string } {
+    if (!value || typeof value !== 'object') return false;
+    const endpoint = value as Record<string, unknown>;
+    return typeof endpoint.path === 'string'
+        && typeof endpoint.method === 'string'
+        && (endpoint.operationId === undefined || typeof endpoint.operationId === 'string');
+}
+
+function escapeHtml(value: unknown): string {
+    return String(value ?? '').replace(/[&<>"']/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[character] || character));
 }

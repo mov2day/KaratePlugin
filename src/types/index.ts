@@ -322,13 +322,18 @@ export type WebviewMessage =
     | { command: 'launchCoverageDashboard' }
     | { command: 'huntApiBugs' }
     | { command: 'getManagementSnapshot'; folderPath?: string }
-    | { command: 'executeExtensionCommand'; commandId: string }
+    | { command: 'executeExtensionCommand'; commandId: string; folderPath?: string }
     | { command: 'advanceQualityFinding'; id: string; nextState: 'New' | 'Investigating' | 'Fixed' | 'Verified'; folderPath?: string }
     | { command: 'createRunProfile'; name: string; environment: string; parallel: number; folderPath?: string }
     | { command: 'runProfile'; id: string; folderPath?: string }
     | { command: 'rerunRun'; options: TestExecutionOptions; folderPath?: string }
+    | { command: 'exportRunReport'; id: string; folderPath?: string }
     | { command: 'requestScenarioRepair'; featurePath: string; scenarioName: string; errorMessage: string; scenarioTags?: string[]; scenarioLine?: number; folderPath?: string }
-    | { command: 'analyzeCoverage'; folderPath?: string }
+    | { command: 'selectCoverageSpecs'; folderPath?: string }
+    | { command: 'selectCoverageFeatures'; folderPath?: string }
+    | { command: 'analyzeCoverage'; specPaths: string[]; featurePaths: string[]; useCopilot: boolean; folderPath?: string }
+    | { command: 'exportCoverageReport'; folderPath?: string }
+    | { command: 'generateCoverageTest'; endpoint: { path: string; method: string; operationId?: string }; featurePaths: string[]; useCopilot: boolean; folderPath?: string }
     | { command: 'saveTraceability'; featurePath: string; scenarioName: string; owner: string; status: string; zephyrKey: string; folderPath?: string }
     | { command: 'openScenario'; featurePath: string; line: number; folderPath?: string }
     | { command: 'managementReady' }

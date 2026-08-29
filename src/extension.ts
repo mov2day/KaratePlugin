@@ -76,11 +76,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Register Health Command
     context.subscriptions.push(
-        vscode.commands.registerCommand('karate-dsl.analyzeProjectHealth', async () => {
-            const folder = vscode.workspace.workspaceFolders?.[0];
+        vscode.commands.registerCommand('karate-dsl.analyzeProjectHealth', async (folderPath?: string) => {
+            const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
+                || vscode.workspace.workspaceFolders?.[0];
             if (folder) {
                 const { ProjectAnalyzer } = await import('./services/health/ProjectAnalyzer');
-                const health = await new ProjectAnalyzer().analyzeWorkspace();
+                const health = await new ProjectAnalyzer().analyzeWorkspace(folder);
                 const store = new WorkspaceEntityStore(folder.uri.fsPath);
                 const workflow = new QualityWorkflowService(store);
                 for (const file of health.orphanedFiles) {
@@ -97,7 +98,11 @@ export async function activate(context: vscode.ExtensionContext) {
                     totalScenarios: health.totalScenarios,
                     dryScore: health.dryScore,
                     orphanedFiles: health.orphanedFiles,
-                    dependencyCount: health.dependencies.length
+                    dependencyCount: health.dependencies.length,
+                    dependencies: health.dependencies.map(edge => ({
+                        source: path.relative(folder.uri.fsPath, edge.source),
+                        target: path.relative(folder.uri.fsPath, edge.target)
+                    }))
                 };
                 store.save('actions', { kind: 'health-report', ...healthReport });
                 await webviewProvider.showHealthReport(healthReport);
@@ -151,17 +156,26 @@ export async function activate(context: vscode.ExtensionContext) {
     const testExecutor = new TestExecutor(context.extensionPath);
     const zephyrPublisher = new ZephyrScalePublisher(context);
 
-    // Initialize test history service
+    // Test history, flakiness, and quality findings are scoped to the folder that
+    // owns the execution. A singleton service would write multi-root runs into
+    // the first workspace folder.
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-    let testHistoryService: TestHistoryService | undefined;
-    if (workspaceRoot) {
-        testHistoryService = new TestHistoryService(workspaceRoot);
-    }
+    const testHistoryServices = new Map<string, TestHistoryService>();
+    const getTestHistoryService = (folderPath?: string): TestHistoryService | undefined => {
+        if (!folderPath) return undefined;
+        let service = testHistoryServices.get(folderPath);
+        if (!service) {
+            service = new TestHistoryService(folderPath);
+            testHistoryServices.set(folderPath, service);
+        }
+        return service;
+    };
 
     const flakinessAnalyzer = new FlakinessAnalyzer();
-    const attachFlakinessSummary = async (result: TestExecutionResult): Promise<void> => {
+    const attachFlakinessSummary = async (result: TestExecutionResult, folderPath?: string): Promise<void> => {
         const config = vscode.workspace.getConfiguration('karateDsl');
         const enabled = config.get<boolean>('flakiness.enabled', true);
+        const testHistoryService = getTestHistoryService(folderPath);
         if (!enabled || !testHistoryService) {
             return;
         }
@@ -183,8 +197,8 @@ export async function activate(context: vscode.ExtensionContext) {
                 tierCounts[scenario.tier]++;
             }
 
-            if (workspaceRoot) {
-                const workflow = new QualityWorkflowService(new WorkspaceEntityStore(workspaceRoot));
+            if (folderPath) {
+                const workflow = new QualityWorkflowService(new WorkspaceEntityStore(folderPath));
                 for (const scenario of report.scenarios.filter(item => item.tier === 'flaky' || item.tier === 'broken')) {
                     workflow.upsertOpen({
                         title: `${scenario.tier === 'broken' ? 'Broken' : 'Flaky'} test: ${scenario.scenarioName}`,
@@ -579,8 +593,14 @@ export async function activate(context: vscode.ExtensionContext) {
     // Manual spec check command
     const checkSpecChangesCommand = vscode.commands.registerCommand(
         'karate-dsl.checkSpecChanges',
-        async () => {
-            const trackedSpecs = await specHashManager.getTrackedSpecs();
+        async (folderPath?: string) => {
+            const allTrackedSpecs = await specHashManager.getTrackedSpecs();
+            const trackedSpecs = folderPath
+                ? allTrackedSpecs.filter(specPath => {
+                    const relative = path.relative(folderPath, specPath);
+                    return relative === '' || (!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+                })
+                : allTrackedSpecs;
 
             if (trackedSpecs.length === 0) {
                 vscode.window.showWarningMessage('No specs are being tracked. Generate tests from an OpenAPI spec first.');
@@ -830,6 +850,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     vscode.window.showWarningMessage('Please select a feature file to run');
                     return;
                 }
+                const featureFolderPath = vscode.workspace.getWorkspaceFolder(featureUri)?.uri.fsPath || workspaceRoot;
 
                 await vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
@@ -842,17 +863,15 @@ export async function activate(context: vscode.ExtensionContext) {
                         type: 'feature',
                         target: featureUri.fsPath,
                         buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
-                        workingDirectory: workspaceRoot
+                        workingDirectory: featureFolderPath
                     }, token);
 
                     progress.report({ increment: 90, message: 'Execution complete' });
 
-                    await attachFlakinessSummary(result);
+                    await attachFlakinessSummary(result, featureFolderPath);
 
                     // Save to history
-                    if (testHistoryService) {
-                        await testHistoryService.saveResult(result);
-                    }
+                    await getTestHistoryService(featureFolderPath)?.saveResult(result);
 
                     // Update providers
                     codeLensProvider.updateResult(result);
@@ -920,6 +939,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
                 const target = `${featureUri.fsPath}:${scenarioLine + 1}`;
                 const displayName = detectedScenarioName || `line ${scenarioLine + 1}`;
+                const featureFolderPath = vscode.workspace.getWorkspaceFolder(featureUri)?.uri.fsPath || workspaceRoot;
 
                 await vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
@@ -932,15 +952,15 @@ export async function activate(context: vscode.ExtensionContext) {
                         type: 'scenario',
                         target,
                         buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
-                        workingDirectory: workspaceRoot
+                        workingDirectory: featureFolderPath
                     }, token);
 
                     progress.report({ increment: 90, message: 'Execution complete' });
 
-                    await attachFlakinessSummary(result);
+                    await attachFlakinessSummary(result, featureFolderPath);
 
                     // Save and update
-                    if (testHistoryService) await testHistoryService.saveResult(result);
+                    await getTestHistoryService(featureFolderPath)?.saveResult(result);
                     codeLensProvider.updateResult(result);
                     decorationProvider.updateResult(result);
 
@@ -1004,9 +1024,9 @@ export async function activate(context: vscode.ExtensionContext) {
                         workingDirectory: folderPath
                     }, token);
 
-                    await attachFlakinessSummary(result);
+                    await attachFlakinessSummary(result, folderPath);
 
-                    if (testHistoryService) await testHistoryService.saveResult(result);
+                    await getTestHistoryService(folderPath)?.saveResult(result);
                     codeLensProvider.updateResult(result);
                     decorationProvider.updateResult(result);
                     await webviewProvider.showManagementArea('runs');
@@ -1028,8 +1048,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
     const runByTagsCommand = vscode.commands.registerCommand(
         'karate-dsl.runByTags',
-        async () => {
+        async (target?: { folderPath?: string }) => {
             try {
+                const folderPath = target?.folderPath || workspaceRoot;
+                if (!folderPath) {
+                    vscode.window.showWarningMessage('No folder selected');
+                    return;
+                }
                 const tags = await vscode.window.showInputBox({
                     prompt: 'Enter tags to filter (comma-separated)',
                     placeHolder: 'e.g., @smoke, @regression'
@@ -1046,15 +1071,15 @@ export async function activate(context: vscode.ExtensionContext) {
                 }, async (progress, token) => {
                     const result = await testExecutor.execute({
                         type: 'tags',
-                        target: workspaceRoot || '',
+                        target: folderPath,
                         tags: tagList,
                         buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
-                        workingDirectory: workspaceRoot
+                        workingDirectory: folderPath
                     }, token);
 
-                    await attachFlakinessSummary(result);
+                    await attachFlakinessSummary(result, folderPath);
 
-                    if (testHistoryService) await testHistoryService.saveResult(result);
+                    await getTestHistoryService(folderPath)?.saveResult(result);
                     codeLensProvider.updateResult(result);
                     decorationProvider.updateResult(result);
                     await webviewProvider.showManagementArea('runs');
@@ -1638,7 +1663,9 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
                         method: finding.endpoint.method,
                         path: finding.endpoint.path,
                         expected: finding.expected,
-                        observed: finding.observed
+                        observed: finding.observed,
+                        curl: finding.curl,
+                        karateScenario: finding.karateScenario
                     })),
                     probes: result.probes.map(probe => ({
                         name: probe.name,
@@ -1647,7 +1674,9 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
                         category: probe.category,
                         status: probe.status,
                         reason: probe.reason,
-                        responseStatus: probe.responseStatus
+                        responseStatus: probe.responseStatus,
+                        durationMs: probe.durationMs,
+                        findingId: probe.findingId
                     }))
                 });
 

@@ -5,7 +5,7 @@ import { ProjectHealthStats, FileStats, DependencyEdge } from './types';
 
 export class ProjectAnalyzer {
 
-    public async analyzeWorkspace(): Promise<ProjectHealthStats> {
+    public async analyzeWorkspace(workspaceFolder?: vscode.WorkspaceFolder): Promise<ProjectHealthStats> {
         const stats: ProjectHealthStats = {
             totalFiles: 0,
             totalScenarios: 0,
@@ -15,7 +15,12 @@ export class ProjectAnalyzer {
             dependencies: []
         };
 
-        const files = await vscode.workspace.findFiles('**/*.feature', '**/node_modules/**');
+        const files = workspaceFolder
+            ? await vscode.workspace.findFiles(
+                new vscode.RelativePattern(workspaceFolder, '**/*.feature'),
+                '**/{node_modules,.git,.karate-test-management}/**'
+            )
+            : await vscode.workspace.findFiles('**/*.feature', '**/{node_modules,.git,.karate-test-management}/**');
         stats.totalFiles = files.length;
 
         // Pass 1: Parse all files

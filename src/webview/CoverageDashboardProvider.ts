@@ -18,6 +18,14 @@ export class CoverageDashboardProvider {
         this._coverageService = new EnhancedCoverageService();
     }
 
+    public async generateTestForEndpoint(endpoint: any, featurePaths: string[], useCopilot: boolean): Promise<void> {
+        if (useCopilot) {
+            await this.handleGenerateTestWithAI(endpoint, featurePaths);
+        } else {
+            await this.handleGenerateTest(endpoint, featurePaths);
+        }
+    }
+
     /**
      * Show the coverage dashboard in a full panel
      */
