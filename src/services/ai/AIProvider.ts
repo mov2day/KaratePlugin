@@ -12,7 +12,7 @@ export interface CompletionOptions {
     cancellationToken?: import('vscode').CancellationToken;
 }
 
-export type AIProviderId = 'copilot' | 'claude-api' | 'ollama';
+export type AIProviderId = 'copilot' | 'vscode-lm' | 'claude-api' | 'ollama';
 
 export type AIModelMode = 'efficient' | 'balanced' | 'highest-quality';
 
@@ -35,6 +35,7 @@ export interface AIModelDescriptor {
     family?: string;
     version?: string;
     maxInputTokens?: number;
+    vendor?: string;
 }
 
 export interface AIProvider {

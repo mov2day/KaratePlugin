@@ -21,6 +21,8 @@ Karate Test Management brings test creation, execution, coverage, quality, and m
 - **Flexible coverage analysis** — analyze an OpenAPI specification on its own, or add feature files for exact scenario-to-endpoint mapping.
 - **Safer shared state** — workspace metadata uses Git-friendly UUID entity files with multi-root isolation and retained run history.
 - **Local, theme-aware UI** — bundled assets, strict content security, keyboard navigation, and native VS Code light/dark theme support.
+- **Unified AI routing** — every AI-assisted workflow uses one selected provider, focused Karate instructions, and the same validation guardrails.
+- **Quota-conscious Copilot** — live model discovery replaces stale model lists; efficient routing is the default and highest-quality models require explicit selection.
 
 All existing command IDs and settings remain available in 2.0.
 
@@ -134,9 +136,14 @@ Karate 2.x standalone execution requires Java 21 or later. Leaving `jarPath` and
 
 AI enhancement is optional. The extension supports:
 
-- GitHub Copilot
+- GitHub Copilot as the default provider, with live model discovery and efficient, balanced, or explicit highest-quality routing
+- Other language-model providers registered with VS Code
 - Claude API credentials stored in VS Code SecretStorage
-- Local Ollama models
+- Installed local Ollama models discovered from the running Ollama service
+
+Run **Karate: Configure AI Routing** to choose one provider for generation, imports, coverage guidance, repair, flakiness analysis, and suggestions. Copilot's default **Efficient** mode selects the smallest healthy live model that safely fits the request. Select an exact live model or **Highest quality** only when the additional quota use is intentional.
+
+AI prompts are composed for the active Karate task. Contract generation, Postman conversion, coverage analysis, scenario repair, flakiness investigation, and reusability review each receive focused instructions instead of one oversized generic knowledge block.
 
 Deterministic generation, execution, coverage, and management workflows remain available without an AI provider.
 

@@ -31,6 +31,7 @@ export class AIProviderRegistry {
 
     private providers = new Map<AIProviderId, AIProvider>();
     private copilotProvider: CopilotProvider;
+    private vscodeModelProvider: CopilotProvider;
     private claudeProvider: ClaudeAPIProvider;
     private statusBarItem: vscode.StatusBarItem | undefined;
     private aiSkippedForSession = false;
@@ -38,6 +39,8 @@ export class AIProviderRegistry {
     private constructor() {
         this.copilotProvider = new CopilotProvider();
         this.providers.set('copilot', this.copilotProvider);
+        this.vscodeModelProvider = new CopilotProvider('other-vscode');
+        this.providers.set('vscode-lm', this.vscodeModelProvider);
         this.claudeProvider = new ClaudeAPIProvider();
         this.providers.set('claude-api', this.claudeProvider);
         this.providers.set('ollama', new OllamaProvider());
@@ -64,6 +67,7 @@ export class AIProviderRegistry {
     initialize(context: vscode.ExtensionContext): void {
         this.claudeProvider.setSecretStorage(context.secrets);
         this.copilotProvider.initialize(context);
+        this.vscodeModelProvider.initialize(context);
     }
 
     /**
@@ -206,7 +210,7 @@ export class AIProviderRegistry {
     private getConfiguredProviderId(): AIProviderId | 'auto' {
         const config = vscode.workspace.getConfiguration('karateDsl');
         const value = config.get<string>('ai.provider') || 'copilot';
-        if (value === 'auto' || value === 'copilot' || value === 'claude-api' || value === 'ollama') {
+        if (value === 'auto' || value === 'copilot' || value === 'vscode-lm' || value === 'claude-api' || value === 'ollama') {
             return value;
         }
         return 'auto';
@@ -220,6 +224,8 @@ export class AIProviderRegistry {
                 return 'API key not set. Use "Karate: Set Claude API Key" command.';
             case 'copilot':
                 return 'GitHub Copilot not detected. Check your subscription.';
+            case 'vscode-lm':
+                return 'No non-Copilot VS Code language model provider is currently available.';
             default:
                 return '';
         }

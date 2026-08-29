@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Locally bundled webview assets, strict CSP, application branding, and package checks for webview debug/CDN regressions.
 - In-shell coverage analysis, project-health summaries, Bug Hunter outcomes, CI repair queue routing, and safe run replay.
 - A user-invoked bug reporter that collects redacted diagnostics and opens a clean public issue without exposing raw logs.
+- Unified AI routing for Copilot, VS Code model providers, Claude API, and Ollama, configured through **Karate: Configure AI Routing**.
+- Live provider model discovery, exact model selection, task-focused Karate prompt composition, and AI routing contract tests.
 
 ### Changed
 - Run history is retained as entity-per-file workspace data and follows `karateDsl.execution.historyLimit`.
@@ -25,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Completed executions now return to the Runs area instead of opening a separate report panel; coverage and health summaries persist with workspace state.
 - Execution now discovers the nearest runnable project and selects standalone CLI, Maven, Gradle, or a configured custom runner consistently for feature, folder, tag, and CodeLens scenario runs.
 - Coverage analysis accepts an OpenAPI specification by itself; feature selection is optional and enables exact scenario mapping when available.
+- GitHub Copilot is the default AI provider. Its model list is discovered from VS Code at request time; removed or unavailable models are never fabricated.
+- Copilot defaults to quota-conscious Efficient routing. Balanced is optional, while Highest quality is explicit opt-in and never used as an automatic escalation.
+- All generation, import, coverage, repair, flakiness, suggestion, and MCP AI calls now pass through the same provider and model layer.
+- Bundled Karate skills are selected by task and capped to a focused context budget instead of injecting every skill into every request.
 - This is a major UI redesign. Existing command IDs and settings remain available.
 
 ### Fixed

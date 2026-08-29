@@ -360,7 +360,7 @@
         "karateDsl.useCopilot": {
           "type": "boolean",
           "default": false,
-          "description": "Use GitHub Copilot to enhance generated tests (requires GitHub Copilot subscription)"
+          "description": "Enable AI enhancement using the provider selected by karateDsl.ai.provider (legacy setting name retained for compatibility)"
         },
         "karate.copilot.logging.enabled": {
           "type": "boolean",
@@ -536,6 +536,7 @@
           "type": "string",
           "enum": [
             "copilot",
+            "vscode-lm",
             "claude-api",
             "ollama",
             "auto"
@@ -544,6 +545,7 @@
           "description": "AI provider used consistently by generation, coverage, repair, imports, and suggestions",
           "enumDescriptions": [
             "GitHub Copilot (requires Copilot subscription)",
+            "Another language model provider registered with VS Code",
             "Claude API (requires Anthropic API key)",
             "Ollama (local inference, requires Ollama running)",
             "Legacy automatic fallback: Copilot, Claude API, then Ollama"
@@ -568,6 +570,16 @@
           "type": "string",
           "default": "",
           "description": "Exact live Copilot model ID. Empty uses availability- and quota-conscious automatic selection."
+        },
+        "karateDsl.ai.vscodeVendor": {
+          "type": "string",
+          "default": "",
+          "description": "Vendor ID of a non-Copilot language model provider registered with VS Code."
+        },
+        "karateDsl.ai.vscodeModelId": {
+          "type": "string",
+          "default": "",
+          "description": "Exact model ID supplied by the selected non-Copilot VS Code language model provider."
         },
         "karateDsl.ai.claudeApiModel": {
           "type": "string",

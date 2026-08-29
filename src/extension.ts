@@ -143,7 +143,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Initialize AI activity logging. Model discovery is intentionally deferred
     // until a user starts an AI action so VS Code can handle consent correctly.
-    const { CopilotService } = require('./services/copilotService');
     CopilotLogger.initialize(context);
 
     // Register webview provider
@@ -355,6 +354,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const currentProvider = config.get<string>('ai.provider', 'copilot');
         const provider = await vscode.window.showQuickPick([
             { label: 'GitHub Copilot', description: currentProvider === 'copilot' ? 'Current · Recommended' : 'Recommended', value: 'copilot' },
+            { label: 'Other VS Code model', description: currentProvider === 'vscode-lm' ? 'Current' : 'Uses an installed model provider', value: 'vscode-lm' },
             { label: 'Ollama', description: currentProvider === 'ollama' ? 'Current · Local' : 'Local', value: 'ollama' },
             { label: 'Claude API', description: currentProvider === 'claude-api' ? 'Current' : 'Anthropic API key required', value: 'claude-api' },
             { label: 'Automatic fallback', description: currentProvider === 'auto' ? 'Current · Legacy' : 'Copilot, Claude, then Ollama', value: 'auto' }
@@ -372,6 +372,23 @@ export async function activate(context: vscode.ExtensionContext) {
             if (mode) {
                 await config.update('ai.modelMode', mode.value, vscode.ConfigurationTarget.Global);
                 await vscode.commands.executeCommand('karate-dsl.selectCopilotModel');
+            }
+        } else if (provider.value === 'vscode-lm') {
+            const { AIProviderRegistry } = await import('./services/ai/AIProviderRegistry');
+            const models = await AIProviderRegistry.getInstance().getModels('vscode-lm');
+            if (models.length === 0) {
+                vscode.window.showWarningMessage('No non-Copilot VS Code language model provider is currently available.');
+                return;
+            }
+            const selection = await vscode.window.showQuickPick(models.map(model => ({
+                label: model.name,
+                description: model.vendor || '',
+                detail: `${model.id}${model.maxInputTokens ? ` · ${model.maxInputTokens.toLocaleString()} input tokens` : ''}`,
+                model
+            })), { placeHolder: 'Select a live VS Code language model' });
+            if (selection) {
+                await config.update('ai.vscodeVendor', selection.model.vendor || '', vscode.ConfigurationTarget.Global);
+                await config.update('ai.vscodeModelId', selection.model.id, vscode.ConfigurationTarget.Global);
             }
         } else if (provider.value === 'claude-api') {
             await vscode.commands.executeCommand('karate-dsl.setClaudeApiKey');

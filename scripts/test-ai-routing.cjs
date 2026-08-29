@@ -52,6 +52,7 @@ assert.deepStrictEqual(directModelCalls, [], `AI model API bypasses found: ${dir
 const manifest = require('../package.json');
 const settings = manifest.contributes.configuration.properties;
 assert.strictEqual(settings['karateDsl.ai.provider'].default, 'copilot');
+assert.ok(settings['karateDsl.ai.provider'].enum.includes('vscode-lm'));
 assert.strictEqual(settings['karateDsl.ai.modelMode'].default, 'efficient');
 assert.ok(!settings['karateDsl.copilot.model'].enum, 'legacy Copilot setting must not hardcode model names');
 
