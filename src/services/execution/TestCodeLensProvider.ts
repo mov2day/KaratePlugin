@@ -91,7 +91,9 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
                 codeLenses.push(new vscode.CodeLens(range, {
                     title: '▶ Run Scenario',
                     command: 'karate-dsl.runScenario',
-                    arguments: [document.uri, i + 1, scenarioName]
+                    // VS Code positions are zero-based; the command converts once
+                    // at the execution boundary.
+                    arguments: [document.uri, i, scenarioName]
                 }));
 
                 // Show last result if available

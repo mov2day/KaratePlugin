@@ -237,7 +237,7 @@ Examples:
         });
 
         assert.strictEqual(result.ok, true);
-        assert.strictEqual(capturedOptions.buildTool, 'cli');
+        assert.strictEqual(capturedOptions.buildTool, 'auto');
         assert.strictEqual(capturedOptions.type, 'feature');
     });
 });

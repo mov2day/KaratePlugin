@@ -36,6 +36,7 @@ import { KarateV2Migrator } from './services/KarateV2Migrator';
 import { ZephyrScalePublisher, ZEPHYR_TOKEN_KEY } from './services/zephyr/ZephyrScalePublisher';
 import { WorkspaceEntityStore } from './services/workspace/WorkspaceEntityStore';
 import { QualityWorkflowService } from './services/workspace/QualityWorkflowService';
+import { readExecutionSettings } from './services/execution/ExecutionSettings';
 
 export async function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
@@ -241,6 +242,20 @@ export async function activate(context: vscode.ExtensionContext) {
         } catch (error) {
             logger.error('Zephyr publish failed', error as Error);
             vscode.window.showErrorMessage(`Zephyr publish failed: ${(error as Error).message}`);
+        }
+    };
+
+    const shouldOpenRuns = (scopePath: string): boolean => vscode.workspace
+        .getConfiguration('karateDsl.execution', vscode.Uri.file(scopePath))
+        .get<boolean>('autoOpenReport', true);
+
+    const showExecutionNotification = (result: TestExecutionResult, label: string): void => {
+        if (result.status === 'success') {
+            vscode.window.showInformationMessage(`${label}: ${result.summary.passed}/${result.summary.totalScenarios} passed`);
+        } else if (result.status === 'failed') {
+            vscode.window.showErrorMessage(`${label}: ${result.summary.failed} failed, ${result.summary.passed} passed`);
+        } else {
+            vscode.window.showErrorMessage(`${label}: ${result.error || 'execution failed'}`);
         }
     };
 
@@ -851,6 +866,10 @@ export async function activate(context: vscode.ExtensionContext) {
                     return;
                 }
                 const featureFolderPath = vscode.workspace.getWorkspaceFolder(featureUri)?.uri.fsPath || workspaceRoot;
+                if (!featureFolderPath) {
+                    vscode.window.showWarningMessage('The selected feature is not inside an open workspace.');
+                    return;
+                }
 
                 await vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
@@ -862,7 +881,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     const result = await testExecutor.execute({
                         type: 'feature',
                         target: featureUri.fsPath,
-                        buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
+                        buildTool: readExecutionSettings(featureUri.fsPath).defaultBuildTool,
                         workingDirectory: featureFolderPath
                     }, token);
 
@@ -878,24 +897,17 @@ export async function activate(context: vscode.ExtensionContext) {
                     decorationProvider.updateResult(result);
 
                     // Show report
-                    await webviewProvider.showManagementArea('runs');
-                    await publishZephyrResult(result);
+                    if (shouldOpenRuns(featureUri.fsPath)) await webviewProvider.showManagementArea('runs');
+                    if (result.status !== 'error') await publishZephyrResult(result);
 
                     const flakySummary = result.flakiness
                         ? ` | Tiers S:${result.flakiness.tierCounts.stable} W:${result.flakiness.tierCounts.watch} F:${result.flakiness.tierCounts.flaky} B:${result.flakiness.tierCounts.broken}`
                         : '';
 
-                    if (result.status === 'success') {
-                        vscode.window.showInformationMessage(
-                            `✅ Tests passed: ${result.summary.passed}/${result.summary.totalScenarios}${flakySummary}`
-                        );
-                    } else if (result.status === 'failed') {
-                        vscode.window.showErrorMessage(
-                            `❌ Tests failed: ${result.summary.failed} failures, ${result.summary.passed} passed${flakySummary}`
-                        );
-                    }
+                    showExecutionNotification(result, `Feature run${flakySummary}`);
                 });
             } catch (error) {
+                if (error instanceof vscode.CancellationError) return;
                 logger.error('Feature execution failed', error as Error);
                 vscode.window.showErrorMessage(`Failed to run feature: ${error}`);
             }
@@ -937,9 +949,13 @@ export async function activate(context: vscode.ExtensionContext) {
                     }
                 }
 
-                const target = `${featureUri.fsPath}:${scenarioLine + 1}`;
+                const target = featureUri.fsPath;
                 const displayName = detectedScenarioName || `line ${scenarioLine + 1}`;
                 const featureFolderPath = vscode.workspace.getWorkspaceFolder(featureUri)?.uri.fsPath || workspaceRoot;
+                if (!featureFolderPath) {
+                    vscode.window.showWarningMessage('The selected feature is not inside an open workspace.');
+                    return;
+                }
 
                 await vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
@@ -951,7 +967,9 @@ export async function activate(context: vscode.ExtensionContext) {
                     const result = await testExecutor.execute({
                         type: 'scenario',
                         target,
-                        buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
+                        scenarioLine: scenarioLine + 1,
+                        scenarioName: detectedScenarioName,
+                        buildTool: readExecutionSettings(featureUri.fsPath).defaultBuildTool,
                         workingDirectory: featureFolderPath
                     }, token);
 
@@ -965,26 +983,13 @@ export async function activate(context: vscode.ExtensionContext) {
                     decorationProvider.updateResult(result);
 
                     // Show report
-                    await webviewProvider.showManagementArea('runs');
-                    await publishZephyrResult(result);
+                    if (shouldOpenRuns(featureUri.fsPath)) await webviewProvider.showManagementArea('runs');
+                    if (result.status !== 'error') await publishZephyrResult(result);
 
-                    if (result.status === 'success') {
-                        const watchCount = result.flakiness?.tierCounts.watch || 0;
-                        const flakyCount = result.flakiness?.tierCounts.flaky || 0;
-                        const brokenCount = result.flakiness?.tierCounts.broken || 0;
-                        const extra = result.flakiness ? ` (Watch:${watchCount} Flaky:${flakyCount} Broken:${brokenCount})` : '';
-                        vscode.window.showInformationMessage(`✅ Scenario "${displayName}" passed${extra}`);
-                    } else if (result.status === 'failed') {
-                        const watchCount = result.flakiness?.tierCounts.watch || 0;
-                        const flakyCount = result.flakiness?.tierCounts.flaky || 0;
-                        const brokenCount = result.flakiness?.tierCounts.broken || 0;
-                        const extra = result.flakiness ? ` (Watch:${watchCount} Flaky:${flakyCount} Broken:${brokenCount})` : '';
-                        vscode.window.showErrorMessage(`❌ Scenario "${displayName}" failed${extra}`);
-                    } else if (result.status === 'error') {
-                        // Error already shown in TestExecutor
-                    }
+                    showExecutionNotification(result, `Scenario "${displayName}"`);
                 });
             } catch (error) {
+                if (error instanceof vscode.CancellationError) return;
                 logger.error('Scenario execution failed', error as Error);
                 // Don't show error here as TestExecutor handles it
             }
@@ -1004,6 +1009,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     vscode.window.showWarningMessage('No folder selected');
                     return;
                 }
+                const executionWorkspaceRoot = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(folderPath))?.uri.fsPath || folderPath;
 
                 await vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
@@ -1014,32 +1020,31 @@ export async function activate(context: vscode.ExtensionContext) {
                         ...replayOptions,
                         environment: profile?.environment || replayOptions.environment,
                         parallel: profile?.parallel || replayOptions.parallel,
-                        workingDirectory: folderPath
+                        workingDirectory: executionWorkspaceRoot
                     } : {
                         type: 'folder',
                         target: folderPath,
-                        buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
+                        buildTool: readExecutionSettings(folderPath).defaultBuildTool,
                         environment: profile?.environment,
-                        parallel: profile?.parallel || vscode.workspace.getConfiguration('karateDsl').get('execution.parallelThreads') || 1,
-                        workingDirectory: folderPath
+                        parallel: profile?.parallel || vscode.workspace.getConfiguration('karateDsl', vscode.Uri.file(folderPath)).get('execution.parallelThreads') || 1,
+                        workingDirectory: executionWorkspaceRoot
                     }, token);
 
-                    await attachFlakinessSummary(result, folderPath);
+                    await attachFlakinessSummary(result, executionWorkspaceRoot);
 
-                    await getTestHistoryService(folderPath)?.saveResult(result);
+                    await getTestHistoryService(executionWorkspaceRoot)?.saveResult(result);
                     codeLensProvider.updateResult(result);
                     decorationProvider.updateResult(result);
-                    await webviewProvider.showManagementArea('runs');
-                    await publishZephyrResult(result);
+                    if (shouldOpenRuns(folderPath)) await webviewProvider.showManagementArea('runs');
+                    if (result.status !== 'error') await publishZephyrResult(result);
 
                     const flakySummary = result.flakiness
                         ? ` | Tiers S:${result.flakiness.tierCounts.stable} W:${result.flakiness.tierCounts.watch} F:${result.flakiness.tierCounts.flaky} B:${result.flakiness.tierCounts.broken}`
                         : '';
-                    vscode.window.showInformationMessage(
-                        `✅ Executed ${result.summary.totalScenarios} scenarios: ${result.summary.passed} passed, ${result.summary.failed} failed${flakySummary}`
-                    );
+                    showExecutionNotification(result, `Folder run${flakySummary}`);
                 });
             } catch (error) {
+                if (error instanceof vscode.CancellationError) return;
                 logger.error('Folder execution failed', error as Error);
                 vscode.window.showErrorMessage(`Failed to run folder: ${error}`);
             }
@@ -1055,6 +1060,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     vscode.window.showWarningMessage('No folder selected');
                     return;
                 }
+                const executionWorkspaceRoot = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(folderPath))?.uri.fsPath || folderPath;
                 const tags = await vscode.window.showInputBox({
                     prompt: 'Enter tags to filter (comma-separated)',
                     placeHolder: 'e.g., @smoke, @regression'
@@ -1073,26 +1079,25 @@ export async function activate(context: vscode.ExtensionContext) {
                         type: 'tags',
                         target: folderPath,
                         tags: tagList,
-                        buildTool: vscode.workspace.getConfiguration('karateDsl').get('execution.defaultBuildTool') || 'cli',
-                        workingDirectory: folderPath
+                        buildTool: readExecutionSettings(folderPath).defaultBuildTool,
+                        workingDirectory: executionWorkspaceRoot
                     }, token);
 
-                    await attachFlakinessSummary(result, folderPath);
+                    await attachFlakinessSummary(result, executionWorkspaceRoot);
 
-                    await getTestHistoryService(folderPath)?.saveResult(result);
+                    await getTestHistoryService(executionWorkspaceRoot)?.saveResult(result);
                     codeLensProvider.updateResult(result);
                     decorationProvider.updateResult(result);
-                    await webviewProvider.showManagementArea('runs');
-                    await publishZephyrResult(result);
+                    if (shouldOpenRuns(folderPath)) await webviewProvider.showManagementArea('runs');
+                    if (result.status !== 'error') await publishZephyrResult(result);
 
                     const flakySummary = result.flakiness
                         ? ` | Tiers S:${result.flakiness.tierCounts.stable} W:${result.flakiness.tierCounts.watch} F:${result.flakiness.tierCounts.flaky} B:${result.flakiness.tierCounts.broken}`
                         : '';
-                    vscode.window.showInformationMessage(
-                        `✅ Tag run complete: ${result.summary.passed}/${result.summary.totalScenarios} passed${flakySummary}`
-                    );
+                    showExecutionNotification(result, `Tag run${flakySummary}`);
                 });
             } catch (error) {
+                if (error instanceof vscode.CancellationError) return;
                 logger.error('Tag-based execution failed', error as Error);
                 vscode.window.showErrorMessage(`Failed to run tests by tags: ${error}`);
             }
@@ -1117,7 +1122,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const clearKarateCacheCommand = vscode.commands.registerCommand(
         'karate-dsl.clearKarateCache',
         async () => {
-            const cleared = KarateCliExecutor.clearJarCache(context.extensionPath);
+            const cleared = KarateCliExecutor.clearJarCache(context.extensionPath, workspaceRoot);
             if (cleared) {
                 vscode.window.showInformationMessage('✅ Karate JAR cache cleared. The JAR will be re-downloaded on next execution.');
             } else {

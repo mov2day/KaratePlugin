@@ -332,9 +332,10 @@ export class KarateMcpToolService {
             type: executionType,
             target,
             tags: tags || undefined,
-            buildTool: 'cli',
+            buildTool: 'auto',
             workingDirectory: workspaceRoot
         });
+        await new TestHistoryService(workspaceRoot).saveResult(result);
 
         return {
             ok: result.status !== 'error',

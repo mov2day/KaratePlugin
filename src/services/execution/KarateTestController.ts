@@ -4,6 +4,8 @@ import * as fs from 'fs';
 import { TestExecutor } from './TestExecutor';
 import { logger } from '../../utils/logger';
 import { ZephyrScalePublisher } from '../zephyr/ZephyrScalePublisher';
+import { readExecutionSettings } from './ExecutionSettings';
+import { TestHistoryService } from './TestHistoryService';
 
 /**
  * VS Code Test Controller for Karate feature files
@@ -177,33 +179,49 @@ export class KarateTestController {
         run.started(test);
 
         try {
-            const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-            if (!workspaceRoot) {
+            const featureItem = test.parent || test;
+            const featureUri = featureItem.uri || test.uri;
+            const workspaceRoot = featureUri ? vscode.workspace.getWorkspaceFolder(featureUri)?.uri.fsPath : undefined;
+            if (!workspaceRoot || !featureUri) {
                 run.errored(test, new vscode.TestMessage('No workspace folder open'));
                 return;
             }
 
-            // Determine if it's a feature or scenario
-            const isScenario = test.id.includes(':');
+            const isScenario = Boolean(test.parent);
+            const settings = readExecutionSettings(featureUri.fsPath);
 
-            const buildTool = vscode.workspace.getConfiguration('karateDsl')
-                .get('execution.defaultBuildTool') || 'cli';
-
-            // Execute
             const result = await this.testExecutor.execute({
-                type: 'scenario', // Always use scenario type logic which runs full feature
-                target: isScenario ? test.parent?.uri?.fsPath || test.uri!.fsPath : test.uri!.fsPath,
-                buildTool: buildTool as any,
+                type: isScenario ? 'scenario' : 'feature',
+                target: featureUri.fsPath,
+                scenarioLine: isScenario && test.range ? test.range.start.line + 1 : undefined,
+                scenarioName: isScenario ? test.label : undefined,
+                buildTool: settings.defaultBuildTool,
                 workingDirectory: workspaceRoot
             }, token);
 
-            await this.publishZephyrResult(result);
+            await new TestHistoryService(workspaceRoot).saveResult(result);
+            if (result.status !== 'error') await this.publishZephyrResult(result);
 
             // Get the feature item to update children
             const featureTestItem = isScenario ? test.parent : test;
 
             if (featureTestItem && result.features.length > 0) {
                 const featureResult = result.features[0];
+
+                if (isScenario) {
+                    const scenarioResult = featureResult.scenarios.find(s => s.line === test.range!.start.line + 1)
+                        || featureResult.scenarios.find(s => s.name === test.label);
+                    if (!scenarioResult) {
+                        run.errored(test, new vscode.TestMessage('The selected scenario was not present in the Karate report.'));
+                    } else if (scenarioResult.status === 'passed') {
+                        run.passed(test, scenarioResult.duration);
+                    } else if (scenarioResult.status === 'failed') {
+                        run.failed(test, new vscode.TestMessage(scenarioResult.error || 'Scenario failed'), scenarioResult.duration);
+                    } else {
+                        run.skipped(test);
+                    }
+                    return;
+                }
 
                 // Update feature level status
                 if (featureResult.status === 'passed') {
@@ -258,6 +276,10 @@ export class KarateTestController {
                 }
             }
         } catch (error) {
+            if (error instanceof vscode.CancellationError) {
+                run.skipped(test);
+                return;
+            }
             logger.error('Test execution failed', error as Error);
             run.errored(test, new vscode.TestMessage(`Execution failed: ${error}`));
         }

@@ -138,12 +138,12 @@ export class TestStatusDecorationProvider {
         const skippedDecorations: vscode.DecorationOptions[] = [];
 
         const text = editor.document.getText();
-        const lines = text.split('\\n');
+        const lines = text.split('\n');
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
 
-            if (line.startsWith('Scenario:') || line.match(/^Scenario\\s+Outline:/)) {
+            if (line.startsWith('Scenario:') || line.match(/^Scenario\s+Outline:/)) {
                 const scenarioName = this.extractScenarioName(line);
                 const scenario = featureResult.scenarios.find(s => s.name === scenarioName);
 
@@ -202,7 +202,7 @@ export class TestStatusDecorationProvider {
      * Extract scenario name from line
      */
     private extractScenarioName(line: string): string {
-        const match = line.match(/Scenario(?:\\s+Outline)?:\\s*(.+)/);
+        const match = line.match(/Scenario(?:\s+Outline)?:\s*(.+)/);
         return match ? match[1].trim() : '';
     }
 

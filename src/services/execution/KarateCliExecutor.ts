@@ -272,9 +272,9 @@ export class KarateCliExecutor {
         const jar = await this.ensureKarateJar(extensionPath, settings, project.projectRoot);
         await this.ensureJavaVersion(jar.version);
         const { ConfigDiscovery } = await import('./ConfigDiscovery');
-        const karateConfig = await ConfigDiscovery.discoverAsync(project.projectRoot);
+        const karateConfig = await ConfigDiscovery.discoverAsync(project.projectRoot, project.configDir);
         logger.info(`Config discovery: configJs=${karateConfig.configJsPath}, runners=${karateConfig.runnerClasses.length}, classpath=${karateConfig.classpathEntries.length}`);
-        const discoveredClasspath = karateConfig.classpathEntries;
+        const discoveredClasspath = [...karateConfig.classpathEntries];
         for (const configured of settings.additionalClasspath) {
             const fullPath = path.isAbsolute(configured) ? configured : path.join(project.projectRoot, configured);
             if (!fs.existsSync(fullPath)) throw new Error(`Configured classpath entry was not found: ${fullPath}`);

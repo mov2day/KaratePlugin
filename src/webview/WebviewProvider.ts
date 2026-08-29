@@ -1715,7 +1715,12 @@ function isExecutionOptions(value: unknown): value is TestExecutionOptions {
         && (options.tags === undefined || (Array.isArray(options.tags) && options.tags.every(tag => typeof tag === 'string')))
         && (options.environment === undefined || typeof options.environment === 'string')
         && (options.parallel === undefined || (typeof options.parallel === 'number' && Number.isFinite(options.parallel)))
-        && (options.buildTool === undefined || (typeof options.buildTool === 'string' && ['maven', 'gradle', 'cli'].includes(options.buildTool)))
+        && (options.buildTool === undefined || (typeof options.buildTool === 'string' && ['auto', 'maven', 'gradle', 'cli'].includes(options.buildTool)))
+        && (options.scenarioLine === undefined || (typeof options.scenarioLine === 'number' && Number.isInteger(options.scenarioLine) && options.scenarioLine > 0))
+        && (options.scenarioName === undefined || typeof options.scenarioName === 'string')
+        && (options.runnerClass === undefined || typeof options.runnerClass === 'string')
+        && (options.runnerMethod === undefined || typeof options.runnerMethod === 'string')
+        && (options.configDir === undefined || typeof options.configDir === 'string')
         && (options.workingDirectory === undefined || typeof options.workingDirectory === 'string');
 }
 

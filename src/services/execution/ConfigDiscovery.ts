@@ -1,4 +1,3 @@
-import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { logger } from '../../utils/logger';
@@ -50,9 +49,10 @@ export class ConfigDiscovery {
      * Discover all Karate configuration in a workspace directory
      * Uses synchronous methods for backward compatibility
      */
-    static discover(workingDir: string): KarateConfig {
+    static discover(workingDir: string, explicitConfigDir?: string): KarateConfig {
+        const cacheKey = `${workingDir}::${explicitConfigDir || ''}`;
         // Check cache first
-        const cached = this.configCache.get(workingDir);
+        const cached = this.configCache.get(cacheKey);
         if (cached && (Date.now() - cached.timestamp) < this.CACHE_TTL) {
             return cached.config;
         }
@@ -63,17 +63,7 @@ export class ConfigDiscovery {
             classpathEntries: []
         };
 
-        // Check custom config path from settings first
-        const customConfigPath = vscode.workspace.getConfiguration('karateDsl.execution').get<string>('configPath');
-        if (customConfigPath) {
-            const fullCustomPath = path.isAbsolute(customConfigPath)
-                ? customConfigPath
-                : path.join(workingDir, customConfigPath);
-            if (fs.existsSync(fullCustomPath)) {
-                config.configJsPath = fullCustomPath;
-                logger.info(`Using custom config path: ${fullCustomPath}`);
-            }
-        }
+        config.configJsPath = this.configFileIn(explicitConfigDir);
 
         // Find karate-config using full directory scan
         if (!config.configJsPath) {
@@ -85,15 +75,6 @@ export class ConfigDiscovery {
 
         // Build classpath entries
         config.classpathEntries = this.buildClasspath(workingDir, config.configJsPath);
-
-        // Add additional classpath from settings
-        const additionalClasspath = vscode.workspace.getConfiguration('karateDsl.execution').get<string[]>('additionalClasspath', []);
-        for (const entry of additionalClasspath) {
-            const fullPath = path.isAbsolute(entry) ? entry : path.join(workingDir, entry);
-            if (fs.existsSync(fullPath) && !config.classpathEntries.includes(fullPath)) {
-                config.classpathEntries.push(fullPath);
-            }
-        }
 
         // Parse environment variables from config if it's a JS file
         if (config.configJsPath && config.configJsPath.endsWith('.js')) {
@@ -108,7 +89,7 @@ export class ConfigDiscovery {
         })}`);
 
         // Cache the result
-        this.configCache.set(workingDir, { config, timestamp: Date.now() });
+        this.configCache.set(cacheKey, { config, timestamp: Date.now() });
 
         return config;
     }
@@ -117,24 +98,15 @@ export class ConfigDiscovery {
      * Async discovery using VS Code workspace.findFiles for comprehensive search
      * This is the preferred method for universal project structure support
      */
-    static async discoverAsync(workingDir: string): Promise<KarateConfig> {
+    static async discoverAsync(workingDir: string, explicitConfigDir?: string): Promise<KarateConfig> {
+        const cacheKey = `${workingDir}::${explicitConfigDir || ''}`;
         const config: KarateConfig = {
             runnerClasses: [],
             envVariables: new Map(),
             classpathEntries: []
         };
 
-        // Check custom config path from settings first
-        const customConfigPath = vscode.workspace.getConfiguration('karateDsl.execution').get<string>('configPath');
-        if (customConfigPath) {
-            const fullCustomPath = path.isAbsolute(customConfigPath)
-                ? customConfigPath
-                : path.join(workingDir, customConfigPath);
-            if (fs.existsSync(fullCustomPath)) {
-                config.configJsPath = fullCustomPath;
-                logger.info(`Using custom config path: ${fullCustomPath}`);
-            }
-        }
+        config.configJsPath = this.configFileIn(explicitConfigDir);
 
         // Search only the resolved project. Workspace-wide searches can cross
         // multi-root boundaries and select a sibling project's configuration.
@@ -148,22 +120,13 @@ export class ConfigDiscovery {
         // Build classpath entries
         config.classpathEntries = this.buildClasspath(workingDir, config.configJsPath);
 
-        // Add additional classpath from settings
-        const additionalClasspath = vscode.workspace.getConfiguration('karateDsl.execution').get<string[]>('additionalClasspath', []);
-        for (const entry of additionalClasspath) {
-            const fullPath = path.isAbsolute(entry) ? entry : path.join(workingDir, entry);
-            if (fs.existsSync(fullPath) && !config.classpathEntries.includes(fullPath)) {
-                config.classpathEntries.push(fullPath);
-            }
-        }
-
         // Parse environment variables from config if it's a JS file
         if (config.configJsPath && config.configJsPath.endsWith('.js')) {
             config.envVariables = this.parseKarateConfigJs(config.configJsPath);
         }
 
         // Cache the result
-        this.configCache.set(workingDir, { config, timestamp: Date.now() });
+        this.configCache.set(cacheKey, { config, timestamp: Date.now() });
 
         logger.info(`Async config discovery complete: ${JSON.stringify({
             configJsPath: config.configJsPath,
@@ -172,6 +135,15 @@ export class ConfigDiscovery {
         })}`);
 
         return config;
+    }
+
+    private static configFileIn(configDir?: string): string | undefined {
+        if (!configDir) return undefined;
+        for (const name of ['karate-config.js', 'karate-config.java']) {
+            const candidate = path.join(configDir, name);
+            if (fs.existsSync(candidate)) return candidate;
+        }
+        return undefined;
     }
 
     /**

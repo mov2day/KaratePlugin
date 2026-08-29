@@ -7,6 +7,7 @@ import { ConfigDiscovery } from '../../services/execution/ConfigDiscovery';
 import { buildKarateArguments } from '../../services/execution/ExecutionArguments';
 import { ExecutionRuntimeSettings } from '../../services/execution/ExecutionSettings';
 import { ProjectExecutionResolver } from '../../services/execution/ProjectExecutionResolver';
+import { ResultParser } from '../../services/execution/ResultParser';
 import { TestExecutionOptions } from '../../types';
 
 const defaults: ExecutionRuntimeSettings = {
@@ -62,6 +63,23 @@ suite('Execution engine', () => {
         );
     });
 
+    test('rejects targets spanning independent build modules', () => {
+        const first = path.join(root, 'first');
+        const second = path.join(root, 'second');
+        fs.mkdirSync(first, { recursive: true });
+        fs.mkdirSync(second, { recursive: true });
+        fs.writeFileSync(path.join(first, 'pom.xml'), '<project/>');
+        fs.writeFileSync(path.join(second, 'pom.xml'), '<project/>');
+        const firstFeature = path.join(first, 'first.feature');
+        const secondFeature = path.join(second, 'second.feature');
+        fs.writeFileSync(firstFeature, 'Feature: first');
+        fs.writeFileSync(secondFeature, 'Feature: second');
+        assert.throws(
+            () => ProjectExecutionResolver.resolve({ type: 'features', target: [firstFeature, secondFeature], buildTool: 'auto' }, root),
+            /different build modules/
+        );
+    });
+
     test('discovers the declared Java package for a custom runner', () => {
         const javaRoot = path.join(root, 'src', 'test', 'java', 'com', 'acme');
         fs.mkdirSync(javaRoot, { recursive: true });
@@ -89,5 +107,29 @@ class CustomRunner { @Karate.Test Karate tests() { return Karate.run("classpath:
         const plan = BuildToolExecutor.buildMavenPlan(options, project, defaults, path.join(root, 'reports'));
         assert.ok(plan.args.includes('-Dtest=com.acme.CustomRunner#smoke'));
         assert.ok(plan.args.some(arg => arg.startsWith('-Dkarate.options=') && arg.includes('happy path.feature:9')));
+    });
+
+    test('ignores stale reports and maps reported feature paths back to absolute files', () => {
+        const reportDir = path.join(root, 'reports', 'karate-reports');
+        fs.mkdirSync(reportDir, { recursive: true });
+        const summaryPath = path.join(reportDir, 'karate-summary-json.txt');
+        fs.writeFileSync(summaryPath, JSON.stringify({
+            elapsedTime: 12,
+            featureSummary: [{
+                name: 'users',
+                relativePath: 'features/users.feature',
+                packageQualifiedName: 'features.users',
+                passedCount: 1,
+                failedCount: 0,
+                skippedCount: 0
+            }]
+        }));
+        const old = new Date(Date.now() - 60_000);
+        fs.utimesSync(summaryPath, old, old);
+        assert.strictEqual(ResultParser.findReportDirectory(path.join(root, 'reports'), Date.now()), null);
+        fs.utimesSync(summaryPath, new Date(), new Date());
+        assert.strictEqual(ResultParser.findReportDirectory(path.join(root, 'reports'), Date.now() - 1000), reportDir);
+        const parsed = ResultParser.parseKarateSummary(summaryPath, root);
+        assert.strictEqual(parsed.features![0].absolutePath, path.join(root, 'features', 'users.feature'));
     });
 });

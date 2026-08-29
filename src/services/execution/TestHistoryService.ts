@@ -107,7 +107,8 @@ export class TestHistoryService {
                 target: Array.isArray(options.target)
                     ? options.target.map(target => this.toRelativePath(target))
                     : this.toRelativePath(options.target),
-                workingDirectory: options.workingDirectory ? this.toRelativePath(options.workingDirectory) : undefined
+                workingDirectory: options.workingDirectory ? this.toRelativePath(options.workingDirectory) : undefined,
+                configDir: options.configDir ? this.toRelativePath(options.configDir) : undefined
             }
         };
     }
@@ -122,7 +123,8 @@ export class TestHistoryService {
                 target: Array.isArray(options.target)
                     ? options.target.map(target => this.toAbsolutePath(target))
                     : this.toAbsolutePath(options.target),
-                workingDirectory: options.workingDirectory ? this.toAbsolutePath(options.workingDirectory) : undefined
+                workingDirectory: options.workingDirectory ? this.toAbsolutePath(options.workingDirectory) : undefined,
+                configDir: options.configDir ? this.toAbsolutePath(options.configDir) : undefined
             }
         };
     }
