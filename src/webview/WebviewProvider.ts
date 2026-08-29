@@ -175,7 +175,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     await this.sendManagementSnapshot(data.folderPath);
                     break;
                 case 'executeExtensionCommand':
-                    await this.executeShellCommand(data.commandId, data.folderPath);
+                    await this.executeShellCommand(data.commandId, data.folderPath, data.useCopilot);
                     break;
                 case 'advanceQualityFinding':
                     await this.advanceQualityFinding(data.id, data.nextState, data.folderPath);
@@ -556,7 +556,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         };
     }
 
-    private async executeShellCommand(commandId: unknown, folderPath?: string): Promise<void> {
+    private async executeShellCommand(commandId: unknown, folderPath?: string, useCopilot?: boolean): Promise<void> {
         const allowed = new Set([
             'karate-dsl.runFolder', 'karate-dsl.runByTags', 'karate-dsl.showCoverageDashboard', 'karate-dsl.analyzeProjectHealth', 'karate-dsl.checkSpecChanges',
             'karate-dsl.generateFromOpenAPI', 'karate-dsl.importPostmanCollection', 'karate-dsl.importHar',
@@ -574,6 +574,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             await this.executeShellCommandWithArguments(commandId, { folderPath });
         } else if (commandId === 'karate-dsl.analyzeProjectHealth' || commandId === 'karate-dsl.checkSpecChanges') {
             await this.executeShellCommandWithArguments(commandId, folderPath);
+        } else if (useCopilot !== undefined && (commandId === 'karate-dsl.importPostmanCollection' || commandId === 'karate-dsl.importHar')) {
+            await this.executeShellCommandWithArguments(commandId, { source: 'management', useCopilot });
         } else {
             await this.executeShellCommandWithArguments(commandId);
         }
@@ -1650,7 +1652,8 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
         case 'getManagementSnapshot': return message.folderPath === undefined || typeof message.folderPath === 'string';
         case 'executeExtensionCommand':
             return typeof message.commandId === 'string'
-                && (message.folderPath === undefined || typeof message.folderPath === 'string');
+                && (message.folderPath === undefined || typeof message.folderPath === 'string')
+                && (message.useCopilot === undefined || typeof message.useCopilot === 'boolean');
         case 'advanceQualityFinding':
             return typeof message.id === 'string'
                 && typeof message.nextState === 'string'

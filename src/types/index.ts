@@ -327,7 +327,7 @@ export type WebviewMessage =
     | { command: 'launchCoverageDashboard' }
     | { command: 'huntApiBugs' }
     | { command: 'getManagementSnapshot'; folderPath?: string }
-    | { command: 'executeExtensionCommand'; commandId: string; folderPath?: string }
+    | { command: 'executeExtensionCommand'; commandId: string; folderPath?: string; useCopilot?: boolean }
     | { command: 'advanceQualityFinding'; id: string; nextState: 'New' | 'Investigating' | 'Fixed' | 'Verified'; folderPath?: string }
     | { command: 'createRunProfile'; name: string; environment: string; parallel: number; folderPath?: string }
     | { command: 'runProfile'; id: string; folderPath?: string }

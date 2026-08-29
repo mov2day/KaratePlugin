@@ -17,6 +17,17 @@ const shownNotifications = new Map<string, number>(); // specPath -> timestamp
 const processingSpecs = new Set<string>(); // specs currently being processed
 const NOTIFICATION_COOLDOWN_MS = 30000; // 30 seconds cooldown
 
+interface GenerationCommandOptions {
+    source?: 'management';
+    useCopilot: boolean;
+}
+
+function isGenerationCommandOptions(value: unknown): value is GenerationCommandOptions {
+    return Boolean(value)
+        && typeof value === 'object'
+        && typeof (value as { useCopilot?: unknown }).useCopilot === 'boolean';
+}
+
 import { KarateCodeActionProvider } from './services/linter/KarateCodeActionProvider';
 import { KarateLinter } from './services/linter/KarateLinter';
 import { TestExecutor } from './services/execution/TestExecutor';
@@ -743,8 +754,10 @@ export async function activate(context: vscode.ExtensionContext) {
     // Postman Collection Import command
     const importPostmanCommand = vscode.commands.registerCommand(
         'karate-dsl.importPostmanCollection',
-        async (uri?: vscode.Uri) => {
+        async (uriOrOptions?: vscode.Uri | GenerationCommandOptions) => {
             try {
+                const invocation = isGenerationCommandOptions(uriOrOptions) ? uriOrOptions : undefined;
+                const uri = invocation ? undefined : uriOrOptions as vscode.Uri | undefined;
                 // Select collection file
                 const collectionFile = uri || await vscode.window.showOpenDialog({
                     canSelectMany: false,
@@ -776,12 +789,15 @@ export async function activate(context: vscode.ExtensionContext) {
                     }
                 }
 
-                // Ask if user wants to use Copilot
-                const useCopilotChoice = await vscode.window.showQuickPick(['Yes', 'No'], {
-                    placeHolder: 'Use GitHub Copilot to enhance variable and script conversion?'
-                });
-
-                const useCopilot = useCopilotChoice === 'Yes';
+                // The management workspace already collected this choice. Standalone command
+                // launches still ask because they have no inline generation controls.
+                let useCopilot = invocation?.useCopilot;
+                if (useCopilot === undefined) {
+                    const useCopilotChoice = await vscode.window.showQuickPick(['Yes', 'No'], {
+                        placeHolder: 'Use GitHub Copilot to enhance variable and script conversion?'
+                    });
+                    useCopilot = useCopilotChoice === 'Yes';
+                }
 
                 // Ask for output directory
                 const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -1180,7 +1196,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     const importHarCommand = vscode.commands.registerCommand(
         'karate-dsl.importHar',
-        async () => {
+        async (options?: GenerationCommandOptions) => {
             try {
                 const { SessionRecorderService } = await import('./services/session/SessionRecorderService');
                 const recorder = SessionRecorderService.getInstance();
@@ -1189,7 +1205,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
                 if (requests.length > 0) {
                     // Offer to synthesize immediately
-                    vscode.commands.executeCommand('karate-dsl.synthesizeSession');
+                    if (isGenerationCommandOptions(options)) {
+                        vscode.commands.executeCommand('karate-dsl.synthesizeSession', options);
+                    } else {
+                        vscode.commands.executeCommand('karate-dsl.synthesizeSession');
+                    }
                 }
             } catch (error) {
                 logger.error('Failed to import HAR file', error as Error);
@@ -1200,7 +1220,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     const synthesizeSessionCommand = vscode.commands.registerCommand(
         'karate-dsl.synthesizeSession',
-        async () => {
+        async (options?: GenerationCommandOptions) => {
             try {
                 const { SessionRecorderService } = await import('./services/session/SessionRecorderService');
                 const { ResourceLifecycleAnalyzer } = await import('./services/synthesis/ResourceLifecycleAnalyzer');
@@ -1215,13 +1235,16 @@ export async function activate(context: vscode.ExtensionContext) {
                     return;
                 }
 
-                // Ask if user wants to enhance with Copilot
-                const useCopilot = await vscode.window.showQuickPick([
-                    { label: '$(sparkle) Enhance with AI (Copilot)', value: true, description: 'Add validations, assertions, and comprehensive tests' },
-                    { label: '$(file-code) Basic Generation', value: false, description: 'Generate simple request/response tests' }
-                ], {
-                    placeHolder: `Generate Karate tests from ${requests.length} requests`
-                });
+                // Reuse an explicit workspace choice. Recording and command-palette launches
+                // retain the prompt because no AI preference was collected beforehand.
+                const useCopilot = isGenerationCommandOptions(options)
+                    ? { label: options.useCopilot ? 'AI enhancement' : 'Basic generation', value: options.useCopilot }
+                    : await vscode.window.showQuickPick([
+                        { label: '$(sparkle) Enhance with AI (Copilot)', value: true, description: 'Add validations, assertions, and comprehensive tests' },
+                        { label: '$(file-code) Basic Generation', value: false, description: 'Generate simple request/response tests' }
+                    ], {
+                        placeHolder: `Generate Karate tests from ${requests.length} requests`
+                    });
 
                 if (!useCopilot) {
                     return;
