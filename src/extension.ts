@@ -37,6 +37,7 @@ import { ZephyrScalePublisher, ZEPHYR_TOKEN_KEY } from './services/zephyr/Zephyr
 import { WorkspaceEntityStore } from './services/workspace/WorkspaceEntityStore';
 import { QualityWorkflowService } from './services/workspace/QualityWorkflowService';
 import { readExecutionSettings } from './services/execution/ExecutionSettings';
+import { scenarioLineFromEditorLine } from './services/execution/ExecutionArguments';
 
 export async function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
@@ -967,7 +968,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     const result = await testExecutor.execute({
                         type: 'scenario',
                         target,
-                        scenarioLine: scenarioLine + 1,
+                        scenarioLine: scenarioLineFromEditorLine(scenarioLine),
                         scenarioName: detectedScenarioName,
                         buildTool: readExecutionSettings(featureUri.fsPath).defaultBuildTool,
                         workingDirectory: featureFolderPath

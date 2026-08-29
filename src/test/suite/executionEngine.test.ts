@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { BuildToolExecutor } from '../../services/execution/BuildToolExecutor';
 import { ConfigDiscovery } from '../../services/execution/ConfigDiscovery';
-import { buildKarateArguments } from '../../services/execution/ExecutionArguments';
+import { buildKarateArguments, scenarioLineFromEditorLine } from '../../services/execution/ExecutionArguments';
 import { ExecutionRuntimeSettings } from '../../services/execution/ExecutionSettings';
 import { ProjectExecutionResolver } from '../../services/execution/ProjectExecutionResolver';
 import { ResultParser } from '../../services/execution/ResultParser';
@@ -97,6 +97,25 @@ class CustomRunner { @Karate.Test Karate tests() { return Karate.run("classpath:
             scenarioLine: 27
         });
         assert.deepStrictEqual(args, ['C:\\work folder\\users.feature:27']);
+        assert.strictEqual(scenarioLineFromEditorLine(26), 27);
+    });
+
+    test('falls back to CLI for an auto-discovered build without a Karate runner', () => {
+        fs.writeFileSync(path.join(root, 'pom.xml'), '<project/>');
+        const feature = path.join(root, 'simple.feature');
+        fs.writeFileSync(feature, 'Feature: simple');
+        const discovered = ProjectExecutionResolver.resolve({ type: 'feature', target: feature, buildTool: 'auto' }, root);
+        const runnable = ProjectExecutionResolver.chooseRunnableStrategy(discovered, 'auto', 0);
+        assert.strictEqual(runnable.strategy, 'cli');
+    });
+
+    test('builds Gradle tags, target, runner class, and method together', () => {
+        fs.writeFileSync(path.join(root, 'build.gradle'), 'test { useJUnitPlatform() }');
+        const options: TestExecutionOptions = { type: 'tags', target: path.join(root, 'features'), tags: ['smoke'], buildTool: 'gradle' };
+        const project = ProjectExecutionResolver.resolve(options, root, { runnerClass: 'com.acme.Suite', runnerMethod: 'api' });
+        const plan = BuildToolExecutor.buildGradlePlan(options, project, defaults, path.join(root, 'reports'));
+        assert.deepStrictEqual(plan.args.slice(0, 3), ['test', '--tests', 'com.acme.Suite.api']);
+        assert.ok(plan.args.some(arg => arg.startsWith('-Dkarate.options=') && arg.includes('--tags @smoke') && arg.includes('features')));
     });
 
     test('builds Maven runner and karate.options overrides as single arguments', () => {

@@ -233,7 +233,7 @@ export class ConfigDiscovery {
             }
         }
 
-        return runners;
+        return Array.from(new Set(runners)).sort();
     }
 
     /**
@@ -275,10 +275,10 @@ export class ConfigDiscovery {
      */
     private static isKarateRunner(content: string): boolean {
         const karatePatterns = [
-            /import\s+com\.intuit\.karate/,
             /@Karate\.Test/,
             /Runner\.(path|builder)/,
             /Karate\s*\.\s*run/,
+            /@RunWith\s*\(\s*Karate\.class\s*\)/,
             /@CucumberOptions/
         ];
 
@@ -384,7 +384,7 @@ export class ConfigDiscovery {
         const featureDir = path.dirname(featurePath);
 
         // Try multiple possible java roots
-        const javaRoots = ['src/test/java', 'src/main/java', 'test', 'tests'];
+        const javaRoots = ['src/test/java', 'src/test/resources', 'src/main/java', 'src/main/resources', 'test', 'tests'];
 
         for (const root of javaRoots) {
             const rootPath = path.join(workingDir, root);

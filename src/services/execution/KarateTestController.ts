@@ -6,6 +6,7 @@ import { logger } from '../../utils/logger';
 import { ZephyrScalePublisher } from '../zephyr/ZephyrScalePublisher';
 import { readExecutionSettings } from './ExecutionSettings';
 import { TestHistoryService } from './TestHistoryService';
+import { scenarioLineFromEditorLine } from './ExecutionArguments';
 
 /**
  * VS Code Test Controller for Karate feature files
@@ -193,7 +194,7 @@ export class KarateTestController {
             const result = await this.testExecutor.execute({
                 type: isScenario ? 'scenario' : 'feature',
                 target: featureUri.fsPath,
-                scenarioLine: isScenario && test.range ? test.range.start.line + 1 : undefined,
+                scenarioLine: isScenario && test.range ? scenarioLineFromEditorLine(test.range.start.line) : undefined,
                 scenarioName: isScenario ? test.label : undefined,
                 buildTool: settings.defaultBuildTool,
                 workingDirectory: workspaceRoot

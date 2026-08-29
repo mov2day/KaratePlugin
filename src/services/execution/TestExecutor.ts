@@ -10,6 +10,7 @@ import { logger } from '../../utils/logger';
 import { ProjectExecutionResolver } from './ProjectExecutionResolver';
 import { readExecutionSettings } from './ExecutionSettings';
 import { ProcessResult } from './ProcessRunner';
+import { ConfigDiscovery } from './ConfigDiscovery';
 
 /**
  * Main orchestrator for Karate test execution
@@ -39,7 +40,14 @@ export class TestExecutor {
                 throw new Error('No workspace folder found. Please open a workspace.');
             }
             const settings = readExecutionSettings(this.getSettingsScope(options, workspaceRoot));
-            const project = ProjectExecutionResolver.resolve(options, workspaceRoot, settings);
+            let project = ProjectExecutionResolver.resolve(options, workspaceRoot, settings);
+            const requestedStrategy = options.buildTool || settings.defaultBuildTool || 'auto';
+            const runnerCount = project.strategy === 'cli' ? 0 : ConfigDiscovery.findRunnerClasses(project.projectRoot).length;
+            const runnableProject = ProjectExecutionResolver.chooseRunnableStrategy(project, requestedStrategy, runnerCount);
+            if (project.strategy !== runnableProject.strategy) {
+                logger.info(`No Karate Java runner found in ${project.projectRoot}; using standalone CLI.`);
+            }
+            project = runnableProject;
             const resolvedOptions: TestExecutionOptions = {
                 ...options,
                 buildTool: project.strategy,
@@ -60,7 +68,13 @@ export class TestExecutor {
                 processResult = await BuildToolExecutor.execute(plan, cancellationToken);
             }
 
-            const reportDir = ResultParser.findReportDirectory(outputDirectory, startTime);
+            let reportDir = ResultParser.findReportDirectory(outputDirectory, startTime);
+            if (!reportDir && project.strategy !== 'cli') {
+                // Custom runners may choose their own output directory or a Gradle
+                // build may not forward karate.output.dir. Accept only a report
+                // created after this process began, never an older workspace report.
+                reportDir = ResultParser.findReportDirectory(project.projectRoot, startTime);
+            }
             logger.info(`Report directory found: ${reportDir}`);
 
             if (!reportDir) {

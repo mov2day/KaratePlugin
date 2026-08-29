@@ -854,7 +854,8 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run typecheck && npm run lint && npm run package:check",
+    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run typecheck && npm run lint && npm run package:check",
+    "test:execution": "npm run compile && node ./scripts/test-execution-engine.cjs",
     "package:check": "npm run build:webview && npm run clean && npm run build:extension && node ./scripts/check-package-files.cjs",
     "test": "node ./out/test/runTest.js",
     "package": "vsce package"

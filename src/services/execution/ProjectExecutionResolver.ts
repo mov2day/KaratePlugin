@@ -26,6 +26,13 @@ export interface ResolvedExecutionProject {
  * deterministic and bounded by the owning VS Code workspace folder.
  */
 export class ProjectExecutionResolver {
+    static chooseRunnableStrategy(project: ResolvedExecutionProject, requested: 'auto' | ExecutionStrategy, discoveredRunnerCount: number): ResolvedExecutionProject {
+        if (requested === 'auto' && project.strategy !== 'cli' && !project.runnerClass && discoveredRunnerCount === 0) {
+            return { ...project, strategy: 'cli' };
+        }
+        return project;
+    }
+
     static resolve(
         options: TestExecutionOptions,
         workspaceRoot: string,

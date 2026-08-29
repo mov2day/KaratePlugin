@@ -1,6 +1,11 @@
 import * as path from 'path';
 import { TestExecutionOptions } from '../../types';
 
+export function scenarioLineFromEditorLine(zeroBasedLine: number): number {
+    if (!Number.isInteger(zeroBasedLine) || zeroBasedLine < 0) throw new Error('Scenario editor line must be a non-negative integer.');
+    return zeroBasedLine + 1;
+}
+
 function scenarioTarget(options: TestExecutionOptions, target: string): string {
     if (options.scenarioLine && options.scenarioLine > 0) return `${target}:${options.scenarioLine}`;
     const legacy = target.match(/^(.*\.feature):(\d+)$/i);
