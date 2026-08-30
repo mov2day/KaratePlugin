@@ -66,6 +66,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .primary-action:hover { background: var(--ktm-accent-hover); }
 .run-action-label { display: none; }
 
+.process-status { position: relative; min-height: 36px; padding: 8px 14px 7px; overflow: hidden; border-bottom: 1px solid var(--ktm-border-soft); background: color-mix(in srgb, var(--ktm-link) 6%, var(--ktm-bg)); }
+.process-track { position: absolute; inset: 0 0 auto; height: 2px; overflow: hidden; background: color-mix(in srgb, var(--ktm-link) 14%, transparent); }
+.process-track > span { display: block; height: 100%; background: var(--ktm-link); transition: width 160ms ease; }
+.process-track > .is-indeterminate { width: 36%; }
+.process-copy { min-width: 0; display: grid; grid-template-columns: 16px auto minmax(0, 1fr) auto; align-items: center; gap: 7px; color: var(--ktm-muted); }
+.process-copy > .codicon { color: var(--ktm-link); }
+.process-copy strong { color: var(--ktm-text); font-size: 11px; font-weight: 650; white-space: nowrap; }
+.process-copy > span:not(.codicon) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.process-copy small { color: var(--ktm-link); font-variant-numeric: tabular-nums; }
+button[aria-busy="true"] { opacity: 1; }
+
 .area, .global-search-results { width: 100%; max-width: 1240px; padding: 20px 16px 36px; }
 .global-search-results { padding-bottom: 0; }
 .area-heading { margin-bottom: 18px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
@@ -376,4 +387,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 @media (prefers-reduced-motion: no-preference) {
   .source-card, .source-card-arrow, .rail-item, .layout-toggle { transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease; }
+  .process-track > .is-indeterminate { animation: process-slide 1.15s ease-in-out infinite; }
+}
+
+@keyframes process-slide {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(310%); }
 }

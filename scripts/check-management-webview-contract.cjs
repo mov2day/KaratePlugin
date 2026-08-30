@@ -6,6 +6,7 @@ const config = fs.readFileSync('tsconfig.json', 'utf8');
 const extension = fs.readFileSync('src/extension.ts', 'utf8');
 const health = fs.readFileSync('src/services/health/ProjectAnalyzer.ts', 'utf8');
 const types = fs.readFileSync('src/types/index.ts', 'utf8');
+const processes = fs.readFileSync('src/shared/processCatalog.ts', 'utf8');
 
 const requirements = [
   ['unreachable code protection', /"allowUnreachableCode"\s*:\s*false/],
@@ -39,10 +40,16 @@ const requirements = [
   ['application icon in webview', /data-app-icon="\$\{appIconUri\}"/],
   ['folder-scoped history services', /testHistoryServices = new Map/],
   ['folder-scoped health analysis', /analyzeWorkspace\(folder\)/],
-  ['folder-scoped feature discovery', /new vscode\.RelativePattern\(workspaceFolder, '\*\*\/\*\.feature'\)/]
+  ['folder-scoped feature discovery', /new vscode\.RelativePattern\(workspaceFolder, '\*\*\/\*\.feature'\)/],
+  ['shared process catalog', /getProcessDescriptor/],
+  ['host process lifecycle start', /type: 'processState',[\s\S]*running: true/],
+  ['host process lifecycle completion', /type: 'processState',[\s\S]*running: false/],
+  ['accessible process status', /class="process-status" role="status" aria-live="polite"/],
+  ['process action duplicate prevention', /disabled=\{disabled \|\| Boolean\(activeProcess\)\}/],
+  ['generation percentage feedback', /activeProcess\.percentage/]
 ];
 
-const sources = `${provider}\n${app}\n${config}\n${extension}\n${health}\n${types}`;
+const sources = `${provider}\n${app}\n${config}\n${extension}\n${health}\n${types}\n${processes}`;
 const missing = requirements.filter(([, pattern]) => !pattern.test(sources)).map(([name]) => name);
 if (/analyzeCoverage\(data\.folderPath\)/.test(provider)) missing.push('coverage must not analyse an implicit workspace-wide feature scope');
 if (/codicon-beaker/.test(app)) missing.push('generic beaker branding must not replace the application icon');

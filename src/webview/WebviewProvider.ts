@@ -19,6 +19,7 @@ import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore
 import { QualityState, QualityWorkflowService } from '../services/workspace/QualityWorkflowService';
 import { EnhancedCoverageReport, EnhancedCoverageService } from '../services/enhancedCoverageService';
 import { CoverageDashboardProvider } from './CoverageDashboardProvider';
+import { getProcessDescriptor } from '../shared/processCatalog';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'karateGenerator.mainView';
@@ -125,7 +126,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 this.sendError('The test management workspace received an invalid request.');
                 return;
             }
-            switch (data.command) {
+            const process = getProcessDescriptor(data);
+            if (process) this.postMessageToWebview({ type: 'processState', ...process, running: true });
+            try {
+                switch (data.command) {
                 case 'selectOpenAPIFile':
                     await this.handleSelectOpenAPIFile();
                     break;
@@ -232,6 +236,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 case 'focusManagementSidebar':
                     await vscode.commands.executeCommand('karateGenerator.mainView.focus');
                     break;
+                }
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                this.sendError(`Could not complete this action: ${message}`);
+            } finally {
+                if (process) this.postMessageToWebview({ type: 'processState', ...process, running: false });
             }
         });
     }
