@@ -355,11 +355,10 @@ export async function activate(context: vscode.ExtensionContext) {
         const config = vscode.workspace.getConfiguration('karateDsl');
         const currentProvider = config.get<string>('ai.provider', 'copilot');
         const provider = await vscode.window.showQuickPick([
-            { label: 'GitHub Copilot', description: currentProvider === 'copilot' ? 'Current · Recommended' : 'Recommended', value: 'copilot' },
+            { label: 'GitHub Copilot', description: currentProvider === 'copilot' || currentProvider === 'auto' ? 'Current · Recommended' : 'Recommended', value: 'copilot' },
             { label: 'Other VS Code model', description: currentProvider === 'vscode-lm' ? 'Current' : 'Uses an installed model provider', value: 'vscode-lm' },
             { label: 'Ollama', description: currentProvider === 'ollama' ? 'Current · Local' : 'Local', value: 'ollama' },
-            { label: 'Claude API', description: currentProvider === 'claude-api' ? 'Current' : 'Anthropic API key required', value: 'claude-api' },
-            { label: 'Automatic fallback', description: currentProvider === 'auto' ? 'Current · Legacy' : 'Copilot, Claude, then Ollama', value: 'auto' }
+            { label: 'Claude API', description: currentProvider === 'claude-api' ? 'Current' : 'Anthropic API key required', value: 'claude-api' }
         ], { placeHolder: 'Select the AI provider used by all Karate features' });
         if (!provider) return;
         await config.update('ai.provider', provider.value, vscode.ConfigurationTarget.Global);

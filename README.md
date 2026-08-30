@@ -144,6 +144,8 @@ AI enhancement is optional. The extension supports:
 
 Run **Karate: Configure AI Routing** to choose one provider for generation, imports, coverage guidance, repair, flakiness analysis, and suggestions. Copilot's default **Efficient** mode routes lightweight analysis to fast families such as Haiku or Luna while reserving balanced families such as Sonnet or Terra for production Karate generation. Select an exact live model or **Highest quality** only when the additional quota use is intentional.
 
+Provider selection is strict. If a selected model becomes unavailable, routing refreshes the live model list and retries with another eligible model from that same provider. It never moves a Copilot request to Claude or Ollama, or changes any other selected provider implicitly. The legacy provider value `auto` is retained as a Copilot alias for existing settings.
+
 | Copilot policy | Selection behavior | Recommended use |
 |---|---|---|
 | Efficient (default) | Uses fast/low-cost families for lightweight work and balanced/medium-cost families for generation and repair | Routine generation, conversion, coverage, and suggestions |

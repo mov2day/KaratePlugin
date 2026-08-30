@@ -548,7 +548,7 @@
             "Another language model provider registered with VS Code",
             "Claude API (requires Anthropic API key)",
             "Ollama (local inference, requires Ollama running)",
-            "Legacy automatic fallback: Copilot, Claude API, then Ollama"
+            "Legacy alias for GitHub Copilot; retained for compatibility and never switches providers"
           ]
         },
         "karateDsl.ai.modelMode": {

@@ -18,11 +18,12 @@ export class AISkippedError extends Error {
 }
 
 /**
- * AIProviderRegistry — singleton that resolves the active AI provider
- * based on user settings with automatic fallback.
+ * AIProviderRegistry — singleton that resolves only the provider selected by
+ * the user. Model fallback is delegated to that provider and never crosses a
+ * provider boundary.
  *
  * Error handling:
- * - Provider unavailable → falls back to next provider, then degrades with status bar warning
+ * - Provider unavailable → offers configuration or a non-AI continuation
  * - Rate limit exceeded → dismissible notification with settings link
  * - Timeout → cancels after 120s, returns un-enhanced content
  */
@@ -33,7 +34,6 @@ export class AIProviderRegistry {
     private copilotProvider: CopilotProvider;
     private vscodeModelProvider: CopilotProvider;
     private claudeProvider: ClaudeAPIProvider;
-    private statusBarItem: vscode.StatusBarItem | undefined;
     private aiSkippedForSession = false;
 
     private constructor() {
@@ -78,9 +78,8 @@ export class AIProviderRegistry {
     }
 
     /**
-     * Get the active provider based on settings, with fallback.
-     * When user explicitly selects a provider (not "auto"), failing
-     * provider shows a visible warning before falling back.
+     * Get the active provider based on settings. The legacy "auto" value maps
+     * to Copilot and never falls through to Claude or Ollama.
      * Throws AISkippedError if user chooses "Continue without AI".
      */
     async getProvider(): Promise<AIProvider> {
@@ -90,11 +89,6 @@ export class AIProviderRegistry {
         }
 
         const configured = this.getConfiguredProviderId();
-
-        // Auto mode: try copilot first, then claude, then ollama
-        if (configured === 'auto') {
-            return this.resolveAutoProvider();
-        }
 
         // Specific provider requested
         const provider = this.providers.get(configured);
@@ -108,7 +102,6 @@ export class AIProviderRegistry {
 
         const choice = await vscode.window.showWarningMessage(
             `⚠️ ${providerName} is not available. ${this.getUnavailableHint(configured)}`,
-            'Use Another Provider',
             'Continue without AI',
             'Open Settings'
         );
@@ -116,16 +109,6 @@ export class AIProviderRegistry {
         if (choice === 'Open Settings') {
             vscode.commands.executeCommand('workbench.action.openSettings', 'karateDsl.ai.provider');
             throw new AISkippedError();
-        }
-
-        if (choice === 'Use Another Provider') {
-            logger.info(`User chose fallback from unavailable ${providerName}`);
-            try {
-                return await this.resolveAutoProvider();
-            } catch {
-                // All providers down — skip AI
-                throw new AISkippedError();
-            }
         }
 
         if (choice === 'Continue without AI') {
@@ -146,11 +129,7 @@ export class AIProviderRegistry {
     async complete(prompt: string, opts: CompletionOptions = {}): Promise<string> {
         try {
             const provider = await this.getProvider();
-            const configured = this.getConfiguredProviderId();
-            const note = configured !== 'auto' && configured !== provider.id
-                ? ` (fallback from ${configured})`
-                : '';
-            logger.info(`AI request via ${provider.name}${note}`);
+            logger.info(`AI request via selected provider ${provider.name}`);
             const composed = KaratePromptComposer.compose(prompt, opts.task, opts.systemPrompt);
             return await provider.complete(composed.prompt, {
                 ...opts,
@@ -179,9 +158,6 @@ export class AIProviderRegistry {
 
     async isConfiguredProviderAvailable(): Promise<boolean> {
         const configured = this.getConfiguredProviderId();
-        if (configured === 'auto') {
-            return this.isAnyAvailable();
-        }
         return this.providers.get(configured)?.isAvailable() ?? false;
     }
 
@@ -202,21 +178,24 @@ export class AIProviderRegistry {
 
     async getModels(providerId?: AIProviderId): Promise<AIModelDescriptor[]> {
         const id = providerId ?? this.getConfiguredProviderId();
-        const resolvedId = id === 'auto' ? 'copilot' : id;
-        const provider = this.providers.get(resolvedId);
+        const provider = this.providers.get(id);
         return provider?.listModels ? provider.listModels() : [];
     }
 
-    private getConfiguredProviderId(): AIProviderId | 'auto' {
+    private getConfiguredProviderId(): AIProviderId {
         const config = vscode.workspace.getConfiguration('karateDsl');
         const value = config.get<string>('ai.provider') || 'copilot';
-        if (value === 'auto' || value === 'copilot' || value === 'vscode-lm' || value === 'claude-api' || value === 'ollama') {
+        if (value === 'auto') {
+            logger.info('Legacy AI provider value "auto" resolved to Copilot without cross-provider fallback');
+            return 'copilot';
+        }
+        if (value === 'copilot' || value === 'vscode-lm' || value === 'claude-api' || value === 'ollama') {
             return value;
         }
-        return 'auto';
+        return 'copilot';
     }
 
-    private getUnavailableHint(providerId: AIProviderId | 'auto'): string {
+    private getUnavailableHint(providerId: AIProviderId): string {
         switch (providerId) {
             case 'ollama':
                 return 'Is Ollama running? Start it with `ollama serve`.';
@@ -231,28 +210,12 @@ export class AIProviderRegistry {
         }
     }
 
-    private async resolveAutoProvider(): Promise<AIProvider> {
-        const order: AIProviderId[] = ['copilot', 'claude-api', 'ollama'];
-
-        for (const id of order) {
-            const provider = this.providers.get(id);
-            if (provider && await provider.isAvailable()) {
-                logger.info(`Auto-resolved AI provider: ${provider.name}`);
-                return provider;
-            }
-        }
-
-        // No provider available — show warning
-        this.showNoProviderWarning();
-        throw new Error('No AI provider available. Configure one in Settings → Karate DSL → AI Provider.');
-    }
-
     private handleError(error: any): string {
         const message = (error?.message || '').toLowerCase();
 
         if (message.includes('rate limit') || message.includes('429') || message.includes('quota')) {
             vscode.window.showWarningMessage(
-                '⚠️ AI provider rate limit exceeded. Try again later or switch providers.',
+                '⚠️ The selected AI provider has reached its rate limit. Try again later or choose another model from that provider.',
                 'Open Settings'
             ).then(choice => {
                 if (choice === 'Open Settings') {
@@ -272,22 +235,4 @@ export class AIProviderRegistry {
         return '';
     }
 
-    private showNoProviderWarning(): void {
-        if (!this.statusBarItem) {
-            this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 50);
-            this.statusBarItem.text = '$(warning) No AI Provider';
-            this.statusBarItem.tooltip = 'No AI provider available. Click to configure.';
-            this.statusBarItem.command = 'workbench.action.openSettings';
-        }
-        this.statusBarItem.show();
-
-        vscode.window.showWarningMessage(
-            'No AI provider available. AI features will be disabled.',
-            'Configure AI Provider'
-        ).then(choice => {
-            if (choice === 'Configure AI Provider') {
-                vscode.commands.executeCommand('workbench.action.openSettings', 'karateDsl.ai.provider');
-            }
-        });
-    }
 }

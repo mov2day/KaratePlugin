@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copilot defaults to quota-conscious Efficient routing. Balanced is optional, while Highest quality is explicit opt-in and never used as an automatic escalation.
 - Copilot automatic routing now categorizes live model families by capability and cost: Haiku/Luna-class models handle lightweight analysis, Sonnet/Terra-class models handle production generation, and Opus/Sol-class models remain explicit high-quality choices.
 - Model routing is task-aware rather than context-window-driven, and unknown future model families remain manual-only until categorized.
+- Provider selection is now strict: unavailable models retry within the selected provider, while unavailable providers never trigger a fallback to a different backend. The legacy `auto` provider value resolves only to Copilot.
 - All generation, import, coverage, repair, flakiness, suggestion, and MCP AI calls now pass through the same provider and model layer.
 - Bundled Karate skills are selected by task and capped to a focused context budget instead of injecting every skill into every request.
 - This is a major UI redesign. Existing command IDs and settings remain available.
@@ -43,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Postman and HAR imports launched from the management workspace no longer show a second AI-enhancement prompt after the user already made that choice in the UI. Standalone Command Palette and Explorer launches retain their prompt for backward compatibility.
 - Coverage analysis and missing-test generation now preserve the configured AI provider rather than silently switching to a Copilot-specific path.
 - Explicit provider and model selections are retained across AI-assisted services; unavailable exact models are re-routed through the active cost policy instead of silently escalating to the largest high-quota option.
+- Copilot `model_not_supported` responses are treated as stale model availability, causing one live-catalog refresh and a same-provider retry instead of surfacing an immediate provider error.
 
 ## [1.5.2] - 2026-06-19
 

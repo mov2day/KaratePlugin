@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { AIModelDescriptor, AIModelMode, AIProvider, CompletionOptions } from './AIProvider';
 import { classifyModel, orderModelCandidates } from './ModelSelection';
+import { isUnsupportedModelRejection } from './ModelErrors';
 import { logger } from '../../utils/logger';
 
 class StaleLanguageModelError extends Error {}
@@ -185,6 +186,10 @@ export class CopilotProvider implements AIProvider {
             }
             return result;
         } catch (error) {
+            if (isUnsupportedModelRejection(error)) {
+                this.models = undefined;
+                throw new StaleLanguageModelError('The selected language model is no longer supported by Copilot.');
+            }
             if (error instanceof vscode.CancellationError || timeoutSource.token.isCancellationRequested) {
                 throw new Error('AI request cancelled or timed out.');
             }

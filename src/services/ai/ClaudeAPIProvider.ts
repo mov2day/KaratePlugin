@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import axios from 'axios';
 import { AIModelDescriptor, AIProvider, CompletionOptions } from './AIProvider';
 import { logger } from '../../utils/logger';
+import { classifyModel, orderModelCandidates } from './ModelSelection';
+import { isUnsupportedModelRejection } from './ModelErrors';
 
 /**
  * ClaudeAPIProvider — direct Anthropic API calls.
@@ -60,46 +62,24 @@ export class ClaudeAPIProvider implements AIProvider {
             throw new Error('Claude API key not configured. Use the command palette to set your Anthropic API key.');
         }
 
-        const model = this.getModel();
+        let model = await this.getModel(opts);
         const maxTokens = opts?.maxTokens ?? 4096;
 
         const messages: Array<{ role: string; content: string }> = [];
 
         messages.push({ role: 'user', content: prompt });
 
-        const body: Record<string, unknown> = {
-            model,
-            max_tokens: maxTokens,
-            messages
-        };
-
-        if (opts?.systemPrompt) {
-            body.system = opts.systemPrompt;
-        }
-
-        if (opts?.temperature !== undefined) {
-            body.temperature = opts.temperature;
-        }
-
         try {
-            const response = await axios.post(ClaudeAPIProvider.API_URL, body, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': apiKey,
-                    'anthropic-version': ClaudeAPIProvider.API_VERSION
-                },
-                timeout: 120_000
-            });
-
-            const content = response.data?.content;
-            if (Array.isArray(content)) {
-                return content
-                    .filter((block: any) => block.type === 'text')
-                    .map((block: any) => block.text)
-                    .join('');
+            try {
+                return await this.sendRequest(apiKey, model, messages, maxTokens, opts);
+            } catch (error) {
+                if (!isUnsupportedModelRejection(error)) throw error;
+                const fallback = await this.getModel(opts, model);
+                if (fallback === model) throw error;
+                logger.warn(`Claude rejected model '${model}'; retrying with '${fallback}' from the selected Claude provider`);
+                model = fallback;
+                return await this.sendRequest(apiKey, model, messages, maxTokens, opts);
             }
-
-            return '';
         } catch (error: any) {
             if (error.response?.status === 429) {
                 logger.warn('ClaudeAPIProvider: rate limit exceeded');
@@ -143,8 +123,71 @@ export class ClaudeAPIProvider implements AIProvider {
         return this.secretStorage.get(ClaudeAPIProvider.SECRET_KEY);
     }
 
-    private getModel(): string {
+    private async sendRequest(
+        apiKey: string,
+        model: string,
+        messages: Array<{ role: string; content: string }>,
+        maxTokens: number,
+        opts?: CompletionOptions
+    ): Promise<string> {
+        const body: Record<string, unknown> = {
+            model,
+            max_tokens: maxTokens,
+            messages
+        };
+        if (opts?.systemPrompt) body.system = opts.systemPrompt;
+        if (opts?.temperature !== undefined) body.temperature = opts.temperature;
+
+        const response = await axios.post(ClaudeAPIProvider.API_URL, body, {
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': ClaudeAPIProvider.API_VERSION
+            },
+            timeout: 120_000
+        });
+        const content = response.data?.content;
+        return Array.isArray(content)
+            ? content.filter((block: any) => block.type === 'text').map((block: any) => block.text).join('')
+            : '';
+    }
+
+    private async getModel(opts?: CompletionOptions, excludedModelId?: string): Promise<string> {
         const config = vscode.workspace.getConfiguration('karateDsl');
-        return config.get<string>('ai.claudeApiModel') || 'claude-sonnet-4-6';
+        const configured = config.get<string>('ai.claudeApiModel') || 'claude-sonnet-4-6';
+        const models = (await this.listModels()).filter(model => model.id !== excludedModelId);
+        if (models.length === 0) {
+            return configured;
+        }
+        if (configured !== excludedModelId && models.some(model => model.id === configured)) return configured;
+
+        const configuredProfile = classifyModel({ id: configured, name: configured, maxInputTokens: 1 });
+        const profiled = models.map(model => ({
+            model,
+            profile: classifyModel({ id: model.id, name: model.name, family: model.family, maxInputTokens: 1 })
+        }));
+        const sameFamily = configuredProfile
+            ? profiled.filter(item => item.profile?.family === configuredProfile.family)
+            : [];
+        const sameCapability = configuredProfile
+            ? profiled.filter(item => item.profile?.capability === configuredProfile.capability && item.profile.cost === configuredProfile.cost)
+            : [];
+
+        let fallback = this.newestModel(sameFamily.map(item => item.model))
+            || this.newestModel(sameCapability.map(item => item.model));
+
+        if (!fallback) {
+            const candidates = models.map(model => ({ ...model, maxInputTokens: Number.MAX_SAFE_INTEGER }));
+            const counts = new Map(candidates.map(model => [model.id, 0]));
+            const mode = opts?.modelMode ?? config.get<'efficient' | 'balanced' | 'highest-quality'>('ai.modelMode', 'efficient');
+            fallback = orderModelCandidates(candidates, counts, mode, undefined, opts?.task)[0] || models[0];
+        }
+
+        logger.warn(`Claude model '${configured}' is unavailable; using '${fallback.id}' from the selected Claude provider`);
+        return fallback.id;
+    }
+
+    private newestModel(models: AIModelDescriptor[]): AIModelDescriptor | undefined {
+        return [...models].sort((left, right) => right.id.localeCompare(left.id, undefined, { numeric: true }))[0];
     }
 }

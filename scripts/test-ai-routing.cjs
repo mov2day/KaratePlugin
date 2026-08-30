@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { classifyModel, orderModelCandidates, requiredCapability } = require('../out/services/ai/ModelSelection');
+const { isUnsupportedModelRejection } = require('../out/services/ai/ModelErrors');
 const { KaratePromptComposer } = require('../out/services/ai/KaratePromptComposer');
 
 const candidates = [
@@ -39,6 +40,13 @@ assert.deepStrictEqual(
   ['gpt-5.6-terra', 'claude-sonnet-5'],
   'production generation must prefer balanced families without deep-model escalation'
 );
+
+assert.strictEqual(isUnsupportedModelRejection(new Error('The requested model is not supported.')), true);
+assert.strictEqual(isUnsupportedModelRejection({
+  message: 'Request Failed: 400',
+  cause: { error: { code: 'model_not_supported', param: 'model' } }
+}), true);
+assert.strictEqual(isUnsupportedModelRejection(new Error('Rate limit exceeded')), false);
 assert.ok(!efficientGeneration.some(model => ['claude-opus-5', 'gpt-5.6-sol'].includes(model.id)));
 
 const highest = orderModelCandidates(candidates, counts, 'highest-quality', undefined, 'generate-openapi');
@@ -80,5 +88,19 @@ assert.strictEqual(settings['karateDsl.ai.provider'].default, 'copilot');
 assert.ok(settings['karateDsl.ai.provider'].enum.includes('vscode-lm'));
 assert.strictEqual(settings['karateDsl.ai.modelMode'].default, 'efficient');
 assert.ok(!settings['karateDsl.copilot.model'].enum, 'legacy Copilot setting must not hardcode model names');
+
+const registrySource = fs.readFileSync(path.join(sourceRoot, 'services', 'ai', 'AIProviderRegistry.ts'), 'utf8');
+assert.ok(!registrySource.includes('resolveAutoProvider'), 'provider routing must never use a cross-provider fallback chain');
+assert.ok(!registrySource.includes('Use Another Provider'), 'unavailable providers must not offer implicit provider switching');
+assert.match(registrySource, /value === 'auto'[\s\S]*return 'copilot'/, 'legacy auto provider value must resolve only to Copilot');
+
+const copilotProviderSource = fs.readFileSync(path.join(sourceRoot, 'services', 'ai', 'CopilotProvider.ts'), 'utf8');
+assert.match(copilotProviderSource, /isUnsupportedModelRejection\(error\)/, 'unsupported live Copilot models must enter the stale-model retry path');
+
+const claudeProviderSource = fs.readFileSync(path.join(sourceRoot, 'services', 'ai', 'ClaudeAPIProvider.ts'), 'utf8');
+assert.match(claudeProviderSource, /retrying with .* from the selected Claude provider/, 'Claude model fallback must stay within Claude');
+
+const ollamaProviderSource = fs.readFileSync(path.join(sourceRoot, 'services', 'ai', 'OllamaProvider.ts'), 'utf8');
+assert.match(ollamaProviderSource, /from the selected Ollama provider/, 'Ollama model fallback must stay within Ollama');
 
 console.log('AI routing contract tests passed.');

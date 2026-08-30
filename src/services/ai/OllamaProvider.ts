@@ -75,6 +75,9 @@ export class OllamaProvider implements AIProvider {
         if (models.length === 0) {
             throw new Error('Ollama is running but has no installed models. Pull a model before using AI enhancement.');
         }
+        if (configured) {
+            logger.warn(`Ollama model '${configured}' is unavailable; using '${models[0].id}' from the selected Ollama provider`);
+        }
         return models[0].id;
     }
 }
