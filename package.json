@@ -561,9 +561,9 @@
           "default": "efficient",
           "description": "Copilot model policy. Highest quality is explicit opt-in and can consume more quota.",
           "enumDescriptions": [
-            "Efficient: smallest healthy live model that safely fits the request",
-            "Balanced: middle eligible live model without automatic premium escalation",
-            "Highest quality: largest eligible live model; use only when explicitly requested"
+            "Efficient: fast families for lightweight analysis and balanced families for production Karate generation",
+            "Balanced: balanced-capability live families for every AI task without automatic premium escalation",
+            "Highest quality: deep-reasoning live families; use only when explicitly requested"
           ]
         },
         "karateDsl.ai.copilotModelId": {

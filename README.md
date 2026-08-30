@@ -142,16 +142,16 @@ AI enhancement is optional. The extension supports:
 - Claude API credentials stored in VS Code SecretStorage
 - Installed local Ollama models discovered from the running Ollama service
 
-Run **Karate: Configure AI Routing** to choose one provider for generation, imports, coverage guidance, repair, flakiness analysis, and suggestions. Copilot's default **Efficient** mode selects the smallest healthy live model that safely fits the request. Select an exact live model or **Highest quality** only when the additional quota use is intentional.
+Run **Karate: Configure AI Routing** to choose one provider for generation, imports, coverage guidance, repair, flakiness analysis, and suggestions. Copilot's default **Efficient** mode routes lightweight analysis to fast families such as Haiku or Luna while reserving balanced families such as Sonnet or Terra for production Karate generation. Select an exact live model or **Highest quality** only when the additional quota use is intentional.
 
 | Copilot policy | Selection behavior | Recommended use |
 |---|---|---|
-| Efficient (default) | Chooses the smallest currently available model with enough context for the request | Routine generation, conversion, coverage, and suggestions |
-| Balanced | Starts from a middle eligible live model without automatically escalating to the largest option | More involved transformations where extra capacity is useful |
-| Highest quality | Tries the largest eligible live model | Explicit, occasional use when quality matters more than quota |
+| Efficient (default) | Uses fast/low-cost families for lightweight work and balanced/medium-cost families for generation and repair | Routine generation, conversion, coverage, and suggestions |
+| Balanced | Uses balanced-capability families for every AI task | Consistent production generation without automatic premium escalation |
+| Highest quality | Uses deep-reasoning families such as Opus or Sol | Explicit, occasional use when quality matters more than quota |
 | Exact model | Prefers the selected live model, then falls back within the active cost policy if it is unavailable or cannot fit | Reproducible team or troubleshooting workflows |
 
-The available Copilot model list comes from the current VS Code Language Model API at selection and request time; the extension does not hardcode retired model IDs. If an explicitly selected model is no longer available or cannot fit the request, selection is recalculated from the live catalog under the active Efficient, Balanced, or Highest quality policy. Efficient and Balanced routing do not silently escalate to the largest premium option.
+The available Copilot model list comes from the current VS Code Language Model API at selection and request time. Automatic routing recognizes stable family names rather than hardcoding complete versioned IDs, so new Sonnet, Opus, Luna, Terra, and Sol releases inherit the appropriate tier. Unknown future families remain available for exact manual selection but are not assigned an automatic cost tier. If an explicitly selected model is no longer available or cannot fit the request, selection is recalculated under the active policy. Efficient and Balanced routing never escalate automatically to a deep/high-cost family.
 
 Within **Create & Import**, **Enhance this run with AI** is the source of truth for that run. Its value is forwarded to supported OpenAPI, Confluence, combined, Postman, and HAR flows. Command Palette and Explorer launches still ask when no inline choice was available, preserving the existing standalone workflow.
 

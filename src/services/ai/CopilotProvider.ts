@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { AIModelDescriptor, AIModelMode, AIProvider, CompletionOptions } from './AIProvider';
-import { orderModelCandidates } from './ModelSelection';
+import { classifyModel, orderModelCandidates } from './ModelSelection';
 import { logger } from '../../utils/logger';
 
 class StaleLanguageModelError extends Error {}
@@ -11,7 +11,6 @@ export class CopilotProvider implements AIProvider {
     readonly name: string;
 
     private models: vscode.LanguageModelChat[] | undefined;
-    private lastSuccessfulModelId: string | undefined;
     private accessInformation: vscode.LanguageModelAccessInformation | undefined;
 
     constructor(private readonly vendor: 'copilot' | 'other-vscode' = 'copilot') {
@@ -39,14 +38,20 @@ export class CopilotProvider implements AIProvider {
         const models = this.vendor === 'other-vscode'
             ? (await vscode.lm.selectChatModels()).filter(model => model.vendor !== 'copilot')
             : await this.discoverModels();
-        return models.map(model => ({
-            id: model.id,
-            name: model.name,
-            family: model.family,
-            version: model.version,
-            maxInputTokens: model.maxInputTokens,
-            vendor: model.vendor
-        }));
+        return models.map(model => {
+            const profile = classifyModel(model);
+            return {
+                id: model.id,
+                name: model.name,
+                family: model.family,
+                version: model.version,
+                maxInputTokens: model.maxInputTokens,
+                vendor: model.vendor,
+                capabilityTier: profile?.capability,
+                costTier: profile?.cost,
+                routingFamily: profile?.family
+            };
+        });
     }
 
     async complete(prompt: string, opts: CompletionOptions = {}): Promise<string> {
@@ -63,30 +68,20 @@ export class CopilotProvider implements AIProvider {
         const exactModelId = configuredModelId || this.findLegacyModelId(discovered, legacyFamily);
         let ordered = await this.orderModels(discovered, messages, opts, mode, exactModelId);
         if (ordered.length === 0) {
-            throw new Error('The AI request exceeds the context capacity of every available Copilot model. Reduce the selected source scope.');
-        }
-
-        if (!exactModelId && this.lastSuccessfulModelId) {
-            const successful = ordered.findIndex(model => model.id === this.lastSuccessfulModelId);
-            if (successful > 0) {
-                ordered.unshift(...ordered.splice(successful, 1));
-            }
+            throw new Error('No available Copilot model fits this request and the selected cost policy. Choose an exact model or a higher policy explicitly.');
         }
 
         let model = ordered[0];
         try {
             const result = await this.send(model, messages, opts);
-            this.lastSuccessfulModelId = model.id;
-            logger.info(`AI request completed via ${this.name} model ${model.name} (${model.id}, ${mode})`);
+            const profile = classifyModel(model);
+            logger.info(`AI request completed via ${this.name} model ${model.name} (${model.id}, ${mode}, ${opts.task || 'general'}, ${profile?.capability || 'manual'})`);
             return result;
         } catch (error) {
             if (!(error instanceof StaleLanguageModelError)) {
                 throw error;
             }
-            const refreshed = (await this.discoverModels(true)).filter(candidate =>
-                candidate.id !== model.id
-                && (mode === 'highest-quality' || candidate.maxInputTokens <= model.maxInputTokens * 2)
-            );
+            const refreshed = (await this.discoverModels(true)).filter(candidate => candidate.id !== model.id);
             ordered = await this.orderModels(refreshed, messages, opts, mode);
             if (ordered.length === 0) {
                 throw new Error('The selected language model disappeared and no comparable live model can fit this request.');
@@ -94,7 +89,6 @@ export class CopilotProvider implements AIProvider {
             model = ordered[0];
             logger.warn(`Language model changed during the request; retrying once with ${model.name} (${model.id})`);
             const result = await this.send(model, messages, opts);
-            this.lastSuccessfulModelId = model.id;
             return result;
         }
     }
@@ -141,10 +135,10 @@ export class CopilotProvider implements AIProvider {
                 logger.warn(`Unable to count tokens for language model ${model.id}`, error as Error);
             }
         }));
-        let ordered = orderModelCandidates(models, tokenCounts, mode, exactModelId);
+        let ordered = orderModelCandidates(models, tokenCounts, mode, exactModelId, opts.task);
         if (ordered.length === 0 && exactModelId) {
             logger.warn(`Configured language model '${exactModelId}' is unavailable or cannot fit the request; using ${mode} live selection`);
-            ordered = orderModelCandidates(models, tokenCounts, mode);
+            ordered = orderModelCandidates(models, tokenCounts, mode, undefined, opts.task);
         }
         return ordered;
     }

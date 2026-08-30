@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Coverage analysis accepts an OpenAPI specification by itself; feature selection is optional and enables exact scenario mapping when available.
 - GitHub Copilot is the default AI provider. Its model list is discovered from VS Code at request time; removed or unavailable models are never fabricated.
 - Copilot defaults to quota-conscious Efficient routing. Balanced is optional, while Highest quality is explicit opt-in and never used as an automatic escalation.
+- Copilot automatic routing now categorizes live model families by capability and cost: Haiku/Luna-class models handle lightweight analysis, Sonnet/Terra-class models handle production generation, and Opus/Sol-class models remain explicit high-quality choices.
+- Model routing is task-aware rather than context-window-driven, and unknown future model families remain manual-only until categorized.
 - All generation, import, coverage, repair, flakiness, suggestion, and MCP AI calls now pass through the same provider and model layer.
 - Bundled Karate skills are selected by task and capped to a focused context budget instead of injecting every skill into every request.
 - This is a major UI redesign. Existing command IDs and settings remain available.

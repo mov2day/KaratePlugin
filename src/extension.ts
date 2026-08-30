@@ -325,13 +325,15 @@ export async function activate(context: vscode.ExtensionContext) {
                     {
                         label: '$(sparkle) Automatic (quota-conscious)',
                         description: current ? '' : 'Current',
-                        detail: 'Select the smallest healthy live model that safely fits each request.',
+                        detail: 'Routes lightweight work to fast families and production generation to balanced families. Deep models stay explicit.',
                         modelId: ''
                     },
                     ...models.map(model => ({
                         label: model.name,
-                        description: model.id === current ? 'Current' : model.family || '',
-                        detail: `${model.id}${model.maxInputTokens ? ` · ${model.maxInputTokens.toLocaleString()} input tokens` : ''}`,
+                        description: model.id === current
+                            ? `Current${model.capabilityTier ? ` · ${model.capabilityTier}` : ''}`
+                            : model.capabilityTier || 'Manual only',
+                        detail: `${model.routingFamily || model.family || model.id}${model.costTier ? ` · ${model.costTier} cost tier` : ''}${model.maxInputTokens ? ` · ${model.maxInputTokens.toLocaleString()} input tokens` : ''}`,
                         modelId: model.id
                     }))
                 ];
@@ -365,9 +367,9 @@ export async function activate(context: vscode.ExtensionContext) {
         if (provider.value === 'copilot') {
             const currentMode = config.get<string>('ai.modelMode', 'efficient');
             const mode = await vscode.window.showQuickPick([
-                { label: 'Efficient', description: currentMode === 'efficient' ? 'Current · Default' : 'Default', detail: 'Conservative model selection that protects quota.', value: 'efficient' },
-                { label: 'Balanced', description: currentMode === 'balanced' ? 'Current' : '', detail: 'Uses a middle eligible live model.', value: 'balanced' },
-                { label: 'Highest quality', description: currentMode === 'highest-quality' ? 'Current · Higher quota use' : 'Higher quota use', detail: 'Explicit opt-in. Never selected automatically.', value: 'highest-quality' }
+                { label: 'Efficient', description: currentMode === 'efficient' ? 'Current · Default' : 'Default', detail: 'Fast families for lightweight tasks; balanced families for production Karate generation.', value: 'efficient' },
+                { label: 'Balanced', description: currentMode === 'balanced' ? 'Current' : '', detail: 'Uses balanced-capability families for every AI task.', value: 'balanced' },
+                { label: 'Highest quality', description: currentMode === 'highest-quality' ? 'Current · Higher quota use' : 'Higher quota use', detail: 'Uses deep-reasoning families. Explicit opt-in and never an automatic escalation.', value: 'highest-quality' }
             ], { placeHolder: 'Choose the Copilot model policy' });
             if (mode) {
                 await config.update('ai.modelMode', mode.value, vscode.ConfigurationTarget.Global);

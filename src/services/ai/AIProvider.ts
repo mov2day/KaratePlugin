@@ -36,6 +36,9 @@ export interface AIModelDescriptor {
     version?: string;
     maxInputTokens?: number;
     vendor?: string;
+    capabilityTier?: 'fast' | 'balanced' | 'deep';
+    costTier?: 'low' | 'medium' | 'high';
+    routingFamily?: string;
 }
 
 export interface AIProvider {
