@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restored feature and scenario CodeLens execution, including exact scenario line/name targeting.
 - Restored simple-project execution and custom Maven/Gradle runner configurations across workspace layouts.
 - Restored v1.5.2 functional paths for generation, coverage, project health, Bug Hunter, and execution inside the redesigned workspace.
+- The Create & Import AI checkbox now controls the complete OpenAPI, Confluence, combined, Postman, and HAR run instead of being discarded during command routing.
+- Postman and HAR imports launched from the management workspace no longer show a second AI-enhancement prompt after the user already made that choice in the UI. Standalone Command Palette and Explorer launches retain their prompt for backward compatibility.
+- Coverage analysis and missing-test generation now preserve the configured AI provider rather than silently switching to a Copilot-specific path.
+- Explicit provider and model selections are retained across AI-assisted services; unavailable exact models are re-routed through the active cost policy instead of silently escalating to the largest high-quota option.
 
 ## [1.5.2] - 2026-06-19
 

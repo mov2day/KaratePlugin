@@ -23,6 +23,7 @@ Karate Test Management brings test creation, execution, coverage, quality, and m
 - **Local, theme-aware UI** — bundled assets, strict content security, keyboard navigation, and native VS Code light/dark theme support.
 - **Unified AI routing** — every AI-assisted workflow uses one selected provider, focused Karate instructions, and the same validation guardrails.
 - **Quota-conscious Copilot** — live model discovery replaces stale model lists; efficient routing is the default and highest-quality models require explicit selection.
+- **One AI choice per workflow** — the Create & Import checkbox is carried through the complete run, so Postman and HAR imports no longer ask the same AI question again after file selection.
 
 All existing command IDs and settings remain available in 2.0.
 
@@ -142,6 +143,17 @@ AI enhancement is optional. The extension supports:
 - Installed local Ollama models discovered from the running Ollama service
 
 Run **Karate: Configure AI Routing** to choose one provider for generation, imports, coverage guidance, repair, flakiness analysis, and suggestions. Copilot's default **Efficient** mode selects the smallest healthy live model that safely fits the request. Select an exact live model or **Highest quality** only when the additional quota use is intentional.
+
+| Copilot policy | Selection behavior | Recommended use |
+|---|---|---|
+| Efficient (default) | Chooses the smallest currently available model with enough context for the request | Routine generation, conversion, coverage, and suggestions |
+| Balanced | Starts from a middle eligible live model without automatically escalating to the largest option | More involved transformations where extra capacity is useful |
+| Highest quality | Tries the largest eligible live model | Explicit, occasional use when quality matters more than quota |
+| Exact model | Prefers the selected live model, then falls back within the active cost policy if it is unavailable or cannot fit | Reproducible team or troubleshooting workflows |
+
+The available Copilot model list comes from the current VS Code Language Model API at selection and request time; the extension does not hardcode retired model IDs. If an explicitly selected model is no longer available or cannot fit the request, selection is recalculated from the live catalog under the active Efficient, Balanced, or Highest quality policy. Efficient and Balanced routing do not silently escalate to the largest premium option.
+
+Within **Create & Import**, **Enhance this run with AI** is the source of truth for that run. Its value is forwarded to supported OpenAPI, Confluence, combined, Postman, and HAR flows. Command Palette and Explorer launches still ask when no inline choice was available, preserving the existing standalone workflow.
 
 AI prompts are composed for the active Karate task. Contract generation, Postman conversion, coverage analysis, scenario repair, flakiness investigation, and reusability review each receive focused instructions instead of one oversized generic knowledge block.
 
