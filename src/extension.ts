@@ -403,9 +403,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     const openPanelCommand = vscode.commands.registerCommand(
         'karate-dsl.openPanel',
-        () => {
-            vscode.commands.executeCommand('karateGenerator.mainView.focus');
-        }
+        async () => webviewProvider.openExpandedWorkspace()
     );
 
     const generateFromExplorerCommand = vscode.commands.registerCommand(

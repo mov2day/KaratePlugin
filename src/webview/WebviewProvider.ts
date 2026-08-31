@@ -26,14 +26,15 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private _expandedPanel?: vscode.WebviewPanel;
     private readonly _managementWebviews = new Set<vscode.Webview>();
+    private readonly _readyManagementWebviews = new Set<vscode.Webview>();
     private _historyManager: HistoryManager | undefined;
     private _templateManager: TemplateManager | undefined;
     private _generationService: GenerationService | undefined;
     private _learnedStyle: KarateStyle | null = null;
     private readonly _workspaceIndexes = new Map<string, WorkspaceIndex>();
     private _activeManagementFolderPath: string | undefined;
+    private _activeManagementArea: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations' = 'overview';
     private _pendingManagementArea: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations' | undefined;
-    private _managementReady = false;
     private _pendingHealthReport: Record<string, unknown> | undefined;
     private _pendingBugHunterReport: Record<string, unknown> | undefined;
     private readonly _coverageSelections = new Map<string, { specPaths: string[]; featurePaths: string[] }>();
@@ -52,11 +53,16 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     public postMessageToWebview(message: any) {
-        for (const webview of this._managementWebviews) webview.postMessage(message);
+        for (const webview of [...this._managementWebviews]) this.postMessageSafely(webview, message);
     }
 
     public async showManagementArea(area: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations'): Promise<void> {
+        this._activeManagementArea = area;
         this._pendingManagementArea = area;
+        if (this._expandedPanel) {
+            await this.openExpandedWorkspace(area);
+            return;
+        }
         await vscode.commands.executeCommand('karateGenerator.mainView.focus');
         this.postPendingManagementArea();
     }
@@ -79,7 +85,6 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         _token: vscode.CancellationToken,
     ) {
         this._view = webviewView;
-        this._managementReady = false;
 
         webviewView.webview.options = {
             enableScripts: true,
@@ -88,7 +93,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview, 'sidebar');
         this._managementWebviews.add(webviewView.webview);
-        webviewView.onDidDispose(() => this._managementWebviews.delete(webviewView.webview));
+        webviewView.onDidDispose(() => this.removeManagementWebview(webviewView.webview));
 
         // Initialize managers
         // Initialize managers
@@ -99,10 +104,21 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         this.bindMessageHandler(webviewView.webview);
     }
 
-    public openExpandedWorkspace(): void {
-        if (this._expandedPanel) {
-            this._expandedPanel.reveal(vscode.ViewColumn.Active);
-            return;
+    public async openExpandedWorkspace(area?: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations'): Promise<void> {
+        if (area) {
+            this._activeManagementArea = area;
+            this._pendingManagementArea = area;
+        }
+        const existing = this._expandedPanel;
+        if (existing) {
+            try {
+                existing.reveal(existing.viewColumn || vscode.ViewColumn.Active, false);
+                this.postMessageToWebview({ type: 'expandedWorkspaceState', open: true });
+                this.postPendingManagementArea();
+                return;
+            } catch {
+                this.removeManagementWebview(existing.webview);
+            }
         }
         const panel = vscode.window.createWebviewPanel(
             'karateManagementWorkspace',
@@ -115,9 +131,26 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         this._managementWebviews.add(panel.webview);
         this.bindMessageHandler(panel.webview);
         panel.onDidDispose(() => {
-            this._managementWebviews.delete(panel.webview);
-            if (this._expandedPanel === panel) this._expandedPanel = undefined;
+            this.removeManagementWebview(panel.webview);
+            this.postMessageToWebview({ type: 'expandedWorkspaceState', open: Boolean(this._expandedPanel) });
         });
+        this.postMessageToWebview({ type: 'expandedWorkspaceState', open: true });
+    }
+
+    private postMessageSafely(webview: vscode.Webview, message: unknown): void {
+        if (!this._managementWebviews.has(webview)) return;
+        try {
+            void Promise.resolve(webview.postMessage(message)).catch(() => this.removeManagementWebview(webview));
+        } catch {
+            this.removeManagementWebview(webview);
+        }
+    }
+
+    private removeManagementWebview(webview: vscode.Webview): void {
+        this._managementWebviews.delete(webview);
+        this._readyManagementWebviews.delete(webview);
+        if (this._view?.webview === webview) this._view = undefined;
+        if (this._expandedPanel?.webview === webview) this._expandedPanel = undefined;
     }
 
     private bindMessageHandler(webview: vscode.Webview): void {
@@ -221,8 +254,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     await this.openScenario(data.featurePath, data.line, data.folderPath);
                     break;
                 case 'managementReady':
-                    this._managementReady = true;
-                    await this.sendManagementSnapshot(this._activeManagementFolderPath);
+                    this._readyManagementWebviews.add(webview);
+                    await this.sendManagementSnapshot(this._activeManagementFolderPath, webview);
+                    this.postMessageSafely(webview, { type: 'expandedWorkspaceState', open: Boolean(this._expandedPanel) });
+                    this.postMessageSafely(webview, { type: 'navigateManagement', area: this._pendingManagementArea || this._activeManagementArea });
                     this.postPendingManagementArea();
                     this.postPendingHealthReport();
                     this.postPendingBugHunterReport();
@@ -231,7 +266,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     await this.executeShellCommandWithArguments('karate-dsl.reportBug', data.activeArea);
                     break;
                 case 'openExpandedWorkspace':
-                    this.openExpandedWorkspace();
+                    await this.openExpandedWorkspace();
                     break;
                 case 'focusManagementSidebar':
                     await vscode.commands.executeCommand('karateGenerator.mainView.focus');
@@ -423,8 +458,12 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         this.sendMessage({ type: 'error', message });
     }
 
-    private sendMessage(message: any) {
-        for (const webview of this._managementWebviews) webview.postMessage(message);
+    private sendMessage(message: any, target?: vscode.Webview) {
+        if (target) {
+            this.postMessageSafely(target, message);
+            return;
+        }
+        this.postMessageToWebview(message);
     }
 
     private async sendHistory() {
@@ -518,11 +557,11 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async sendManagementSnapshot(folderPath?: string): Promise<void> {
+    private async sendManagementSnapshot(folderPath?: string, target?: vscode.Webview): Promise<void> {
         const folder = vscode.workspace.workspaceFolders?.find(candidate => candidate.uri.fsPath === folderPath)
             || vscode.workspace.workspaceFolders?.[0];
         if (!folder) {
-            this.sendMessage({ type: 'managementSnapshot', data: { runs: [], findings: [], featureCount: 0 } });
+            this.sendMessage({ type: 'managementSnapshot', data: { runs: [], findings: [], featureCount: 0 } }, target);
             return;
         }
         this._activeManagementFolderPath = folder.uri.fsPath;
@@ -537,24 +576,31 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             });
             await index.initialize();
         }
-        this.sendMessage({ type: 'managementSnapshot', data: this.withFolderMetadata(folder, index.snapshot()) });
+        this.sendMessage({ type: 'managementSnapshot', data: this.withFolderMetadata(folder, index.snapshot()) }, target);
     }
 
     private postPendingManagementArea(): void {
-        if (!this._pendingManagementArea || !this._view) return;
-        this.postMessageToWebview({ type: 'navigateManagement', area: this._pendingManagementArea });
+        if (!this._pendingManagementArea || this._readyManagementWebviews.size === 0) return;
+        this._activeManagementArea = this._pendingManagementArea;
+        for (const webview of [...this._readyManagementWebviews]) {
+            this.postMessageSafely(webview, { type: 'navigateManagement', area: this._pendingManagementArea });
+        }
         this._pendingManagementArea = undefined;
     }
 
     private postPendingHealthReport(): void {
-        if (!this._pendingHealthReport || !this._view || !this._managementReady) return;
-        this.postMessageToWebview({ type: 'healthReport', data: this._pendingHealthReport });
+        if (!this._pendingHealthReport || this._readyManagementWebviews.size === 0) return;
+        for (const webview of [...this._readyManagementWebviews]) {
+            this.postMessageSafely(webview, { type: 'healthReport', data: this._pendingHealthReport });
+        }
         this._pendingHealthReport = undefined;
     }
 
     private postPendingBugHunterReport(): void {
-        if (!this._pendingBugHunterReport || !this._view || !this._managementReady) return;
-        this.postMessageToWebview({ type: 'bugHunterReport', data: this._pendingBugHunterReport });
+        if (!this._pendingBugHunterReport || this._readyManagementWebviews.size === 0) return;
+        for (const webview of [...this._readyManagementWebviews]) {
+            this.postMessageSafely(webview, { type: 'bugHunterReport', data: this._pendingBugHunterReport });
+        }
         this._pendingBugHunterReport = undefined;
     }
 
