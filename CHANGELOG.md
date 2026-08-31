@@ -5,6 +5,21 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-08-31
+
+### Changed
+- Unified AI provider and model routing across generation, imports, coverage, repair, and MCP workflows, with quota-conscious Copilot model tiers and same-provider fallback.
+- Added immediate, accessible progress feedback for long-running generation, import, execution, analysis, repair, Bug Hunter, and export actions.
+- Synchronized navigation between the compact sidebar and expanded Test Management workspace, including a subtle full-view cue.
+
+### Fixed
+- Restored project-aware execution for simple projects, Maven and Gradle modules, custom runner configurations, and exact CodeLens scenario runs.
+- Coverage analysis can run from an OpenAPI specification alone, while optional feature files enable exact scenario mapping.
+- Postman, HAR, and other managed imports now honor the UI's AI selection without showing a duplicate prompt.
+- Copilot refreshes stale model availability after `model_not_supported` responses and retries only within the selected provider.
+- Long-running actions visibly acknowledge user input and prevent accidental duplicate starts.
+- Expanded webviews can be closed and reopened safely; existing views are focused instead of duplicated, and late messages no longer target disposed views.
+
 ## [2.0.0] - 2026-08-29
 
 ### Theme: Karate Test Management Workspace

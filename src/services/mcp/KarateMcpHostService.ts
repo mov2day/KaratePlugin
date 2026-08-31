@@ -35,7 +35,7 @@ interface McpToolDefinition {
 export class KarateMcpHostService implements vscode.Disposable {
     private static readonly TOKEN_KEY = 'karateDsl.mcp.token';
     private static readonly SERVER_NAME = 'karate-dsl-mcp';
-    private static readonly SERVER_VERSION = '2.0.0';
+    private static readonly SERVER_VERSION = '2.0.1';
 
     private server: http.Server | undefined;
     private readonly sseClients = new Set<http.ServerResponse>();
