@@ -13,7 +13,7 @@ Karate Test Management brings test creation, execution, coverage, quality, and m
 ## Version 2.0 highlights
 
 - **One management workspace** — Overview, Test Library, Runs, Quality, Create & Import, and Operations share one consistent interface.
-- **Compact and expanded views** — stay productive in the sidebar or move into a full editor tab for data-dense workflows.
+- **Compact and expanded views** — stay productive in the sidebar or move into a full editor tab for data-dense workflows. **Open** always creates or focuses the full workspace, while area changes in the sidebar keep both views synchronized.
 - **Reliable project-aware execution** — automatically discovers simple projects, Maven modules, Gradle modules, and configured custom runners.
 - **Exact scenario runs** — CodeLens and editor actions target the selected scenario by source line and exact name.
 - **Actionable quality queue** — organize coverage gaps, specification changes, health issues, flaky tests, and failures from New through Verified.
@@ -48,7 +48,9 @@ Install **Karate Test Management** from the [Visual Studio Marketplace](https://
 
 1. Select the Karate application icon in the Activity Bar.
 2. Use the compact sidebar for search, status, generation, and run actions.
-3. Select **Open** to launch the expanded Test Management workspace.
+3. Select **Open** to launch the expanded Test Management workspace. If it is already open, the same action brings it back into focus from any editor tab.
+
+When you change areas in the compact sidebar, **Open** receives a brief, subtle highlight as a reminder that the current area is also available in the full workspace.
 
 ### Create tests
 

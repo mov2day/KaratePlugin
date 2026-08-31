@@ -262,6 +262,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     this.postPendingHealthReport();
                     this.postPendingBugHunterReport();
                     break;
+                case 'managementAreaChanged':
+                    this._activeManagementArea = data.area;
+                    this.postMessageToWebview({ type: 'navigateManagement', area: data.area });
+                    break;
                 case 'reportBug':
                     await this.executeShellCommandWithArguments('karate-dsl.reportBug', data.activeArea);
                     break;
@@ -1751,6 +1755,8 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
             return typeof message.featurePath === 'string' && typeof message.line === 'number' && Number.isInteger(message.line) && message.line > 0
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'managementReady': return true;
+        case 'managementAreaChanged': return typeof message.area === 'string'
+            && ['overview', 'library', 'runs', 'quality', 'create', 'operations'].includes(message.area);
         case 'reportBug': return typeof message.activeArea === 'string';
         case 'openExpandedWorkspace': case 'focusManagementSidebar': return true;
         // Legacy generation messages remain supported for existing callers. Their command

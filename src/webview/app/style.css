@@ -43,6 +43,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .rail-item.is-active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
 .rail-foot { width: 40px; min-height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--ktm-border); border-radius: 5px; background: transparent; color: var(--ktm-muted); }
 .rail-foot:hover { color: var(--ktm-text); border-color: var(--vscode-focusBorder); }
+.rail-foot.is-nudged, .layout-toggle.is-nudged { border-color: color-mix(in srgb, var(--ktm-link) 72%, var(--ktm-border)); background: color-mix(in srgb, var(--ktm-link) 10%, transparent); color: var(--ktm-link); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ktm-link) 16%, transparent); }
 
 .workspace { min-width: 0; background: var(--ktm-bg); }
 .topbar { min-height: 54px; padding: 9px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-bottom: 1px solid var(--ktm-border-soft); background: var(--ktm-bg); }
@@ -388,9 +389,15 @@ button[aria-busy="true"] { opacity: 1; }
 @media (prefers-reduced-motion: no-preference) {
   .source-card, .source-card-arrow, .rail-item, .layout-toggle { transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease; }
   .process-track > .is-indeterminate { animation: process-slide 1.15s ease-in-out infinite; }
+  .rail-foot.is-nudged, .layout-toggle.is-nudged { animation: full-view-cue 1.35s ease-out both; }
 }
 
 @keyframes process-slide {
   from { transform: translateX(-110%); }
   to { transform: translateX(310%); }
+}
+
+@keyframes full-view-cue {
+  0%, 42% { border-color: color-mix(in srgb, var(--ktm-link) 72%, var(--ktm-border)); background: color-mix(in srgb, var(--ktm-link) 10%, transparent); color: var(--ktm-link); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ktm-link) 16%, transparent); }
+  100% { border-color: var(--ktm-border); background: transparent; color: var(--ktm-muted); box-shadow: none; }
 }

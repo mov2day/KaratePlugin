@@ -342,6 +342,7 @@ export type WebviewMessage =
     | { command: 'saveTraceability'; featurePath: string; scenarioName: string; owner: string; status: string; zephyrKey: string; folderPath?: string }
     | { command: 'openScenario'; featurePath: string; line: number; folderPath?: string }
     | { command: 'managementReady' }
+    | { command: 'managementAreaChanged'; area: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations' }
     | { command: 'reportBug'; activeArea: string }
     | { command: 'openExpandedWorkspace' }
     | { command: 'focusManagementSidebar' };

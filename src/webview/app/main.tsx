@@ -1,5 +1,5 @@
 import { ComponentChildren, Fragment, createContext, h, render } from 'preact';
-import { useContext, useEffect, useMemo, useState } from 'preact/hooks';
+import { useContext, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { searchManagement } from './managementSearch';
 import { getProcessDescriptor, ProcessDescriptor } from '../../shared/processCatalog';
 import '@vscode/codicons/dist/codicon.css';
@@ -58,6 +58,7 @@ interface TemplateOption { id: string; name: string; content: string; }
 interface GenerationHistoryItem { id: string; timestamp: number; type: string; source: string; outputPath: string; }
 interface GeneratedOutput { message: string; filePath: string; content: string; }
 interface ActiveProcess extends ProcessDescriptor { message?: string; percentage?: number; }
+interface PersistedWebviewState { activeArea?: Area; }
 
 const vscode = acquireVsCodeApi();
 const appIcon = document.body.dataset.appIcon || '';
@@ -89,7 +90,9 @@ function ProcessButton({ processId: id, class: className, disabled, onClick, chi
 }
 
 function App() {
-    const [activeArea, setActiveArea] = useState<Area>('overview');
+    const savedState = vscode.getState<PersistedWebviewState>();
+    const savedArea = savedState?.activeArea && areas.some(area => area.id === savedState.activeArea) ? savedState.activeArea : 'overview';
+    const [activeArea, setActiveArea] = useState<Area>(savedArea);
     const [snapshot, setSnapshot] = useState<Snapshot>({ runs: [], findings: [] });
     const [coverage, setCoverage] = useState<CoverageSnapshot>();
     const [health, setHealth] = useState<HealthSnapshot>();
@@ -105,10 +108,13 @@ function App() {
     const [coverageSpecPaths, setCoverageSpecPaths] = useState<string[]>([]);
     const [coverageFeaturePaths, setCoverageFeaturePaths] = useState<string[]>([]);
     const [activeProcess, setActiveProcess] = useState<ActiveProcess>();
+    const [expandedOpen, setExpandedOpen] = useState(false);
+    const [expandNudge, setExpandNudge] = useState(false);
+    const expandNudgeTimer = useRef<number>();
     const layoutMode: LayoutMode = document.body.dataset.managementLayout === 'expanded' ? 'expanded' : 'compact';
 
     useEffect(() => {
-        const onMessage = (event: MessageEvent<{ type?: string; data?: Snapshot | CoverageSnapshot | HealthSnapshot | BugHunterSnapshot | TemplateOption[] | GenerationHistoryItem[] | string[]; message?: string; filePath?: string; content?: string; id?: string; label?: string; running?: boolean; percentage?: number }>) => {
+        const onMessage = (event: MessageEvent<{ type?: string; data?: Snapshot | CoverageSnapshot | HealthSnapshot | BugHunterSnapshot | TemplateOption[] | GenerationHistoryItem[] | string[]; message?: string; filePath?: string; content?: string; id?: string; label?: string; running?: boolean; percentage?: number; open?: boolean }>) => {
             if (event.data.type === 'managementSnapshot') {
                 const next = (event.data.data as Snapshot) || {};
                 setSnapshot(next);
@@ -134,40 +140,60 @@ function App() {
                 setActiveProcess(current => current ? { ...current, message: event.data.message, percentage: event.data.percentage } : current);
             }
             if ((event.data.type === 'error' || event.data.type === 'success') && event.data.message) setNotice({ kind: event.data.type, text: event.data.message });
-            if (event.data.type === 'navigateManagement' && areas.some(area => area.id === (event.data as { area?: Area }).area)) setActiveArea((event.data as { area: Area }).area);
+            if (event.data.type === 'expandedWorkspaceState') setExpandedOpen(Boolean(event.data.open));
+            if (event.data.type === 'navigateManagement' && areas.some(area => area.id === (event.data as { area?: Area }).area)) {
+                const area = (event.data as { area: Area }).area;
+                setActiveArea(area);
+                vscode.setState({ ...(vscode.getState<PersistedWebviewState>() || {}), activeArea: area });
+            }
         };
         window.addEventListener('message', onMessage);
         send('getManagementSnapshot');
         send('managementReady');
         send('getTemplates');
         send('getHistory');
-        return () => window.removeEventListener('message', onMessage);
+        return () => {
+            window.removeEventListener('message', onMessage);
+            if (expandNudgeTimer.current !== undefined) window.clearTimeout(expandNudgeTimer.current);
+        };
     }, []);
 
     const filteredRuns = useMemo(() => (snapshot.runs || []).filter(run => `${run.id} ${run.status} ${run.options?.environment || ''} ${run.options?.target || ''}`.toLowerCase().includes(query.toLowerCase())), [snapshot.runs, query]);
     const failedRuns = (snapshot.runs || []).filter(run => run.status !== 'success');
     const latestRun = snapshot.runs?.[0];
+    const navigateToArea = (area: Area) => {
+        if (area === activeArea) return;
+        setActiveArea(area);
+        vscode.setState({ ...(vscode.getState<PersistedWebviewState>() || {}), activeArea: area });
+        send('managementAreaChanged', { area });
+        if (layoutMode === 'compact') {
+            setExpandNudge(false);
+            window.requestAnimationFrame(() => setExpandNudge(true));
+            if (expandNudgeTimer.current !== undefined) window.clearTimeout(expandNudgeTimer.current);
+            expandNudgeTimer.current = window.setTimeout(() => setExpandNudge(false), 1400);
+        }
+    };
     return <ProcessContext.Provider value={activeProcess}><main class={`management-shell layout-${layoutMode}`}>
         <aside class="rail" aria-label="Karate test management navigation">
             <div class="rail-brand" aria-label="Karate Test Management"><img src={appIcon} alt="" /> <span class="rail-label">Karate</span></div>
-            <button class={`rail-primary ${activeArea === 'create' ? 'is-active' : ''}`} aria-label="Generate tests" title="Generate tests" onClick={() => setActiveArea('create')}>
+            <button class={`rail-primary ${activeArea === 'create' ? 'is-active' : ''}`} aria-label="Generate tests" title="Generate tests" onClick={() => navigateToArea('create')}>
                 <span class="codicon codicon-new-file" aria-hidden="true" /> <span class="rail-label">Generate tests</span>
             </button>
             <label class="rail-search"><span class="codicon codicon-search" aria-hidden="true" /><span class="sr-only">Search tests, runs, and findings</span><input value={query} onInput={event => setQuery((event.target as HTMLInputElement).value)} placeholder="Search tests, runs" /></label>
             <div class="rail-context" aria-label="Latest execution status">
                 <span class="rail-context-label">STATUS</span>
-                <button class={`rail-status ${runActive ? 'is-running' : latestRun ? (latestRun.status === 'success' ? 'is-success' : 'is-failed') : ''}`} title="Open runs" onClick={() => setActiveArea('runs')}>
+                <button class={`rail-status ${runActive ? 'is-running' : latestRun ? (latestRun.status === 'success' ? 'is-success' : 'is-failed') : ''}`} title="Open runs" onClick={() => navigateToArea('runs')}>
                     <span class={`codicon codicon-${runActive ? 'loading codicon-modifier-spin' : latestRun ? (latestRun.status === 'success' ? 'pass' : 'error') : 'circle-outline'}`} aria-hidden="true" />
                     <span class="rail-label">{runActive ? 'Running tests' : latestRun ? (latestRun.status === 'success' ? 'Latest run passed' : 'Latest run needs review') : 'No runs yet'}</span>
                 </button>
             </div>
             <nav>
-                {areas.map(area => <button class={`rail-item ${activeArea === area.id ? 'is-active' : ''}`} aria-label={area.label} title={area.label} aria-current={activeArea === area.id ? 'page' : undefined} onClick={() => setActiveArea(area.id)}>
+                {areas.map(area => <button class={`rail-item ${activeArea === area.id ? 'is-active' : ''}`} aria-label={area.label} title={area.label} aria-current={activeArea === area.id ? 'page' : undefined} onClick={() => navigateToArea(area.id)}>
                     <span class={`codicon codicon-${area.icon}`} aria-hidden="true" /> <span class="rail-label">{area.label}</span>
                 </button>)}
             </nav>
-            <button class="rail-foot" aria-label={layoutMode === 'compact' ? 'Open full workspace' : 'Return to sidebar'} title={layoutMode === 'compact' ? 'Open full workspace' : 'Return to sidebar'} onClick={() => send(layoutMode === 'compact' ? 'openExpandedWorkspace' : 'focusManagementSidebar')}>
-                <span class={`codicon codicon-${layoutMode === 'compact' ? 'open-preview' : 'layout-sidebar-left'}`} aria-hidden="true" /> <span class="rail-label">{layoutMode === 'compact' ? 'Open full workspace' : 'Return to sidebar'}</span>
+            <button class={`rail-foot ${layoutMode === 'compact' && expandNudge ? 'is-nudged' : ''}`} aria-label={layoutMode === 'compact' ? (expandedOpen ? 'Show full workspace' : 'Open full workspace') : 'Return to sidebar'} title={layoutMode === 'compact' ? (expandedOpen ? 'Show full workspace' : 'Open full workspace') : 'Return to sidebar'} onClick={() => send(layoutMode === 'compact' ? 'openExpandedWorkspace' : 'focusManagementSidebar')}>
+                <span class={`codicon codicon-${layoutMode === 'compact' ? 'open-preview' : 'layout-sidebar-left'}`} aria-hidden="true" /> <span class="rail-label">{layoutMode === 'compact' ? (expandedOpen ? 'Show full workspace' : 'Open full workspace') : 'Return to sidebar'}</span>
             </button>
         </aside>
         <section class="workspace" aria-busy={Boolean(activeProcess)}>
@@ -175,17 +201,17 @@ function App() {
                 <div class="product-mark" aria-label="Karate Test Management"><img src={appIcon} alt="" /><span>Karate</span></div>
                 <label class="workspace-picker"><span class="eyebrow">WORKSPACE</span><select value={snapshot.folderPath || ''} onChange={event => send('getManagementSnapshot', { folderPath: (event.target as HTMLSelectElement).value })}>{(snapshot.folders || [{ name: snapshot.folderName || 'Karate project', path: snapshot.folderPath || '' }]).map(folder => <option value={folder.path}>{folder.name}</option>)}</select></label>
                 <label class="search"><span class="codicon codicon-search" aria-hidden="true" /><span class="sr-only">Search runs</span><input value={query} onInput={event => setQuery((event.target as HTMLInputElement).value)} placeholder="Search tests, runs, findings" /></label>
-                <button class={`run-status ${runActive ? 'is-running' : latestRun ? (latestRun.status === 'success' ? 'is-success' : 'is-failed') : ''}`} onClick={() => setActiveArea('runs')} title="Open runs">{runActive ? <><span class="codicon codicon-loading codicon-modifier-spin" aria-hidden="true" /> Running tests</> : latestRun ? <><span class={`codicon codicon-${latestRun.status === 'success' ? 'pass' : 'error'}`} aria-hidden="true" /> Latest: {latestRun.status === 'success' ? 'passed' : latestRun.status}</> : <><span class="codicon codicon-circle-outline" aria-hidden="true" /> No runs yet</>}</button>
-                <div class="topbar-actions">{layoutMode === 'compact' ? <button class="layout-toggle" title="Open the full test management workspace in an editor tab" onClick={() => send('openExpandedWorkspace')}><span class="codicon codicon-open-preview" aria-hidden="true" /><span class="layout-toggle-label">Open</span></button> : <button class="layout-toggle" title="Return to the compact sidebar" onClick={() => send('focusManagementSidebar')}><span class="codicon codicon-layout-sidebar-left" aria-hidden="true" /><span class="layout-toggle-label">Sidebar</span></button>}<ProcessButton processId={processId('executeExtensionCommand', 'karate-dsl.runFolder')} class="primary-action" disabled={runActive} onClick={() => send('executeExtensionCommand', { commandId: 'karate-dsl.runFolder', folderPath: snapshot.folderPath })}><span class="codicon codicon-play" aria-hidden="true" /> <span class="run-action-label">{runActive ? 'Running…' : 'Run tests'}</span></ProcessButton></div>
+                <button class={`run-status ${runActive ? 'is-running' : latestRun ? (latestRun.status === 'success' ? 'is-success' : 'is-failed') : ''}`} onClick={() => navigateToArea('runs')} title="Open runs">{runActive ? <><span class="codicon codicon-loading codicon-modifier-spin" aria-hidden="true" /> Running tests</> : latestRun ? <><span class={`codicon codicon-${latestRun.status === 'success' ? 'pass' : 'error'}`} aria-hidden="true" /> Latest: {latestRun.status === 'success' ? 'passed' : latestRun.status}</> : <><span class="codicon codicon-circle-outline" aria-hidden="true" /> No runs yet</>}</button>
+                <div class="topbar-actions">{layoutMode === 'compact' ? <button class={`layout-toggle ${expandNudge ? 'is-nudged' : ''}`} title={expandedOpen ? 'Show the existing full test management workspace' : 'Open the full test management workspace in an editor tab'} onClick={() => send('openExpandedWorkspace')}><span class="codicon codicon-open-preview" aria-hidden="true" /><span class="layout-toggle-label">{expandedOpen ? 'Show' : 'Open'}</span></button> : <button class="layout-toggle" title="Return to the compact sidebar" onClick={() => send('focusManagementSidebar')}><span class="codicon codicon-layout-sidebar-left" aria-hidden="true" /><span class="layout-toggle-label">Sidebar</span></button>}<ProcessButton processId={processId('executeExtensionCommand', 'karate-dsl.runFolder')} class="primary-action" disabled={runActive} onClick={() => send('executeExtensionCommand', { commandId: 'karate-dsl.runFolder', folderPath: snapshot.folderPath })}><span class="codicon codicon-play" aria-hidden="true" /> <span class="run-action-label">{runActive ? 'Running…' : 'Run tests'}</span></ProcessButton></div>
             </header>
             {activeProcess && <div class="process-status" role="status" aria-live="polite"><div class="process-track" aria-hidden="true"><span class={activeProcess.percentage === undefined ? 'is-indeterminate' : ''} style={activeProcess.percentage === undefined ? undefined : { width: `${Math.max(2, Math.min(100, activeProcess.percentage))}%` }} /></div><div class="process-copy"><span class="codicon codicon-loading codicon-modifier-spin" aria-hidden="true" /><strong>{activeProcess.label}</strong>{activeProcess.message && activeProcess.message !== activeProcess.label && <span>{activeProcess.message}</span>}{activeProcess.percentage !== undefined && <small>{Math.round(activeProcess.percentage)}%</small>}</div></div>}
-            {query.trim() && <GlobalSearch snapshot={snapshot} query={query} onNavigate={setActiveArea} />}
-            {activeArea === 'overview' && <Overview snapshot={snapshot} failedRuns={failedRuns} onNavigate={setActiveArea} />}
+            {query.trim() && <GlobalSearch snapshot={snapshot} query={query} onNavigate={navigateToArea} />}
+            {activeArea === 'overview' && <Overview snapshot={snapshot} failedRuns={failedRuns} onNavigate={navigateToArea} />}
             {activeArea === 'library' && <Library featureCount={snapshot.featureCount || 0} features={snapshot.features || []} query={query} folderPath={snapshot.folderPath} />}
             {activeArea === 'runs' && <ManagementRuns runs={filteredRuns} profiles={snapshot.runProfiles || []} environments={snapshot.environments || []} folderPath={snapshot.folderPath} runActive={runActive} />}
             {activeArea === 'quality' && <ManagementQuality findings={snapshot.findings || []} coverage={coverage} health={health} folderPath={snapshot.folderPath} query={query} specPaths={coverageSpecPaths} featurePaths={coverageFeaturePaths} />}
             {activeArea === 'create' && <Create templates={templates} selectedFile={selectedFile} generatedOutput={generatedOutput} onFileConsumed={() => setSelectedFile('')} />}
-            {activeArea === 'operations' && <ManagementOperations bugHunter={bugHunter} onNavigate={setActiveArea} templates={templates} history={generationHistory} hasLearnedStyle={hasLearnedStyle} />}
+            {activeArea === 'operations' && <ManagementOperations bugHunter={bugHunter} onNavigate={navigateToArea} templates={templates} history={generationHistory} hasLearnedStyle={hasLearnedStyle} />}
             {notice && <div class={`notice ${notice.kind}`} role="status"><span>{notice.text}</span><button aria-label="Dismiss message" onClick={() => setNotice(undefined)}><span class="codicon codicon-close" aria-hidden="true" /></button></div>}
         </section>
     </main></ProcessContext.Provider>;

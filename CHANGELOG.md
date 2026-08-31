@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All generation, import, coverage, repair, flakiness, suggestion, and MCP AI calls now pass through the same provider and model layer.
 - Bundled Karate skills are selected by task and capped to a focused context budget instead of injecting every skill into every request.
 - Process-start actions now use one lifecycle across generation, Postman/HAR/GraphQL imports, test execution, coverage, health and specification analysis, repair, Bug Hunter, exports, and style learning. Other process buttons remain disabled until the active operation finishes to prevent duplicate starts.
+- Compact and expanded workspace navigation now stays synchronized. Changing an area in the sidebar provides a subtle full-view cue, and opening the full workspace focuses the existing editor tab when one is already available.
 - This is a major UI redesign. Existing command IDs and settings remain available.
 
 ### Fixed
@@ -48,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Explicit provider and model selections are retained across AI-assisted services; unavailable exact models are re-routed through the active cost policy instead of silently escalating to the largest high-quota option.
 - Copilot `model_not_supported` responses are treated as stale model availability, causing one live-catalog refresh and a same-provider retry instead of surfacing an immediate provider error.
 - Long-running actions no longer appear unresponsive after selection; the workspace now acknowledges the action and keeps its status visible until completion or failure.
+- Closing the expanded workspace no longer leaves a disposed webview target behind. The workspace can be reopened reliably, and late asynchronous results are safely ignored when their originating view has already closed.
 
 ## [1.5.2] - 2026-06-19
 
