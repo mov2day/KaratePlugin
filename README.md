@@ -24,6 +24,7 @@ Karate Test Management brings test creation, execution, coverage, quality, and m
 - **Unified AI routing** — every AI-assisted workflow uses one selected provider, focused Karate instructions, and the same validation guardrails.
 - **Quota-conscious Copilot** — live model discovery replaces stale model lists; efficient routing is the default and highest-quality models require explicit selection.
 - **One AI choice per workflow** — the Create & Import checkbox is carried through the complete run, so Postman and HAR imports no longer ask the same AI question again after file selection.
+- **Visible progress for every long-running action** — generation, imports, execution, analysis, repair, Bug Hunter, and exports acknowledge the click immediately, show ongoing activity, and prevent accidental duplicate starts.
 
 All existing command IDs and settings remain available in 2.0.
 
@@ -106,6 +107,8 @@ Invalid transitions are blocked so findings cannot skip required review stages.
 ### Create & Import
 
 Generate deterministic Karate tests and optionally enhance them through a configured AI provider. Shared style files and reusable templates help teams produce consistent suites.
+
+When generation or import starts, the selected action changes to a busy state and the workspace displays a compact progress strip. Workflows with measurable stages also report their current percentage.
 
 ### Operations
 

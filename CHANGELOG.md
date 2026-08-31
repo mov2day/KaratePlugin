@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A user-invoked bug reporter that collects redacted diagnostics and opens a clean public issue without exposing raw logs.
 - Unified AI routing for Copilot, VS Code model providers, Claude API, and Ollama, configured through **Karate: Configure AI Routing**.
 - Live provider model discovery, exact model selection, task-focused Karate prompt composition, and AI routing contract tests.
+- A shared progress experience for long-running workspace actions, with an accessible activity strip, button-level busy feedback, percentage updates where available, and reduced-motion support.
 
 ### Changed
 - Run history is retained as entity-per-file workspace data and follows `karateDsl.execution.historyLimit`.
@@ -34,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Provider selection is now strict: unavailable models retry within the selected provider, while unavailable providers never trigger a fallback to a different backend. The legacy `auto` provider value resolves only to Copilot.
 - All generation, import, coverage, repair, flakiness, suggestion, and MCP AI calls now pass through the same provider and model layer.
 - Bundled Karate skills are selected by task and capped to a focused context budget instead of injecting every skill into every request.
+- Process-start actions now use one lifecycle across generation, Postman/HAR/GraphQL imports, test execution, coverage, health and specification analysis, repair, Bug Hunter, exports, and style learning. Other process buttons remain disabled until the active operation finishes to prevent duplicate starts.
 - This is a major UI redesign. Existing command IDs and settings remain available.
 
 ### Fixed
@@ -45,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Coverage analysis and missing-test generation now preserve the configured AI provider rather than silently switching to a Copilot-specific path.
 - Explicit provider and model selections are retained across AI-assisted services; unavailable exact models are re-routed through the active cost policy instead of silently escalating to the largest high-quota option.
 - Copilot `model_not_supported` responses are treated as stale model availability, causing one live-catalog refresh and a same-provider retry instead of surfacing an immediate provider error.
+- Long-running actions no longer appear unresponsive after selection; the workspace now acknowledges the action and keeps its status visible until completion or failure.
 
 ## [1.5.2] - 2026-06-19
 
