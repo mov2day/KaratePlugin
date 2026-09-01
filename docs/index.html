@@ -1,516 +1,59 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Karate Test Generator for VS Code - Official Documentation</title>
-    <meta name="description" content="Generate, execute, maintain, and analyze API tests with AI assistance.">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --primary: #2563eb;
-            --primary-hover: #1d4ed8;
-            --bg-light: #f8fafc;
-            --bg-white: #ffffff;
-            --text-main: #0f172a;
-            --text-muted: #475569;
-            --border-color: #e2e8f0;
-            --accent: #eff6ff;
-            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            --border-radius: 12px;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            color: var(--text-main);
-            background-color: var(--bg-light);
-            line-height: 1.6;
-        }
-
-        /* Navigation */
-        nav {
-            background-color: var(--bg-white);
-            border-bottom: 1px solid var(--border-color);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-
-        .nav-container {
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 0 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            height: 72px;
-        }
-
-        .nav-logo {
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: var(--text-main);
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 24px;
-            align-items: center;
-        }
-
-        .nav-links a {
-            color: var(--text-muted);
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.2s ease;
-        }
-
-        .nav-links a:hover {
-            color: var(--primary);
-        }
-
-        .btn-primary {
-            background-color: var(--primary);
-            color: white !important;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-weight: 600;
-            transition: background-color 0.2s ease;
-            text-decoration: none;
-            display: inline-block;
-        }
-
-        .btn-primary:hover {
-            background-color: var(--primary-hover);
-        }
-
-        /* Container */
-        .container {
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 0 24px;
-        }
-
-        /* Hero Section */
-        .hero {
-            padding: 100px 0 80px;
-            text-align: center;
-            background-color: var(--bg-white);
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .hero h1 {
-            font-size: clamp(2.5rem, 5vw, 4rem);
-            font-weight: 800;
-            letter-spacing: -0.025em;
-            color: var(--text-main);
-            margin-bottom: 24px;
-            max-width: 900px;
-            margin-left: auto;
-            margin-right: auto;
-            line-height: 1.1;
-        }
-
-        .hero p {
-            font-size: 1.25rem;
-            color: var(--text-muted);
-            max-width: 700px;
-            margin: 0 auto 40px;
-            line-height: 1.6;
-        }
-
-        /* Features Section */
-        .features {
-            padding: 100px 0;
-            background-color: var(--bg-light);
-        }
-
-        .section-header {
-            text-align: center;
-            margin-bottom: 64px;
-        }
-
-        .section-header h2 {
-            font-size: 2.25rem;
-            font-weight: 700;
-            color: var(--text-main);
-            margin-bottom: 16px;
-        }
-
-        .section-header p {
-            color: var(--text-muted);
-            font-size: 1.125rem;
-            max-width: 600px;
-            margin: 0 auto;
-        }
-
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 32px;
-        }
-
-        .feature-card {
-            background: var(--bg-white);
-            border: 1px solid var(--border-color);
-            border-radius: var(--border-radius);
-            padding: 40px;
-            box-shadow: var(--shadow-sm);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .feature-card:hover {
-            transform: translateY(-4px);
-            box-shadow: var(--shadow-md);
-            border-color: #cbd5e1;
-        }
-
-        .feature-icon {
-            background-color: var(--accent);
-            color: var(--primary);
-            width: 48px;
-            height: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 12px;
-            font-size: 1.5rem;
-            margin-bottom: 24px;
-        }
-
-        .feature-card h3 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 16px;
-            color: var(--text-main);
-        }
-
-        .feature-card p {
-            color: var(--text-muted);
-            line-height: 1.6;
-            margin-bottom: 16px;
-        }
-
-        .feature-list {
-            list-style: none;
-            margin-top: 16px;
-        }
-
-        .feature-list li {
-            position: relative;
-            padding-left: 24px;
-            margin-bottom: 8px;
-            color: var(--text-muted);
-            font-size: 0.95rem;
-        }
-
-        .feature-list li::before {
-            content: "✓";
-            position: absolute;
-            left: 0;
-            color: var(--primary);
-            font-weight: bold;
-        }
-
-        /* Detailed Deep Dive */
-        .deep-dive {
-            padding: 80px 0;
-            background-color: var(--bg-white);
-            border-top: 1px solid var(--border-color);
-        }
-
-        .split-section {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 64px;
-            align-items: center;
-            margin-bottom: 80px;
-        }
-        
-        .split-section:last-child {
-            margin-bottom: 0;
-        }
-        
-        .split-content h3 {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 24px;
-            color: var(--text-main);
-        }
-        
-        .split-content p {
-            color: var(--text-muted);
-            font-size: 1.125rem;
-            margin-bottom: 24px;
-            line-height: 1.7;
-        }
-
-        .highlight-box {
-            background-color: var(--bg-light);
-            border: 1px solid var(--border-color);
-            border-radius: var(--border-radius);
-            padding: 32px;
-        }
-
-        /* Footer */
-        footer {
-            background-color: #0f172a;
-            color: #94a3b8;
-            padding: 64px 0 32px;
-        }
-
-        .footer-grid {
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr;
-            gap: 48px;
-            margin-bottom: 48px;
-        }
-
-        .footer-title {
-            color: white;
-            font-weight: 600;
-            font-size: 1.125rem;
-            margin-bottom: 24px;
-        }
-
-        .footer-links {
-            list-style: none;
-        }
-
-        .footer-links li {
-            margin-bottom: 12px;
-        }
-
-        .footer-links a {
-            color: #94a3b8;
-            text-decoration: none;
-            transition: color 0.2s;
-        }
-
-        .footer-links a:hover {
-            color: white;
-        }
-
-        .footer-bottom {
-            padding-top: 32px;
-            border-top: 1px solid #1e293b;
-            text-align: center;
-            font-size: 0.875rem;
-        }
-
-        @media (max-width: 992px) {
-            .split-section {
-                grid-template-columns: 1fr;
-                gap: 40px;
-            }
-        }
-        
-        @media (max-width: 768px) {
-            .nav-links {
-                display: none;
-            }
-            .hero {
-                padding: 60px 0;
-            }
-        }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Karate Test Management 2.0.1 for VS Code</title>
+  <meta name="description" content="Create, run, manage, and improve Karate API tests from one focused VS Code workspace.">
+  <meta name="theme-color" content="#0b1018">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Karate Test Management 2.0.1">
+  <meta property="og:description" content="Create. Run. Improve. A complete Karate API testing workspace inside VS Code.">
+  <meta property="og:image" content="https://mov2day.github.io/KaratePlugin/og.png">
+  <meta property="og:url" content="https://mov2day.github.io/KaratePlugin/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Karate Test Management 2.0.1">
+  <meta name="twitter:description" content="Create. Run. Improve. A complete Karate API testing workspace inside VS Code.">
+  <meta name="twitter:image" content="https://mov2day.github.io/KaratePlugin/og.png">
+  <link rel="icon" href="icon.png">
+  <style>
+    :root{--ink:#f4f7fb;--muted:#9ba9bb;--dim:#748399;--line:rgba(255,255,255,.1);--surface:#111824;--night:#080c12;--blue:#6ea8fe;--blue2:#2878ff;--mint:#65d6a8;--max:1180px}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:radial-gradient(circle at 72% -8%,rgba(40,120,255,.22),transparent 32rem),radial-gradient(circle at 5% 35%,rgba(101,214,168,.08),transparent 26rem),var(--night);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}a{color:inherit}img{display:block;max-width:100%}.shell{width:min(calc(100% - 40px),var(--max));margin:auto}
+    .nav{position:sticky;top:0;z-index:20;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(8,12,18,.78);backdrop-filter:blur(18px)}.nav-inner{min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:24px}.brand{display:inline-flex;align-items:center;gap:11px;text-decoration:none;font-weight:720}.brand-mark{width:34px;height:34px;display:grid;place-items:center;border:1px solid rgba(110,168,254,.34);border-radius:10px;color:var(--blue);background:linear-gradient(145deg,rgba(110,168,254,.19),rgba(101,214,168,.08));font-weight:850}.nav-links{display:flex;align-items:center;gap:26px}.nav-links>a:not(.button){color:var(--muted);font-size:14px;text-decoration:none}.nav-links>a:hover{color:var(--ink)}
+    .button{display:inline-flex;min-height:46px;align-items:center;justify-content:center;gap:9px;padding:0 18px;border:1px solid var(--line);border-radius:11px;color:var(--ink);background:rgba(255,255,255,.04);font-size:14px;font-weight:700;text-decoration:none;transition:transform .18s,border-color .18s,background .18s}.button:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.07)}.button.primary{border-color:transparent;background:var(--blue2);box-shadow:0 14px 36px rgba(40,120,255,.24)}.button.primary:hover{background:#438cff}
+    .hero{padding:92px 0 62px;overflow:hidden}.hero-copy{max-width:840px;text-align:center;margin:auto}.eyebrow{display:inline-flex;align-items:center;gap:9px;margin-bottom:24px;padding:7px 11px 7px 8px;border:1px solid rgba(110,168,254,.22);border-radius:999px;color:#c8d9f4;background:rgba(110,168,254,.07);font-size:13px;font-weight:650}.eyebrow span{padding:2px 8px;border-radius:999px;color:#06120d;background:var(--mint);font-size:11px;font-weight:850}h1{margin:0;font-size:clamp(46px,7.2vw,84px);letter-spacing:-.064em;line-height:.98;font-weight:760}.gradient-text{color:transparent;background:linear-gradient(105deg,#f7f9fc 15%,#8bb9ff 64%,#70dab0);background-clip:text}.hero-copy>p{max-width:680px;margin:28px auto 0;color:var(--muted);font-size:clamp(18px,2vw,21px)}.hero-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:34px}.proof{display:flex;flex-wrap:wrap;justify-content:center;gap:18px 30px;margin-top:29px;color:var(--dim);font-size:13px}.proof span:before{content:"✓";margin-right:8px;color:var(--mint);font-weight:900}
+    .product-frame{position:relative;margin-top:68px;padding:9px;border:1px solid rgba(255,255,255,.14);border-radius:19px;background:linear-gradient(135deg,rgba(255,255,255,.11),rgba(255,255,255,.025));box-shadow:0 34px 100px rgba(0,0,0,.44)}.product-frame:before{content:"";position:absolute;inset:-18% 15% auto;height:45%;z-index:-1;border-radius:50%;background:rgba(40,120,255,.28);filter:blur(80px)}.window-bar{display:flex;align-items:center;gap:7px;height:34px;padding:0 10px}.window-bar i{width:8px;height:8px;border-radius:50%;background:#465164}.window-bar i:first-child{background:#ef6a66}.window-bar i:nth-child(2){background:#e8bb5b}.window-bar i:nth-child(3){background:#5fc88c}.product-frame img{width:100%;border-radius:11px;border:1px solid rgba(255,255,255,.08)}
+    .section{padding:106px 0}.section.alt{border-block:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.018)}.kicker{margin:0 0 12px;color:var(--mint);font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.section h2{max-width:760px;margin:0;font-size:clamp(34px,5vw,56px);letter-spacing:-.045em;line-height:1.04}.lede{max-width:620px;margin:20px 0 0;color:var(--muted);font-size:18px}
+    .release-grid{display:grid;grid-template-columns:.86fr 1.14fr;gap:64px;align-items:start}.release-note{position:sticky;top:104px}.version-stamp{display:inline-flex;align-items:baseline;gap:10px;margin-top:30px;color:var(--blue)}.version-stamp strong{font-size:58px;letter-spacing:-.06em}.version-stamp span{color:var(--dim);font-size:13px}.release-list{display:grid;gap:14px}.release-item{display:grid;grid-template-columns:42px 1fr;gap:17px;padding:24px;border:1px solid var(--line);border-radius:16px;background:rgba(17,24,36,.74)}.release-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:11px;color:var(--blue);background:rgba(110,168,254,.1);font-weight:850}.release-item h3{margin:0 0 6px;font-size:17px}.release-item p{margin:0;color:var(--muted);font-size:14px}
+    .feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:54px}.feature-card{min-height:270px;padding:27px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(150deg,rgba(21,31,45,.92),rgba(12,18,27,.82))}.feature-card.wide{grid-column:span 2}.card-num{color:var(--blue);font:750 12px ui-monospace,SFMono-Regular,Menlo,monospace}.feature-card h3{margin:40px 0 11px;font-size:22px;letter-spacing:-.025em}.feature-card p{max-width:45ch;margin:0;color:var(--muted);font-size:15px}.tag-row{display:flex;flex-wrap:wrap;gap:7px;margin-top:22px}.tag{padding:6px 9px;border-radius:7px;color:#aab8ca;background:rgba(255,255,255,.045);font-size:11px}
+    .workflow{display:grid;grid-template-columns:repeat(4,1fr);margin-top:58px;border:1px solid var(--line);border-radius:18px;overflow:hidden}.workflow-step{min-height:190px;padding:27px;border-right:1px solid var(--line);background:rgba(17,24,36,.64)}.workflow-step:last-child{border:0}.workflow-step span{color:var(--mint);font:800 12px ui-monospace,SFMono-Regular,Menlo,monospace}.workflow-step h3{margin:34px 0 8px;font-size:19px}.workflow-step p{margin:0;color:var(--muted);font-size:13px}
+    .cta{position:relative;overflow:hidden;padding:58px;border:1px solid rgba(110,168,254,.22);border-radius:24px;background:linear-gradient(135deg,rgba(40,120,255,.16),rgba(101,214,168,.07))}.cta:after{content:"K";position:absolute;right:24px;bottom:-94px;color:rgba(255,255,255,.025);font-size:310px;font-weight:900;line-height:1}.cta h2{max-width:690px}.cta p{max-width:590px;margin:18px 0 30px;color:var(--muted);font-size:17px}.cta .hero-actions{justify-content:flex-start;margin:0}
+    footer{padding:34px 0 46px;color:var(--dim)}.footer-inner{display:flex;align-items:center;justify-content:space-between;gap:24px;padding-top:30px;border-top:1px solid var(--line);font-size:13px}.footer-links{display:flex;gap:22px}.footer-links a{text-decoration:none}.footer-links a:hover{color:var(--ink)}
+    @media(max-width:900px){.release-grid{grid-template-columns:1fr;gap:42px}.release-note{position:static}.feature-grid{grid-template-columns:repeat(2,1fr)}.feature-card.wide{grid-column:span 1}.workflow{grid-template-columns:repeat(2,1fr)}.workflow-step:nth-child(2){border-right:0}.workflow-step:nth-child(-n+2){border-bottom:1px solid var(--line)}}@media(max-width:680px){.shell{width:min(calc(100% - 28px),var(--max))}.nav-links>a:not(.button){display:none}.nav .button{min-height:40px;padding-inline:13px}.hero{padding-top:64px}.hero-actions{flex-direction:column}.hero-actions .button{width:100%}.product-frame{margin-top:46px;padding:5px;border-radius:13px}.window-bar{height:27px}.section{padding:78px 0}.feature-grid,.workflow{grid-template-columns:1fr}.workflow-step{min-height:155px;border-right:0;border-bottom:1px solid var(--line)}.workflow-step:nth-child(3){border-bottom:1px solid var(--line)}.cta{padding:36px 24px}.footer-inner{align-items:flex-start;flex-direction:column}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition-duration:.01ms!important}}
+  </style>
 </head>
 <body>
-
-    <nav>
-        <div class="nav-container">
-            <a href="#" class="nav-logo">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary)"><path d="m14 2-4 20"/><path d="m5 8-4 4 4 4"/><path d="m19 16 4-4-4-4"/></svg>
-                Karate Test Generator
-            </a>
-            <div class="nav-links">
-                <a href="#features">Features</a>
-                <a href="#details">Capabilities</a>
-                <a href="https://github.com/mov2day/KaratePlugin/blob/main/CHANGELOG.md" target="_blank">Changelog</a>
-                <a href="https://github.com/mov2day/KaratePlugin" target="_blank">GitHub</a>
-                <a href="https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator" class="btn-primary" target="_blank">Install Extension</a>
-            </div>
-        </div>
-    </nav>
-
-    <section class="hero">
-        <div class="container">
-            <h1>Enterprise API Testing, Accelerated by AI</h1>
-            <p>Transform OpenAPI specs, Postman collections, and Confluence docs into production-ready Karate tests in seconds. Run them directly in VS Code, ensure complete coverage, and automate API maintenance.</p>
-            <div style="display: flex; gap: 16px; justify-content: center; margin-top: 32px;">
-                <a href="https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator" class="btn-primary" style="padding: 16px 32px; font-size: 1.125rem;">Get Started Free</a>
-                <a href="https://github.com/mov2day/KaratePlugin" target="_blank" style="padding: 16px 32px; font-size: 1.125rem; background: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 8px; font-weight: 600; text-decoration: none;">View Source</a>
-            </div>
-        </div>
-    </section>
-
-    <section id="features" class="features">
-        <div class="container">
-            <div class="section-header">
-                <h2>Comprehensive Feature Set</h2>
-                <p>Everything you need to write, manage, and maintain enterprise quality API test automation.</p>
-            </div>
-            
-            <div class="feature-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">🤖</div>
-                    <h3>Multi-AI Test Engine</h3>
-                    <p>Leverage the industry's best LLMs to instantly generate rigorous API tests from your documentation or system definitions.</p>
-                    <ul class="feature-list">
-                        <li>Toggle between Claude API, GitHub Copilot, or Local Ollama</li>
-                        <li>Generates schemas, tests, and data-driven outlines</li>
-                        <li>Ingests OpenAPI/Swagger and Confluence</li>
-                    </ul>
-                </div>
-                
-                <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h3>Native VS Code Execution</h3>
-                    <p>Run, debug, and configure tests without ever opening a terminal. Full native build tool support right in the sidebar.</p>
-                    <ul class="feature-list">
-                        <li>Inline CodeLens runner tags per Scenario/Feature</li>
-                        <li>Customizable JVM args and System properties</li>
-                        <li>Supports CLI standalone JAR, Maven & Gradle</li>
-                    </ul>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">🛡️</div>
-                    <h3>AI-driven QA Doctor</h3>
-                    <p>Automate test maintenance and debug flaky pipelines right from your IDE using our native webhook listeners.</p>
-                    <ul class="feature-list">
-                        <li>Intercepts CI Pipeline failure logs on Port 47392</li>
-                        <li>Analyzes flakiness trends and suggests auto-fixes</li>
-                        <li>Scans for hardcoded secrets and missing Auth</li>
-                    </ul>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">📦</div>
-                    <h3>Postman & HAR Migration</h3>
-                    <p>Escape rigid platforms. Move existing tests and real traffic captures into code-first Karate DSL.</p>
-                    <ul class="feature-list">
-                        <li>Convert full Postman Collections + Environments</li>
-                        <li>Import traffic directly from Web DevTools (.har files)</li>
-                        <li>AI enriches imports with schema & status assertions</li>
-                    </ul>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">📉</div>
-                    <h3>Interactive Visual Analytics</h3>
-                    <p>Ditch the plain-text spreadsheets. Native reporting dashboard built into VS Code to analyze your coverage gap.</p>
-                    <ul class="feature-list">
-                        <li>Deep feature drill-downs for scenarios and steps</li>
-                        <li>Visual map of tested vs. untested endpoints</li>
-                        <li>One-click generation for un-targeted endpoints</li>
-                    </ul>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">🌐</div>
-                    <h3>Enterprise Protocol Support</h3>
-                    <p>Designed for large enterprise workflows utilizing complex schemas and batch systems.</p>
-                    <ul class="feature-list">
-                        <li>GraphQL SDL & Introspection payload support</li>
-                        <li>Jira Acceptance Criteria automation mappings</li>
-                        <li>Semantic 3-tier matching to avoid false positives</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section id="details" class="deep-dive">
-        <div class="container">
-            <div class="split-section">
-                <div class="split-content">
-                    <h3>Automated Scenario Outlines & Test Data</h3>
-                    <p>Testing an API is more than checking a 200 OK. Our smart engine analyzes OpenAPI property fields to inject realistic synthetic data based on regex constraints, patterns, and property names (e.g. producing valid UUIDs, timestamps, and emails).</p>
-                    <p>It automatically unrolls endpoints into Data-Driven Scenario Outlines covering positive execution paths, negative error states (400, 401, 404), and exact boundary specifications.</p>
-                </div>
-                <div class="highlight-box">
-                    <p style="font-family: monospace; color: var(--primary); margin-bottom: 8px;">// Example Outline Generated by Engine</p>
-                    <pre style="font-family: monospace; color: var(--text-main); white-space: pre-wrap; font-size: 0.9rem;">Scenario Outline: User Login Verification
-    Given path 'users/login'
-    And request { "email": "&lt;email&gt;", "password": "&lt;password&gt;" }
-    When method POST
-    Then status &lt;status&gt;
-
-    Examples:
-    | email             | password | status |
-    | admin@company.com | valid123 | 200    |
-    | badformat         | valid123 | 400    |
-    | user@company.com  | wrong    | 401    |</pre>
-                </div>
-            </div>
-
-            <div class="split-section" style="direction: rtl;">
-                <div class="split-content" style="direction: ltr;">
-                    <h3>Automatic API Spec Synchronization</h3>
-                    <p>When engineering updates the Swagger definition, your tests shouldn't fall behind. The plugin listens for modifications to your workspace OpenAPI definition files.</p>
-                    <p>Upon saving, it automatically triggers an impact analysis to determine which feature files need modification to match new schemas. It uses AI to append new endpoints or rewrite modified structures while explicitly preserving manual assertions you have written previously.</p>
-                </div>
-                <div class="highlight-box" style="direction: ltr;">
-                    <ul style="list-style: none;">
-                        <li style="margin-bottom: 12px; display: flex; gap: 12px;"><span style="color:var(--primary)">1.</span> <span><b>Detects change</b> in `users-v2.yml`</span></li>
-                        <li style="margin-bottom: 12px; display: flex; gap: 12px;"><span style="color:var(--primary)">2.</span> <span><b>Analyzes impact</b> on `users.feature`</span></li>
-                        <li style="margin-bottom: 12px; display: flex; gap: 12px;"><span style="color:var(--primary)">3.</span> <span><b>Intelligently updates</b> request schema using Copilot</span></li>
-                        <li style="display: flex; gap: 12px;"><span style="color:var(--primary)">4.</span> <span><b>Retains custom logic</b> such as specific `.env` variables</span></li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <footer>
-        <div class="container">
-            <div class="footer-grid">
-                <div>
-                    <div class="nav-logo" style="color: white; margin-bottom: 16px;">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary)"><path d="m14 2-4 20"/><path d="m5 8-4 4 4 4"/><path d="m19 16 4-4-4-4"/></svg>
-                        Karate Test Generator
-                    </div>
-                    <p style="max-width: 300px; margin-bottom: 24px;">The complete Karate DSL toolkit for VS Code. Generate, execute, maintain, and analyze tests effortlessly.</p>
-                    <a href="https://github.com/mov2day/KaratePlugin/issues" target="_blank" style="color: #94a3b8; text-decoration: none;">Report an Issue</a>
-                </div>
-                
-                <div>
-                    <div class="footer-title">Resources</div>
-                    <ul class="footer-links">
-                        <li><a href="https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator">VS Code Marketplace</a></li>
-                        <li><a href="https://github.com/mov2day/KaratePlugin/blob/main/DEVELOPMENT.md">Development Guide</a></li>
-                        <li><a href="https://github.com/mov2day/KaratePlugin/blob/main/docs/COPILOT_GUIDE.md">Copilot Integration</a></li>
-                    </ul>
-                </div>
-
-                <div>
-                    <div class="footer-title">Code</div>
-                    <ul class="footer-links">
-                        <li><a href="https://github.com/mov2day/KaratePlugin">GitHub Repository</a></li>
-                        <li><a href="https://github.com/mov2day/KaratePlugin/blob/main/CHANGELOG.md">Changelog</a></li>
-                        <li><a href="https://github.com/mov2day/KaratePlugin/blob/main/LICENSE">MIT License</a></li>
-                    </ul>
-                </div>
-            </div>
-            
-            <div class="footer-bottom">
-                <p>&copy; 2026 MuthuKumar Koodalingam. Made with ❤️ for the Karate testing community.</p>
-            </div>
-        </div>
-    </footer>
-
+  <nav class="nav" aria-label="Main navigation"><div class="shell nav-inner"><a class="brand" href="#top" aria-label="Karate Test Management home"><span class="brand-mark" aria-hidden="true">K</span><span>Karate Test Management</span></a><div class="nav-links"><a href="#new">What’s new</a><a href="#features">Features</a><a href="https://github.com/mov2day/KaratePlugin" target="_blank" rel="noreferrer">GitHub</a><a class="button primary" href="https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator" target="_blank" rel="noreferrer">Install for VS Code</a></div></div></nav>
+  <main id="top">
+    <section class="hero"><div class="shell"><div class="hero-copy"><div class="eyebrow"><span>NEW</span> Version 2.0.1 is available</div><h1><span class="gradient-text">API test management,</span><br>inside your editor.</h1><p>Create, execute, organize, and improve Karate tests from one focused VS Code workspace—with dependable project-aware runs and AI that stays under your control.</p><div class="hero-actions"><a class="button primary" href="https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator" target="_blank" rel="noreferrer">Get Karate 2.0.1 <span aria-hidden="true">↗</span></a><a class="button" href="https://github.com/mov2day/KaratePlugin#readme" target="_blank" rel="noreferrer">Read the docs</a></div><div class="proof" aria-label="Product highlights"><span>Free and open source</span><span>Keyboard-first</span><span>AI optional</span></div></div><div class="product-frame" aria-label="Karate Test Management workspace preview"><div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div><img src="karate-test-management-2.png" alt="Karate Test Management workspace showing test runs, coverage, and quality findings in VS Code"></div></div></section>
+    <section class="section alt" id="new"><div class="shell release-grid"><div class="release-note"><p class="kicker">What’s new</p><h2>A tighter, more reliable 2.0 experience.</h2><p class="lede">Version 2.0.1 sharpens the new management workspace with unified AI routing, immediate progress feedback, and repaired execution paths.</p><div class="version-stamp"><strong>2.0.1</strong><span>Released<br>Aug 31, 2026</span></div></div><div class="release-list">
+      <article class="release-item"><div class="release-icon" aria-hidden="true">AI</div><div><h3>One AI route, everywhere</h3><p>Generation, imports, coverage, repairs, and MCP workflows now share the selected provider and a quota-conscious Copilot model policy. Fallbacks stay within that provider.</p></div></article>
+      <article class="release-item"><div class="release-icon" aria-hidden="true">01</div><div><h3>Immediate progress you can trust</h3><p>Long-running actions acknowledge input instantly, keep status visible, and guard against accidental duplicate starts across generation, execution, analysis, repair, and export.</p></div></article>
+      <article class="release-item"><div class="release-icon" aria-hidden="true">↔</div><div><h3>Compact and expanded views stay in sync</h3><p>Move between the Activity Bar and full Test Management workspace without losing your place. Reopening focuses the existing view instead of creating duplicates.</p></div></article>
+      <article class="release-item"><div class="release-icon" aria-hidden="true">▶</div><div><h3>Project-aware execution restored</h3><p>Simple repositories, Maven and Gradle modules, custom runners, and exact CodeLens scenario launches resolve consistently from the selected feature.</p></div></article>
+      <article class="release-item"><div class="release-icon" aria-hidden="true">%</div><div><h3>Coverage starts with the contract</h3><p>Analyze an OpenAPI specification by itself, then optionally add feature files when you want exact scenario mapping and traceable evidence.</p></div></article>
+    </div></div></section>
+    <section class="section" id="features"><div class="shell"><p class="kicker">The workspace</p><h2>One place for the full testing loop.</h2><p class="lede">The 2.0 workspace turns scattered commands into a connected system for everyday API quality work.</p><div class="feature-grid">
+      <article class="feature-card wide"><div class="card-num">01 / MANAGE</div><h3>A searchable test library</h3><p>Browse scenarios with tags, ownership, lifecycle status, stability, source location, and Zephyr traceability—all backed by Git-friendly workspace data.</p><div class="tag-row"><span class="tag">Ownership</span><span class="tag">Lifecycle</span><span class="tag">Zephyr</span><span class="tag">Multi-root</span></div></article>
+      <article class="feature-card"><div class="card-num">02 / RUN</div><h3>Execution that fits the project</h3><p>Run a feature, exact scenario, folder, tag set, or saved profile through standalone Karate, Maven, Gradle, or your configured runner.</p></article>
+      <article class="feature-card"><div class="card-num">03 / CREATE</div><h3>From source to Karate</h3><p>Generate from OpenAPI, Confluence, Postman, HAR, GraphQL, Jira, directories, and captured sessions—with optional AI enhancement.</p></article>
+      <article class="feature-card wide"><div class="card-num">04 / IMPROVE</div><h3>Quality findings become a workflow</h3><p>Bring coverage gaps, specification changes, project health, flakiness, execution failures, and Bug Hunter results into one guarded queue.</p><div class="tag-row"><span class="tag">New</span><span class="tag">Investigating</span><span class="tag">Fixed</span><span class="tag">Verified</span></div></article>
+      <article class="feature-card wide"><div class="card-num">05 / AI</div><h3>AI routing without surprises</h3><p>Choose Copilot, another VS Code model provider, Claude API, or local Ollama. Efficient routing is the default; premium models remain an explicit choice.</p><div class="tag-row"><span class="tag">Same-provider fallback</span><span class="tag">Live model discovery</span><span class="tag">Task-focused prompts</span></div></article>
+      <article class="feature-card"><div class="card-num">06 / OPERATE</div><h3>Connected team workflows</h3><p>Route CI repair work, publish outcomes to Zephyr Scale, expose MCP tools, learn shared styles, and report bugs with redacted diagnostics.</p></article>
+    </div></div></section>
+    <section class="section alt" id="workflow"><div class="shell"><p class="kicker">How it flows</p><h2>From contract to confidence.</h2><div class="workflow"><article class="workflow-step"><span>01</span><h3>Create</h3><p>Turn API contracts and real traffic into readable Karate scenarios.</p></article><article class="workflow-step"><span>02</span><h3>Run</h3><p>Execute at the right project boundary and follow progress in place.</p></article><article class="workflow-step"><span>03</span><h3>Understand</h3><p>Inspect runs, coverage, stability, and quality signals together.</p></article><article class="workflow-step"><span>04</span><h3>Improve</h3><p>Repair, verify, and automate without leaving the workspace.</p></article></div></div></section>
+    <section class="section"><div class="shell"><div class="cta"><p class="kicker">Start testing</p><h2>Bring your Karate workflow into focus.</h2><p>Install the extension, open a folder with feature files or an API specification, then select the Karate icon in the Activity Bar.</p><div class="hero-actions"><a class="button primary" href="https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator" target="_blank" rel="noreferrer">Install from Marketplace</a><a class="button" href="https://github.com/mov2day/KaratePlugin/blob/main/CHANGELOG.md" target="_blank" rel="noreferrer">View changelog</a></div></div></div></section>
+  </main>
+  <footer><div class="shell footer-inner"><span>Karate Test Management · MIT licensed</span><div class="footer-links"><a href="https://github.com/mov2day/KaratePlugin" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/mov2day/KaratePlugin/issues" target="_blank" rel="noreferrer">Support</a><a href="https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator" target="_blank" rel="noreferrer">Marketplace</a></div></div></footer>
 </body>
 </html>
