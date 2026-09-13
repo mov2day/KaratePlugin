@@ -21,6 +21,7 @@ vercel.json
 .karate-test-history/**
 target/**
 output/**
+.playwright-cli/**
 design-qa.md
 **/*.bak
 **/.DS_Store

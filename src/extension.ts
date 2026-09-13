@@ -49,6 +49,7 @@ import { WorkspaceEntityStore } from './services/workspace/WorkspaceEntityStore'
 import { QualityWorkflowService } from './services/workspace/QualityWorkflowService';
 import { readExecutionSettings } from './services/execution/ExecutionSettings';
 import { scenarioLineFromEditorLine } from './services/execution/ExecutionArguments';
+import { ScoutController } from './services/scout/ScoutController';
 
 export async function activate(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
@@ -147,6 +148,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Register webview provider
     const webviewProvider = new KarateWebviewProvider(context.extensionUri, context);
+    const scoutController = new ScoutController(context, message => webviewProvider.postMessageToWebview(message), () => webviewProvider.openExpandedWorkspace('scout'));
+    webviewProvider.setScoutHandler(command => scoutController.handle(command));
+    context.subscriptions.push(scoutController);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(
             KarateWebviewProvider.viewType,

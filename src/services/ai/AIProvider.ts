@@ -17,6 +17,7 @@ export type AIProviderId = 'copilot' | 'vscode-lm' | 'claude-api' | 'ollama';
 export type AIModelMode = 'efficient' | 'balanced' | 'highest-quality';
 
 export type AITask =
+    | 'scout-explore'
     | 'general'
     | 'generate-openapi'
     | 'generate-postman'

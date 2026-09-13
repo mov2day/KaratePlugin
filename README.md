@@ -2,7 +2,7 @@
 
 Generate, run, manage, and improve Karate API tests without leaving VS Code.
 
-[![Version](https://img.shields.io/badge/version-2.0.1-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-2.0.3-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-2c9b69.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-5c6370.svg)](LICENSE)
 
@@ -10,8 +10,9 @@ Generate, run, manage, and improve Karate API tests without leaving VS Code.
 
 Karate Test Management brings test creation, execution, coverage, quality, and maintenance into one professional workspace. Use the compact Activity Bar view for quick actions, then open the expanded workspace when you need the full test library, run history, quality queue, or import tools.
 
-## Version 2.0 highlights
+## Version 2.0.3 highlights
 
+- **Karate Scout** — sign in normally in Chrome or Edge, teach a journey, explore confirmed variations, and generate linked API tests. An optional browser companion connects existing signed-in tabs. Browser verification and independent Karate verification are separate. [Scout setup and sample checkout](docs/scout.md).
 - **One management workspace** — Overview, Test Library, Runs, Quality, Create & Import, and Operations share one consistent interface.
 - **Compact and expanded views** — stay productive in the sidebar or move into a full editor tab for data-dense workflows. **Open** always creates or focuses the full workspace, while area changes in the sidebar keep both views synchronized.
 - **Reliable project-aware execution** — automatically discovers simple projects, Maven modules, Gradle modules, and configured custom runners.
@@ -32,11 +33,27 @@ All existing command IDs and settings remain available in 2.0.
 
 | Workflow | Capabilities |
 |---|---|
+| Teach with Scout | Chrome/Edge journeys, existing signed-in tabs, live action/API maps, confirmed variations, and linked Karate suites |
 | Create and import | OpenAPI, OpenAPI + Confluence, Confluence, Postman, HAR, GraphQL, Jira, and recorded sessions |
 | Execute | Feature, exact scenario, folder, tags, saved profiles, environments, and parallel workers |
 | Manage | Indexed scenario library, run history, failure drill-down, rerun, repair review, ownership, and Zephyr links |
 | Improve quality | OpenAPI coverage, missing-test generation, project health, flakiness, specification change impact, and Bug Hunter |
 | Automate | GitHub Actions repair intake, Zephyr Scale result publishing, MCP tools, and shared generation styles |
+
+## Meet Karate Scout
+
+**Sign in normally, show Scout how your app works, and watch it build and test the journey.**
+
+Choose **Karate Scout: Teach a Browser Journey** in the Command Palette, or open **Scout** in Test Management. Select Chrome or Edge, sign in, then start teaching after you reach your application. The optional companion connects an existing signed-in tab where browser policy permits it.
+
+1. Demonstrate one REST/JSON journey and watch its actions and API calls appear together.
+2. Confirm expected behavior and dynamic data links. Provide a reset procedure or fresh data before state-changing exploration.
+3. Review the proposed variations, execute the ones you confirm, and inspect evidence when an assertion fails.
+4. Save the linked Karate suite, configure the application's supported API authentication fixture, and verify it independently.
+
+**Verified in browser** and **Verified in Karate** are separate outcomes. Browser sign-in is not copied into generated files. HAR imports are inferred API sequences, and company-managed SSO/passkey compatibility still requires a pilot.
+
+Select **Try the sample shop** to find a seeded duplicate-checkout defect. [Setup and companion installation](docs/scout.md) · [Validation results and release boundaries](docs/scout-validation.md) · [Product site](https://mov2day.github.io/KaratePlugin/).
 
 ## Quick start
 

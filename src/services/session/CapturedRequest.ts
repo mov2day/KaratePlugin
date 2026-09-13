@@ -65,6 +65,7 @@ export interface HarEntry {
             size: number;
             mimeType: string;
             text?: string;
+            encoding?: string;
         };
     };
     timings: {
@@ -119,34 +120,38 @@ export interface ResourceLifecycle {
  */
 export function harEntryToCapturedRequest(entry: HarEntry): CapturedRequest {
     const url = new URL(entry.request.url);
+    const timestamp = new Date(entry.startedDateTime).getTime();
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || !Number.isFinite(timestamp) || typeof entry.request.method !== 'string') throw new Error('Invalid HAR request URL, time, or method.');
 
     // Convert headers array to object
-    const requestHeaders: Record<string, string> = {};
-    for (const header of entry.request.headers) {
+    const requestHeaders: Record<string, string> = Object.create(null);
+    for (const header of entry.request.headers || []) {
         requestHeaders[header.name] = header.value;
     }
 
-    const responseHeaders: Record<string, string> = {};
-    for (const header of entry.response.headers) {
+    const responseHeaders: Record<string, string> = Object.create(null);
+    for (const header of entry.response.headers || []) {
         responseHeaders[header.name] = header.value;
     }
+    if (!Object.keys(responseHeaders).some(key => key.toLowerCase() === 'content-type') && entry.response.content?.mimeType) responseHeaders['content-type'] = entry.response.content.mimeType;
 
     return {
         id: `har-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        timestamp: new Date(entry.startedDateTime).getTime(),
-        method: entry.request.method,
+        timestamp,
+        method: entry.request.method.toUpperCase(),
         url: entry.request.url,
         path: url.pathname + url.search,
         host: url.host,
         headers: requestHeaders,
         body: entry.request.postData?.text,
-        response: {
+        response: entry.response.status >= 100 && entry.response.status <= 599 ? {
             status: entry.response.status,
             statusText: entry.response.statusText,
             headers: responseHeaders,
-            body: entry.response.content.text,
+            body: entry.response.content?.encoding === 'base64' && typeof entry.response.content.text === 'string'
+                ? Buffer.from(entry.response.content.text, 'base64').toString('utf8') : entry.response.content?.text,
             duration: entry.time
-        }
+        } : undefined
     };
 }
 

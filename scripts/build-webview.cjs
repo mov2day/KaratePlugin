@@ -2,6 +2,11 @@ const esbuild = require('esbuild');
 const fs = require('fs');
 
 esbuild.buildSync({
+  entryPoints: ['src/services/scout/browserScripts.ts'], bundle: true, platform: 'browser',
+  target: ['es2020'], format: 'esm', outfile: 'resources/scout-companion/browser-scripts.js'
+});
+
+esbuild.buildSync({
   entryPoints: ['src/webview/app/main.tsx'],
   bundle: true,
   minify: true,

@@ -20,11 +20,15 @@ import { QualityState, QualityWorkflowService } from '../services/workspace/Qual
 import { EnhancedCoverageReport, EnhancedCoverageService } from '../services/enhancedCoverageService';
 import { CoverageDashboardProvider } from './CoverageDashboardProvider';
 import { getProcessDescriptor } from '../shared/processCatalog';
+import { ScoutCommand } from '../services/scout/types';
+import { isScoutCommand } from '../services/scout/JourneyModel';
 
 export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'karateGenerator.mainView';
     private _view?: vscode.WebviewView;
+    private _viewWebview?: vscode.Webview;
     private _expandedPanel?: vscode.WebviewPanel;
+    private _expandedWebview?: vscode.Webview;
     private readonly _managementWebviews = new Set<vscode.Webview>();
     private readonly _readyManagementWebviews = new Set<vscode.Webview>();
     private _historyManager: HistoryManager | undefined;
@@ -33,12 +37,15 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _learnedStyle: KarateStyle | null = null;
     private readonly _workspaceIndexes = new Map<string, WorkspaceIndex>();
     private _activeManagementFolderPath: string | undefined;
-    private _activeManagementArea: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations' = 'overview';
-    private _pendingManagementArea: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations' | undefined;
+    private _activeManagementArea: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'scout' | 'operations' = 'overview';
+    private _pendingManagementArea: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'scout' | 'operations' | undefined;
     private _pendingHealthReport: Record<string, unknown> | undefined;
     private _pendingBugHunterReport: Record<string, unknown> | undefined;
     private readonly _coverageSelections = new Map<string, { specPaths: string[]; featurePaths: string[] }>();
     private readonly _coverageReports = new Map<string, EnhancedCoverageReport>();
+    private _scoutHandler?: (command: ScoutCommand) => Promise<void>;
+
+    public setScoutHandler(handler: (command: ScoutCommand) => Promise<void>): void { this._scoutHandler = handler; }
 
     /**
      * Process feature content through ReusabilityEngine.
@@ -56,7 +63,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         for (const webview of [...this._managementWebviews]) this.postMessageSafely(webview, message);
     }
 
-    public async showManagementArea(area: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations'): Promise<void> {
+    public async showManagementArea(area: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'scout' | 'operations'): Promise<void> {
         this._activeManagementArea = area;
         this._pendingManagementArea = area;
         if (this._expandedPanel) {
@@ -85,15 +92,17 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         _token: vscode.CancellationToken,
     ) {
         this._view = webviewView;
+        const webview = webviewView.webview;
+        this._viewWebview = webview;
 
-        webviewView.webview.options = {
+        webview.options = {
             enableScripts: true,
             localResourceRoots: [this._extensionUri]
         };
 
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview, 'sidebar');
-        this._managementWebviews.add(webviewView.webview);
-        webviewView.onDidDispose(() => this.removeManagementWebview(webviewView.webview));
+        webview.html = this._getHtmlForWebview(webview, 'sidebar');
+        this._managementWebviews.add(webview);
+        webviewView.onDidDispose(() => this.removeManagementWebview(webview));
 
         // Initialize managers
         // Initialize managers
@@ -101,10 +110,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         this._templateManager = new TemplateManager(this._context);
         this._generationService = new GenerationService(this._context, this._historyManager, this._specHashManager);
 
-        this.bindMessageHandler(webviewView.webview);
+        this.bindMessageHandler(webview);
     }
 
-    public async openExpandedWorkspace(area?: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations'): Promise<void> {
+    public async openExpandedWorkspace(area?: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'scout' | 'operations'): Promise<void> {
         if (area) {
             this._activeManagementArea = area;
             this._pendingManagementArea = area;
@@ -117,7 +126,9 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 this.postPendingManagementArea();
                 return;
             } catch {
-                this.removeManagementWebview(existing.webview);
+                const staleWebview = this._expandedWebview;
+                if (staleWebview) this.removeManagementWebview(staleWebview);
+                if (this._expandedPanel === existing) this._expandedPanel = undefined;
             }
         }
         const panel = vscode.window.createWebviewPanel(
@@ -126,12 +137,14 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             vscode.ViewColumn.Active,
             { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [this._extensionUri] }
         );
+        const webview = panel.webview;
         this._expandedPanel = panel;
-        panel.webview.html = this._getHtmlForWebview(panel.webview, 'expanded');
-        this._managementWebviews.add(panel.webview);
-        this.bindMessageHandler(panel.webview);
+        this._expandedWebview = webview;
+        webview.html = this._getHtmlForWebview(webview, 'expanded');
+        this._managementWebviews.add(webview);
+        this.bindMessageHandler(webview);
         panel.onDidDispose(() => {
-            this.removeManagementWebview(panel.webview);
+            this.removeManagementWebview(webview);
             this.postMessageToWebview({ type: 'expandedWorkspaceState', open: Boolean(this._expandedPanel) });
         });
         this.postMessageToWebview({ type: 'expandedWorkspaceState', open: true });
@@ -149,8 +162,14 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private removeManagementWebview(webview: vscode.Webview): void {
         this._managementWebviews.delete(webview);
         this._readyManagementWebviews.delete(webview);
-        if (this._view?.webview === webview) this._view = undefined;
-        if (this._expandedPanel?.webview === webview) this._expandedPanel = undefined;
+        if (this._viewWebview === webview) {
+            this._viewWebview = undefined;
+            this._view = undefined;
+        }
+        if (this._expandedWebview === webview) {
+            this._expandedWebview = undefined;
+            this._expandedPanel = undefined;
+        }
     }
 
     private bindMessageHandler(webview: vscode.Webview): void {
@@ -163,6 +182,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             if (process) this.postMessageToWebview({ type: 'processState', ...process, running: true });
             try {
                 switch (data.command) {
+                case 'scout':
+                    if (!this._scoutHandler) throw new Error('Scout is not initialized. Reload the extension and try again.');
+                    await this._scoutHandler(data.request);
+                    break;
                 case 'selectOpenAPIFile':
                     await this.handleSelectOpenAPIFile();
                     break;
@@ -261,6 +284,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                     this.postPendingManagementArea();
                     this.postPendingHealthReport();
                     this.postPendingBugHunterReport();
+                    await this._scoutHandler?.({ operation: 'snapshot' });
                     break;
                 case 'managementAreaChanged':
                     this._activeManagementArea = data.area;
@@ -624,7 +648,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             'karate-dsl.generateCombined', 'karate-dsl.generateFromDirectory', 'karate-dsl.startRecording',
             'karate-dsl.huntApiBugs', 'karate-dsl.showCIBridgeGuide', 'karate-dsl.reportBug',
             'karate-dsl.setClaudeApiKey', 'karate-dsl.setGitHubToken', 'karate-dsl.setZephyrToken',
-            'karate-dsl.showMcpConnectionInfo', 'karate-dsl.configureAI', 'workbench.action.openSettings'
+            'karate-dsl.showMcpConnectionInfo', 'karate-dsl.configureAI', 'workbench.action.openSettings',
+            'karate-dsl.scout.open'
         ]);
         if (typeof commandId !== 'string' || !allowed.has(commandId)) {
             this.sendError('This action is not available from the test management workspace.');
@@ -1709,6 +1734,7 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
     if (!data || typeof data !== 'object' || typeof (data as { command?: unknown }).command !== 'string') return false;
     const message = data as Record<string, unknown>;
     switch (message.command) {
+        case 'scout': return isScoutCommand(message.request);
         case 'getManagementSnapshot': return message.folderPath === undefined || typeof message.folderPath === 'string';
         case 'executeExtensionCommand':
             return typeof message.commandId === 'string'
@@ -1756,7 +1782,7 @@ function isWebviewMessage(data: unknown): data is WebviewMessage {
                 && (message.folderPath === undefined || typeof message.folderPath === 'string');
         case 'managementReady': return true;
         case 'managementAreaChanged': return typeof message.area === 'string'
-            && ['overview', 'library', 'runs', 'quality', 'create', 'operations'].includes(message.area);
+            && ['overview', 'library', 'runs', 'quality', 'create', 'scout', 'operations'].includes(message.area);
         case 'reportBug': return typeof message.activeArea === 'string';
         case 'openExpandedWorkspace': case 'focusManagementSidebar': return true;
         // Legacy generation messages remain supported for existing callers. Their command

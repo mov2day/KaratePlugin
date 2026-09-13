@@ -5,6 +5,29 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-09-13
+
+### Added
+- Karate Scout workspace with Chrome/Edge selection, dedicated application profiles, and an optional authenticated local companion for existing signed-in tabs.
+- Action/API journey map, inferred dynamic data links, explicit business expectations, bounded browser variations, failure evidence, and reauthentication checkpoints.
+- Readable Karate suites with reusable authentication/reset references and separate browser/API verification outcomes.
+- Sanitized journey save/reconnect, scoped HAR fallback, a local sample checkout, and browser/companion regression tests.
+- Scout setup guide documenting enterprise-policy and managed-SSO pilot boundaries.
+
+### Changed
+- README and GitHub Pages now introduce Scout with browser setup, a sample journey, and separate browser/API verification outcomes.
+- HAR import decodes base64 response bodies, restores missing MIME headers, validates malformed entries, and treats unsuccessful network captures as incomplete.
+
+### Fixed
+- Browser exploration waits for captured response bodies before assessing assertions.
+- Saved journeys preserve business assertions through privacy filtering and reconnect without losing the recorded flow.
+- Draft or skipped API scenarios cannot establish complete Karate verification; changed expectations require a fresh export.
+
+## [2.0.2] - 2026-09-01
+
+### Fixed
+- Closing and reopening the Test Management webview no longer reads from an already disposed panel, preventing the `Webview is disposed` error and allowing the workspace to open repeatedly.
+
 ## [2.0.1] - 2026-08-31
 
 ### Changed

@@ -24,7 +24,8 @@ export class TestExecutor {
      */
     async execute(
         options: TestExecutionOptions,
-        cancellationToken?: vscode.CancellationToken
+        cancellationToken?: vscode.CancellationToken,
+        runtimeSystemProperties: Record<string, string> = {}
     ): Promise<TestExecutionResult> {
         const executionId = this.generateExecutionId();
         const startTime = Date.now();
@@ -40,6 +41,7 @@ export class TestExecutor {
                 throw new Error('No workspace folder found. Please open a workspace.');
             }
             const settings = readExecutionSettings(this.getSettingsScope(options, workspaceRoot));
+            settings.systemProperties = { ...settings.systemProperties, ...runtimeSystemProperties };
             let project = ProjectExecutionResolver.resolve(options, workspaceRoot, settings);
             const requestedStrategy = options.buildTool || settings.defaultBuildTool || 'auto';
             const runnerCount = project.strategy === 'cli' ? 0 : ConfigDiscovery.findRunnerClasses(project.projectRoot).length;

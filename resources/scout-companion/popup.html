@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="popup.css"><title>Karate Scout</title></head><body>
+<header><span class="mark">K</span><div><strong>Karate Scout</strong><small>Connect the tab you already use.</small></div></header>
+<p>Sign in to your application first. Then paste the pairing details shown in VS Code.</p>
+<label>Local endpoint<input id="endpoint" placeholder="http://127.0.0.1:12345" autocomplete="off"></label>
+<label>Pairing key<input id="token" type="password" autocomplete="off" placeholder="Temporary key from Scout"></label>
+<button id="connect">Connect this tab</button><button id="disconnect" class="secondary">Disconnect</button>
+<p id="status" role="status" aria-live="polite"></p>
+<footer>Only the selected tab is connected. Browser policy may restrict access. Authentication stays in your browser.</footer>
+<script src="popup.js"></script></body></html>

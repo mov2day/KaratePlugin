@@ -38,6 +38,7 @@ export class HarImporter {
      * Parse HAR content and convert to CapturedRequest format
      */
     private static parseHar(content: string, options?: HarFilterOptions): CapturedRequest[] {
+        if (Buffer.byteLength(content) > 20 * 1024 * 1024) throw new Error('HAR exceeds 20 MB. Export a shorter application journey.');
         let harFile: HarFile;
 
         try {
@@ -47,7 +48,7 @@ export class HarImporter {
         }
 
         // Validate HAR structure
-        if (!harFile.log || !harFile.log.entries) {
+        if (!harFile || !harFile.log || !Array.isArray(harFile.log.entries)) {
             throw new Error('Invalid HAR file: Missing log.entries');
         }
 
@@ -83,7 +84,9 @@ export class HarImporter {
      */
     static filterEntries(entries: HarEntry[], options: HarFilterOptions): HarEntry[] {
         return entries.filter(entry => {
-            const url = new URL(entry.request.url);
+            let url: URL;
+            try { url = new URL(entry.request.url); } catch { return false; }
+            if (!entry.response || typeof entry.request.method !== 'string') return false;
 
             // Filter by domain
             if (options.includeDomains && options.includeDomains.length > 0) {

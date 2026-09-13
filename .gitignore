@@ -9,7 +9,9 @@ out
 
 # Generated build and UI preview artifacts
 /output/
+/.playwright-cli/
 /target/
+/lib/scout-runtime/
 
 # Local development and planning material
 /.codex/

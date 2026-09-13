@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate Test Management",
   "description": "Generate, run, manage, and improve Karate API tests from one professional VS Code workspace",
-  "version": "2.0.1",
+  "version": "2.0.3",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -220,6 +220,10 @@
       {
         "command": "karate-dsl.reportBug",
         "title": "Karate: Report a Bug"
+      },
+      {
+        "command": "karate-dsl.scout.open",
+        "title": "Karate Scout: Teach a Browser Journey"
       }
     ],
     "viewsContainers": {
@@ -479,7 +483,9 @@
         },
         "karateDsl.execution.additionalClasspath": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Additional classpath entries for test execution (relative or absolute paths)"
         },
@@ -852,6 +858,26 @@
           "type": "boolean",
           "default": false,
           "description": "Allow Bug Hunter probes for POST, PUT, PATCH, and DELETE endpoints."
+        },
+        "karateDsl.scout.chromePath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional exact Chrome executable for Scout. Blank uses installed Google Chrome."
+        },
+        "karateDsl.scout.edgePath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional exact Edge executable for Scout. Blank uses installed Microsoft Edge."
+        },
+        "karateDsl.scout.authFixture": {
+          "type": "string",
+          "default": "",
+          "description": "Supported Karate auth helper for independent Scout execution, e.g. classpath:auth/login.feature. Must return headers/cookies; browser SSO is not copied."
+        },
+        "karateDsl.scout.resetFixture": {
+          "type": "string",
+          "default": "",
+          "description": "Optional Karate reset helper to run before each generated Scout scenario."
         }
       }
     }
@@ -866,12 +892,16 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run test:ai-routing && npm run typecheck && npm run lint && npm run package:check",
+    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run test:ai-routing && npm run test:scout && npm run typecheck && npm run lint && npm run package:check",
     "test:execution": "npm run compile && node ./scripts/test-execution-engine.cjs",
     "test:ai-routing": "npm run compile && node ./scripts/test-ai-routing.cjs",
     "package:check": "npm run build:webview && npm run clean && npm run build:extension && node ./scripts/check-package-files.cjs",
     "test": "node ./out/test/runTest.js",
-    "package": "vsce package"
+    "package": "vsce package",
+    "test:scout": "npm run compile && node scripts/test-scout.cjs",
+    "test:scout:browsers": "npm run compile && node scripts/test-scout-browsers.cjs",
+    "test:scout:companion": "npm run build:webview && npm run compile && node scripts/test-scout-companion.cjs",
+    "test:scout:ui": "npm run build:webview && node scripts/test-scout-ui.cjs"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
@@ -882,8 +912,8 @@
     "@typescript-eslint/parser": "^6.15.0",
     "@vscode/test-electron": "^2.3.8",
     "@vscode/vsce": "^2.22.0",
-    "eslint": "^8.56.0",
     "esbuild": "^0.28.2",
+    "eslint": "^8.56.0",
     "mocha": "^10.2.0",
     "typescript": "^5.3.3"
   },
@@ -894,6 +924,7 @@
     "chart.js": "^4.5.1",
     "js-yaml": "^4.1.0",
     "mermaid": "^11.17.2",
+    "playwright-core": "^1.63.0",
     "preact": "^10.29.8",
     "swagger-parser": "^10.0.3"
   }

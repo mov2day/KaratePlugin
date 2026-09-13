@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Karate Scout Companion",
+  "version": "1.0.0",
+  "description": "Connect a selected signed-in Chrome or Edge tab to Karate Scout in VS Code.",
+  "permissions": ["activeTab", "debugger", "storage"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "Connect Karate Scout", "default_popup": "popup.html" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'" }
+}

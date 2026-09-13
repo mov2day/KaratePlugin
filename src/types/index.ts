@@ -311,6 +311,7 @@ export interface BugHunterRunResult {
 
 // Webview Message Types
 export type WebviewMessage =
+    | { command: 'scout'; request: import('../services/scout/types').ScoutCommand }
     | { command: 'selectOpenAPIFile' }
     | { command: 'generateFromOpenAPI'; filePath: string; useCopilot: boolean; templateId?: string; scenarioTypes?: string[]; httpMethods?: string[]; customInstruction?: string }
     | { command: 'generateFromConfluence'; pageUrl: string; useCopilot: boolean; templateId?: string }
@@ -342,7 +343,7 @@ export type WebviewMessage =
     | { command: 'saveTraceability'; featurePath: string; scenarioName: string; owner: string; status: string; zephyrKey: string; folderPath?: string }
     | { command: 'openScenario'; featurePath: string; line: number; folderPath?: string }
     | { command: 'managementReady' }
-    | { command: 'managementAreaChanged'; area: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'operations' }
+    | { command: 'managementAreaChanged'; area: 'overview' | 'library' | 'runs' | 'quality' | 'create' | 'scout' | 'operations' }
     | { command: 'reportBug'; activeArea: string }
     | { command: 'openExpandedWorkspace' }
     | { command: 'focusManagementSidebar' };
