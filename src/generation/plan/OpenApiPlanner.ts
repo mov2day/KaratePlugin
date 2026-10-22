@@ -5,8 +5,8 @@ import type { GeneratorConfig, ScenarioCategory } from '../config/GeneratorConfi
 import type { GenerationModel, JsonSchema, OperationModel, ResponseModel, SecurityScheme } from '../model/TestModel';
 import { jsLiteral, numericBounds, unsatisfiablePattern, validExtreme, valueFor, violation, withoutFlagged } from './dataFactory';
 import { slug } from './slug';
-import { planAuth } from '../scaffold/AuthSchemes';
-import type { AuthPlan } from '../scaffold/AuthSchemes';
+import { planAuth } from './AuthSchemes';
+import type { AuthPlan } from './AuthSchemes';
 import { toKarateSchema } from './schemaMatch';
 
 export interface PlannedFeature {
@@ -162,8 +162,8 @@ class Planner {
     }
 
     private schemeOf(op: OperationModel): SecurityScheme | undefined {
-        const names = Array.isArray(op.security) ? op.security : [];
-        return this.model.schemes.find(s => names.includes(s.name)) ?? this.model.schemes[0];
+        const names = this.groupsOf(op).flat();
+        return this.model.schemes.find(s => names.includes(s.name) && this.applicable(s.name)) ?? this.model.schemes.find(s => names.includes(s.name)) ?? this.model.schemes[0];
     }
 
     // ---------------------------------------------------------------- layout
@@ -186,32 +186,41 @@ class Planner {
         this.items.push({ base: this.baseFor(op, kind), kind, secured: kind === 'security' ? false : secured, domain: domainOf(op), scenario });
     }
 
-    /** Scheme names the operation accepts (alternatives, OR semantics). */
-    private requiredNames(op: OperationModel): string[] {
-        return Array.isArray(op.security) ? op.security : [];
+    /** Requirement groups: schemes inside a group are ANDed, groups are ORed. Flat name lists are all alternatives. */
+    private groupsOf(op: OperationModel): string[][] {
+        if (op.securityGroups && op.securityGroups.length > 0) {return op.securityGroups;}
+        return Array.isArray(op.security) ? op.security.map(n => [n]) : [];
+    }
+
+    private applicable = (n: string): boolean => this.auth.configured.has(n) || this.auth.viaStep.has(n);
+
+    private missing(group: string[]): string[] {
+        return group.filter(n => !this.applicable(n));
+    }
+
+    private satisfiedGroup(op: OperationModel): string[] | undefined {
+        return this.groupsOf(op).find(g => this.missing(g).length === 0);
     }
 
     private satisfiable(op: OperationModel): boolean {
-        const names = this.requiredNames(op);
-        return names.length === 0 || names.some(n => this.auth.configured.has(n) || this.auth.viaStep.has(n));
+        return this.groupsOf(op).length === 0 || this.satisfiedGroup(op) !== undefined;
     }
 
-    /** The query/cookie apiKey scheme this operation must apply with a per-scenario step, when auth.feature does not configure an alternative. */
-    private stepScheme(op: OperationModel): SecurityScheme | undefined {
-        const names = this.requiredNames(op);
-        if (names.some(n => this.auth.configured.has(n))) {return undefined;}
-        return this.auth.queryKeys.find(k => names.includes(k.name));
+    /** Query/cookie apiKey schemes of the chosen group that need a per-scenario step. */
+    private stepSchemes(op: OperationModel): SecurityScheme[] {
+        const group = this.satisfiedGroup(op);
+        return group ? this.auth.queryKeys.filter(k => group.includes(k.name)) : [];
     }
 
     private mismatchReason(op: OperationModel): string | undefined {
         if (this.satisfiable(op)) {return undefined;}
-        const available = [...this.auth.configured, ...this.auth.viaStep];
-        return `Requires ${this.requiredNames(op).join(', ')}; common/auth.feature provides ${available.join(', ') || 'no credentials'}`;
+        const best = [...this.groupsOf(op)].sort((x, y) => this.missing(x).length - this.missing(y).length)[0];
+        return `Requires ${best.join(' AND ')}; common/auth.feature cannot configure ${this.missing(best).join(', ')}`;
     }
 
     private warnSchemeMismatch(op: OperationModel): void {
         if (this.satisfiable(op)) {return;}
-        const message = `${op.sourceRef}: requires ${this.requiredNames(op).join(', ')} but common/auth.feature cannot configure it; add credentials for it`;
+        const message = `${op.sourceRef}: ${this.mismatchReason(op)}; add credentials for it`;
         if (!this.mismatchWarned.has(message)) {
             this.mismatchWarned.add(message);
             this.warn(message);
@@ -418,10 +427,11 @@ class Planner {
             const generated = h.schema.format === 'uuid' || /request-?id|correlation|trace/i.test(h.name);
             request.push([`header ${h.name} = ${generated ? 'karate.uuid()' : jsLiteral(h.example ?? valueFor(h.schema, h.name))}`]);
         }
-        const viaStep = o.auth !== false && this.secured(op) ? this.stepScheme(op) : undefined;
-        if (viaStep) {
-            const variable = this.auth.apiKeyVars.get(viaStep.name)!.variable;
-            request.push([viaStep.in === 'cookie' ? `cookie ${viaStep.paramName ?? 'api_key'} = ${variable}` : `param ${quote(viaStep.paramName ?? 'api_key')} = ${variable}`]);
+        if (o.auth !== false && this.secured(op)) {
+            for (const k of this.stepSchemes(op)) {
+                const variable = this.auth.apiKeyVars.get(k.name)!.variable;
+                request.push([k.in === 'cookie' ? `cookie ${k.paramName ?? 'api_key'} = ${variable}` : `param ${quote(k.paramName ?? 'api_key')} = ${variable}`]);
+            }
         }
         if (hasBody) {request.push([`request ${pv}`]);}
 
@@ -544,7 +554,7 @@ class Planner {
             all.splice(at < 0 ? all.length : at, 0, ...forbidden);
             all.push(st('Then', 'status 403'));
             this.push(op, 'security', this.scenario(op, 'security', `${this.label(op)} - rejects a credential without permission with 403`, all, {
-                draftReason: 'Requires a credential without permission; provide API_FORBIDDEN_TOKEN'
+                draftReason: this.mismatchReason(op) ?? 'Requires a credential without permission; provide API_FORBIDDEN_TOKEN'
             }));
         }
     }

@@ -2,8 +2,8 @@
 import type { ProjectInfo } from '../config/ProjectDiscovery';
 import type { GeneratorConfig } from '../config/GeneratorConfig';
 import type { GenerationModel } from '../model/TestModel';
-import { planAuth, requiredSecrets } from './AuthSchemes';
-import type { AuthPlan } from './AuthSchemes';
+import { planAuth, requiredSecrets, unsupportedReason } from '../plan/AuthSchemes';
+import type { AuthPlan } from '../plan/AuthSchemes';
 
 export interface ScaffoldFile {
     path: string;
@@ -84,8 +84,8 @@ function authFeature(plan: AuthPlan): string {
     const applied = [...plan.configured].join(', ') || 'none';
     const viaStep = [...plan.viaStep].join(', ');
     lines.push(`# Configures: ${applied}${viaStep ? `; per-scenario step needed: ${viaStep}` : ''}`);
-    if (plan.unsupported.length > 0) {
-        lines.push(`# Cannot configure (Karate v2 applies a single auth scheme; add credentials manually): ${plan.unsupported.map(u => u.name).join(', ')}`);
+    for (const u of plan.unsupported) {
+        lines.push(`# Cannot configure ${u.name}: ${unsupportedReason(u)}`);
     }
     const steps: string[] = [];
     const s = plan.primary;

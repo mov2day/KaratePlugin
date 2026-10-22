@@ -12,6 +12,8 @@ export interface SecurityScheme {
     in?: 'header' | 'query' | 'cookie';
     paramName?: string;
     tokenUrl?: string;
+    /** oauth2 only: the flow the spec declares (clientCredentials preferred when several). */
+    flow?: 'clientCredentials' | 'password' | 'authorizationCode' | 'implicit';
 }
 
 export interface ParamModel {
@@ -46,6 +48,8 @@ export interface OperationModel {
     body?: BodyModel;
     responses: ResponseModel[];
     security: string[] | 'none' | 'inherit';
+    /** Requirement groups: schemes inside a group are ANDed, groups are ORed. Absent when the operation has no named requirement. */
+    securityGroups?: string[][];
     sourceRef: string;
 }
 

@@ -343,4 +343,38 @@ module.exports = [
             assert.strictEqual(s.properties.bad['x-truncated'], true);
         }
     },
+    {
+        name: 'openapi-model: security groups keep AND/OR structure',
+        run() {
+            const api = { openapi: '3.0.0', components: { securitySchemes: { a: { type: 'http', scheme: 'bearer' }, b: { type: 'apiKey', in: 'query', name: 'k' } } }, security: [{ a: [] }],
+                paths: { '/and': { get: { operationId: 'and', security: [{ a: [], b: [] }], responses: { 200: { description: 'ok' } } } },
+                    '/or': { get: { operationId: 'or', security: [{ a: [] }, { b: [] }], responses: { 200: { description: 'ok' } } } },
+                    '/glob': { get: { operationId: 'glob', responses: { 200: { description: 'ok' } } } },
+                    '/none': { get: { operationId: 'none', security: [], responses: { 200: { description: 'ok' } } } } } };
+            const m = build(api);
+            assert.deepEqual(op(m, 'and').securityGroups, [['a', 'b']]);
+            assert.deepEqual(op(m, 'and').security, ['a', 'b']);
+            assert.deepEqual(op(m, 'or').securityGroups, [['a'], ['b']]);
+            assert.deepEqual(op(m, 'glob').securityGroups, [['a']]);
+            assert.equal(op(m, 'none').security, 'none');
+            assert.equal(op(m, 'none').securityGroups, undefined);
+        }
+    },
+    {
+        name: 'openapi-model: oauth2 flow recorded (OAS3 prefers clientCredentials; OAS2 flow names mapped)',
+        run() {
+            const three = build({ openapi: '3.0.0', components: { securitySchemes: {
+                both: { type: 'oauth2', flows: { authorizationCode: { authorizationUrl: 'https://x/a', tokenUrl: 'https://x/code' }, clientCredentials: { tokenUrl: 'https://x/cc' } } },
+                pw: { type: 'oauth2', flows: { password: { tokenUrl: 'https://x/pw' } } },
+                imp: { type: 'oauth2', flows: { implicit: { authorizationUrl: 'https://x/a' } } } } }, paths: {} });
+            const by = n => three.schemes.find(s => s.name === n);
+            assert.deepEqual([by('both').flow, by('both').tokenUrl], ['clientCredentials', 'https://x/cc']);
+            assert.deepEqual([by('pw').flow, by('pw').tokenUrl], ['password', 'https://x/pw']);
+            assert.deepEqual([by('imp').flow, by('imp').tokenUrl], ['implicit', undefined]);
+            const two = build({ swagger: '2.0', securityDefinitions: { app: { type: 'oauth2', flow: 'application', tokenUrl: 'https://x/t' }, ac: { type: 'oauth2', flow: 'accessCode', tokenUrl: 'https://x/t2', authorizationUrl: 'https://x/a' } }, paths: {} });
+            assert.equal(two.schemes[0].flow, 'clientCredentials');
+            assert.equal(two.schemes[0].tokenUrl, 'https://x/t');
+            assert.equal(two.schemes[1].flow, 'authorizationCode');
+        }
+    }
 ];

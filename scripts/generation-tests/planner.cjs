@@ -553,7 +553,7 @@ module.exports = [
             const planned = plan({}, model);
             assert.equal(bySource(planned, 'GET /or').find(s => s.category === 'positive').draftReason, undefined);
             const none = bySource(planned, 'GET /none').find(s => s.category === 'positive');
-            assert.match(none.draftReason, /Requires other; common\/auth\.feature provides bearerAuth/);
+            assert.match(none.draftReason, /Requires other; common\/auth\.feature cannot configure other/);
             assert.ok(planned.warnings.some(w => /GET \/none/.test(w) && /other/.test(w)));
         }
     },
@@ -696,6 +696,38 @@ module.exports = [
             const planned = planner().planOpenApi(buildModel(), cfg, { inlineSchemas: true });
             assert.deepEqual(planned.files, []);
             assert.ok(!/classpath:(data|schemas)\//.test(all(planned, cfg)));
+        }
+    },
+    {
+        name: 'auth: AND groups - satisfied needs every scheme, step added for query key; unsupported or missing member drafts',
+        run() {
+            const schemes = [{ name: 'bearerAuth', kind: 'bearer' }, { name: 'qKey', kind: 'apiKey', in: 'query', paramName: 'k' },
+                { name: 'pw', kind: 'oauth2', flow: 'password', tokenUrl: 'https://t' }, { name: 'hKey', kind: 'apiKey', in: 'header', paramName: 'X-H' }];
+            const groups = { '/ok': [['bearerAuth', 'qKey']], '/bad': [['bearerAuth', 'pw']], '/orb': [['pw'], ['hKey']], '/andmiss': [['hKey', 'pw']] };
+            const model = buildModel({ openapi: '3.0.0', paths: Object.fromEntries(Object.keys(groups).map(p => [p, { get: { operationId: p.slice(1), responses: { '200': { description: 'ok' }, '403': { description: 'no' } } } }])) }, 'g');
+            model.schemes = schemes;
+            model.operations.forEach(o => { o.securityGroups = groups[o.path]; o.security = groups[o.path].flat(); });
+            const planned = plan({}, model);
+            const pos = src => bySource(planned, src).find(s => s.category === 'positive');
+            assert.equal(pos('GET /ok').draftReason, undefined);
+            assert.match(text(planned)['ok/ok.feature'], /And param k = apiKeyQKey/);
+            assert.match(pos('GET /bad').draftReason, /^Requires bearerAuth AND pw; common\/auth\.feature cannot configure pw$/);
+            assert.equal(pos('GET /orb').draftReason, undefined);
+            assert.match(pos('GET /andmiss').draftReason, /Requires hKey AND pw; .*cannot configure pw/);
+            // 403 scenario on an unsupported-only requirement keeps a reason naming the missing scheme
+            const f = bySource(planned, 'GET /bad').find(s => /403/.test(s.name));
+            assert.ok(f, '403 scenario expected');
+            assert.match(f.draftReason, /cannot configure pw/);
+        }
+    },
+    {
+        name: 'auth: oauth2 password-flow only operations are drafts',
+        run() {
+            const model = buildModel({ openapi: '3.0.0', paths: { '/p': { get: { operationId: 'p', responses: { '200': { description: 'ok' } } } } } }, 'o');
+            model.schemes = [{ name: 'pw', kind: 'oauth2', flow: 'password', tokenUrl: 'https://t' }];
+            model.operations.forEach(o => { o.security = ['pw']; });
+            const planned = plan({}, model);
+            assert.match(bySource(planned, 'GET /p').find(s => s.category === 'positive').draftReason, /Requires pw; .*cannot configure pw/);
         }
     }
 ];

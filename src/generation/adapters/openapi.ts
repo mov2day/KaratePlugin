@@ -218,9 +218,19 @@ function buildSchemes(api: any): SecurityScheme[] {
             const where = ['header', 'query', 'cookie'].includes(def.in) ? def.in : undefined;
             schemes.push({ name, kind: 'apiKey', ...(where ? { in: where } : {}), ...(def.name ? { paramName: def.name } : {}) });
         } else if (type === 'oauth2') {
-            const flows = def.flows ?? {};
-            const tokenUrl = def.tokenUrl ?? flows.clientCredentials?.tokenUrl ?? flows.password?.tokenUrl ?? flows.authorizationCode?.tokenUrl;
-            schemes.push({ name, kind: 'oauth2', ...(tokenUrl ? { tokenUrl } : {}) });
+            const flows = isObject(def.flows) ? def.flows : {};
+            const oas2: Record<string, SecurityScheme['flow']> = { application: 'clientCredentials', password: 'password', accesscode: 'authorizationCode', implicit: 'implicit' };
+            let flow: SecurityScheme['flow'];
+            let tokenUrl: string | undefined;
+            if (isObject(flows) && Object.keys(flows).length > 0) {
+                const chosen = (flows.clientCredentials ? 'clientCredentials' : Object.keys(flows).find(k => k in oas2 || ['clientCredentials', 'password', 'authorizationCode', 'implicit'].includes(k))) as SecurityScheme['flow'];
+                flow = chosen;
+                tokenUrl = chosen ? flows[chosen]?.tokenUrl : undefined;
+            } else if (typeof def.flow === 'string') {
+                flow = oas2[def.flow.toLowerCase()];
+                tokenUrl = def.tokenUrl;
+            }
+            schemes.push({ name, kind: 'oauth2', ...(flow ? { flow } : {}), ...(tokenUrl ? { tokenUrl } : {}) });
         } else if (type === 'openidconnect') {
             schemes.push({ name, kind: 'openIdConnect' });
         }
@@ -238,6 +248,15 @@ function buildBaseUrl(api: any): string | undefined {
         return `${scheme}://${api.host}${api.basePath && api.basePath !== '/' ? api.basePath : ''}`;
     }
     return undefined;
+}
+
+function securityGroups(sec: any): string[][] {
+    const groups: string[][] = [];
+    for (const req of Array.isArray(sec) ? sec : []) {
+        const names = Object.keys(isObject(req) ? req : {});
+        if (names.length > 0) {groups.push(names);}
+    }
+    return groups;
 }
 
 function securityNames(sec: any): string[] {
@@ -314,6 +333,7 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
         model.baseUrl = baseUrl;
     }
     const globalSecurity = Array.isArray(doc.security) ? securityNames(doc.security) : undefined;
+    const globalGroups = Array.isArray(doc.security) ? securityGroups(doc.security) : [];
 
     const usedIds = new Set<string>();
     for (const [path, rawItem] of Object.entries(doc.paths ?? {})) {
@@ -405,12 +425,15 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
             }
 
             let security: OperationModel['security'];
+            let groups: string[][] = [];
             if (Array.isArray(operation.security)) {
                 // Optional auth ({} alongside named schemes) keeps the names; only an all-empty list means 'none'.
                 const names = securityNames(operation.security);
                 security = names.length === 0 ? 'none' : names;
+                groups = securityGroups(operation.security);
             } else if (globalSecurity !== undefined) {
                 security = globalSecurity.length === 0 ? 'none' : globalSecurity;
+                groups = globalGroups;
             } else {
                 security = 'inherit';
             }
@@ -432,6 +455,7 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
                 headerParams,
                 responses: buildResponses(operation, doc, ctx),
                 security,
+                ...(groups.length > 0 ? { securityGroups: groups } : {}),
                 sourceRef
             };
             if (operation.summary) {
