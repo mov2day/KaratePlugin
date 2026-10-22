@@ -135,25 +135,27 @@ export async function generateFromJira(context: vscode.ExtensionContext): Promis
 
                 if (isAvailable) {
                     progress.report({ message: 'Enhancing with AI...' });
-                    const enhanced = await registry.complete(
-                        `Convert these Jira acceptance criteria into executable Karate DSL test steps.
-                        
-${featureContent}
-
-RULES:
-- Replace placeholder steps with real Karate DSL (Given path, When method, Then status, And match)
-- Use realistic test data
-- Keep the Feature/Background/Scenario structure
-- Keep @jira tags
-- Return complete Karate feature file, no markdown
-
-Transform now:`,
-                        { maxTokens: 4096, temperature: 0.3, task: 'generate-requirements' }
-                    );
-
-                    if (enhanced.trim()) {
-                        featureContent = enhanced.replace(/```gherkin\n?/g, '').replace(/```\n?/g, '').trim();
+                    const { refine } = await import('../generation/ai/AiRefiner');
+                    const { DEFAULT_GENERATOR_CONFIG } = await import('../generation/config/GeneratorConfig');
+                    const { AgentSkillsService } = await import('../services/agentSkillsService');
+                    const skillText = await AgentSkillsService.buildSkillContextForPrompt('confluence');
+                    const result = await refine({
+                        feature: featureContent,
+                        mode: 'jira',
+                        task: 'generate-jira',
+                        evidence: [{ label: 'jira-acceptance-criteria', text: featureContent }],
+                        request: 'Replace each placeholder step with real Karate DSL steps (Given path, When method, Then status, And match) using realistic test data. Keep the Feature/Background/Scenario structure and the @jira tags.',
+                        skills: { select: () => ({ text: skillText }) },
+                        knownFiles: new Set<string>(),
+                        config: DEFAULT_GENERATOR_CONFIG,
+                        ai: p => registry.complete(p.user, { maxTokens: 4096, temperature: 0.3, systemPrompt: p.system, task: 'generate-jira' })
+                    });
+                    if (result.status === 'rejected') {
+                        const ids = [...new Set(result.findings.map(f => f.ruleId))].join(', ');
+                        logger.warn(`Jira AI refinement rejected (${ids}); using the template`);
+                        vscode.window.showWarningMessage(`AI refinement rejected: ${ids}. The template feature was kept.`);
                     }
+                    featureContent = result.text;
                 }
             } catch {
                 // AI enhancement failed — use template

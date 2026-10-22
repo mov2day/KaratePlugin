@@ -20,6 +20,7 @@ export interface RefineInput {
     evidence: { label: string; text: string }[];
     skills: SkillSource;
     ai: AiCall;
+    /** Classpath files that exist; an empty set means unknown and disables the missing-file rule. */
     knownFiles: Set<string>;
     config: GeneratorConfig;
     request?: string;
@@ -127,7 +128,7 @@ function check(raw: string, i: RefineInput, inputParsed: ParsedFeature, known: s
     }
     problems.push(...missingScenarios(inputParsed, parsed));
     problems.push(...inventedFindings(parsed, text, known, i.knownFiles, i.evidence.length > 0));
-    const gate = runGate(text, { knownFiles: i.knownFiles, config: i.config });
+    const gate = runGate(text, { knownFiles: i.knownFiles.size ? i.knownFiles : undefined, config: i.config });
     problems.push(...gate.findings.filter(f => f.severity === 'error'));
     return { text, problems, warnings: gate.findings.filter(f => f.severity !== 'error'), empty: false };
 }

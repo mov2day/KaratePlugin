@@ -34,13 +34,14 @@ suite('CopilotService Test Suite', () => {
         assert.strictEqual(enhanced, originalContent);
     });
 
-    test('cleanCopilotResponse should remove markdown code blocks', () => {
-        // Access private method via casting to any or generic public wrapper if available
-        // Since it's private, we might skipping direct unit test or test via public method if we could mock the API.
-        // Actually, we can test this logic if we extract it or if we can mock the response.
-
-        // Since we can't verify the mocking of 'sendRequest' easily without a framework,
-        // we will trust the "Graceful Failure" test above.
+    test('a rejected or failed refinement never exposes a changed feature', async () => {
+        const originalContent = 'Feature: Test';
+        const enhanced = await CopilotService.enhanceKarateTest(originalContent, 'Fix it');
+        // Fence/prose cleaning moved to generation/ai/AiRefiner (covered by scripts/generation-tests/ai-refine.cjs).
+        assert.strictEqual(enhanced, originalContent);
+        if (CopilotService.lastRefinement) {
+            assert.strictEqual(CopilotService.lastRefinement.status, 'rejected');
+        }
     });
 
     // NOTE: To properly test the interaction with Copilot API, we would need 

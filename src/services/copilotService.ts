@@ -8,6 +8,13 @@ import { ContextBuilder } from '../utils/contextBuilder';
 import { InputSanitizer } from './InputSanitizer';
 import { AIProviderRegistry } from './ai/AIProviderRegistry';
 import { AITask } from './ai/AIProvider';
+import { buildPrompt } from '../generation/ai/PromptBuilder';
+import { cleanOutput, refine } from '../generation/ai/AiRefiner';
+import type { RefineResult } from '../generation/ai/AiRefiner';
+import { DEFAULT_GENERATOR_CONFIG } from '../generation/config/GeneratorConfig';
+import type { SourceKind } from '../generation/model/TestModel';
+
+type Evidence = { label: string; text: string };
 
 export interface CopilotFullContext {
     type: 'openapi' | 'confluence' | 'combined' | 'postman' | 'coverage';
@@ -26,6 +33,9 @@ export interface CopilotFullContext {
  * requests are delegated to AIProviderRegistry; this class contains no routing.
  */
 export class CopilotService {
+    /** Outcome of the most recent whole-feature refinement (undefined until one runs); the pipeline reports rejections from it. */
+    static lastRefinement?: RefineResult;
+
     static async initialize(): Promise<void> {
         // Kept for compatibility. Discovery must happen from a user action.
     }
@@ -58,18 +68,11 @@ export class CopilotService {
         const safeContext = InputSanitizer.sanitizeUserInstruction(context);
         const contextType = fullContext?.type || 'general';
         const skillContext = await AgentSkillsService.buildSkillContextForPrompt(contextType);
-        const evidence = this.buildInlineEvidence(fullContext);
-        const prompt = `${evidence}${skillContext}
-
-CURRENT KARATE FEATURE
-${featureContent}
-
-REQUEST
-${safeContext}
-
-Return the complete enhanced Karate feature. Preserve intended behavior and unrelated scenarios. Use functional negative testing only. Return pure Karate DSL without markdown.`;
-
-        return this.completeFeature(prompt, featureContent, 'enhance-feature', context);
+        const request = `${safeContext}\n\nPreserve intended behavior and unrelated scenarios. Use functional negative testing only.`;
+        return this.completeFeature({
+            feature: featureContent, request, skillContext, evidence: this.buildInlineEvidence(fullContext),
+            task: 'enhance-feature', mode: this.modeForContext(contextType), logContext: context
+        });
     }
 
     static async enhanceKarateTestComprehensive(
@@ -79,17 +82,13 @@ Return the complete enhanced Karate feature. Preserve intended behavior and unre
         token?: vscode.CancellationToken
     ): Promise<string> {
         const safeContext = InputSanitizer.sanitizeUserInstruction(context);
-        const skillContext = await AgentSkillsService.buildSkillContextForPrompt(fullContext?.type || 'general');
-        const prompt = `${this.buildInlineEvidence(fullContext)}${skillContext}
-
-CURRENT KARATE FEATURE
-${featureContent}
-
-REQUEST
-${safeContext}
-
-Improve coverage only where supported by evidence. Check status assertions, resilient schema matching, boundary cases, readable names, reuse, isolation, and parallel safety. Do not invent server errors or undocumented response fields. Return the complete feature as pure Karate DSL.`;
-        return this.completeFeature(prompt, featureContent, 'enhance-feature', context, token);
+        const contextType = fullContext?.type || 'general';
+        const skillContext = await AgentSkillsService.buildSkillContextForPrompt(contextType);
+        const request = `${safeContext}\n\nImprove coverage only where supported by evidence. Check status assertions, resilient schema matching, boundary cases, readable names, reuse, isolation, and parallel safety. Do not invent server errors or undocumented response fields.`;
+        return this.completeFeature({
+            feature: featureContent, request, skillContext, evidence: this.buildInlineEvidence(fullContext),
+            task: 'enhance-feature', mode: this.modeForContext(contextType), logContext: context, cancellationToken: token
+        });
     }
 
     static async generateAdditionalScenarios(
@@ -102,24 +101,22 @@ Improve coverage only where supported by evidence. Check status assertions, resi
             const requirementText = requirements?.length
                 ? requirements.map(item => `- ${InputSanitizer.sanitizeUserInstruction(item)}`).join('\n')
                 : 'No additional requirements supplied.';
-            const prompt = `${skillContext}
-
-ENDPOINT
-${InputSanitizer.sanitizeUserInstruction(apiEndpoint)}
-
-EXISTING FEATURE
-${existingFeature}
-
-ADDITIONAL REQUIREMENTS
-${requirementText}
-
-Generate 3-5 useful scenario blocks supported by the evidence. Focus on documented negative, boundary, not-found, and authorization behavior. Return only Scenario or Scenario Outline blocks as pure Karate DSL.`;
+            const built = buildPrompt({
+                task: 'generate-missing-test',
+                mode: 'combined',
+                skills: skillContext,
+                evidence: [{ label: 'endpoint', text: InputSanitizer.sanitizeUserInstruction(apiEndpoint) }],
+                feature: existingFeature,
+                request: `ADDITIONAL REQUIREMENTS\n${requirementText}\n\nGenerate 3-5 useful scenario blocks supported by the evidence. Focus on documented negative, boundary, not-found, and authorization behavior.`
+            });
+            const prompt = built.user;
             const result = await AIProviderRegistry.getInstance().complete(prompt, {
                 maxTokens: 4096,
                 temperature: 0.2,
+                systemPrompt: built.system,
                 task: 'generate-missing-test'
             });
-            const cleaned = this.cleanCopilotResponse(result);
+            const cleaned = cleanOutput(result);
             CopilotLogger.logRequest('Generate Additional Scenarios', apiEndpoint, prompt);
             CopilotLogger.logResponse('Generate Additional Scenarios', cleaned, 0);
             return this.extractScenarios(cleaned);
@@ -153,28 +150,19 @@ Generate 3-5 useful scenario blocks supported by the evidence. Focus on document
     ): Promise<string> {
         try {
             const skillContext = await AgentSkillsService.buildSkillContextForPrompt(contextType);
-            const fileContext = files.map(uri => {
+            const evidence: Evidence[] = files.map(uri => {
                 try {
-                    const content = fs.readFileSync(uri.fsPath, 'utf8');
-                    return `SOURCE: ${path.basename(uri.fsPath)}\n${content}`;
+                    return { label: path.basename(uri.fsPath), text: fs.readFileSync(uri.fsPath, 'utf8') };
                 } catch (error) {
                     logger.warn(`Unable to read AI context file ${path.basename(uri.fsPath)}`, error as Error);
-                    return '';
+                    return undefined;
                 }
-            }).filter(Boolean).join('\n\n');
-            const prompt = `${skillContext}
-
-SOURCE EVIDENCE
-${fileContext || 'No additional source file was supplied.'}
-
-CURRENT KARATE FEATURE
-${featureContent}
-
-REQUEST
-${InputSanitizer.sanitizeUserInstruction(context)}
-
-Use the source evidence as the contract boundary. Return the complete Karate feature without markdown or explanations.`;
-            return this.completeFeature(prompt, featureContent, this.taskForContext(contextType), context);
+            }).filter((item): item is Evidence => item !== undefined);
+            return await this.completeFeature({
+                feature: featureContent,
+                request: `${InputSanitizer.sanitizeUserInstruction(context)}\n\nUse the source evidence as the contract boundary.`,
+                skillContext, evidence, task: this.taskForContext(contextType), mode: this.modeForContext(contextType), logContext: context
+            });
         } catch (error) {
             logger.error('Failed to enhance test with file context', error as Error);
             return featureContent;
@@ -193,31 +181,57 @@ Use the source evidence as the contract boundary. Return the complete Karate fea
         await ContextBuilder.cleanupTempFiles();
     }
 
-    private static async completeFeature(
-        prompt: string,
-        fallback: string,
-        task: AITask,
-        logContext: string,
-        cancellationToken?: vscode.CancellationToken
-    ): Promise<string> {
+    private static async completeFeature(o: {
+        feature: string;
+        request: string;
+        skillContext: string;
+        evidence: Evidence[];
+        task: AITask;
+        mode: SourceKind;
+        logContext: string;
+        cancellationToken?: vscode.CancellationToken;
+    }): Promise<string> {
+        this.lastRefinement = undefined;
         try {
-            const result = await AIProviderRegistry.getInstance().complete(prompt, {
-                maxTokens: 4096,
-                temperature: 0.2,
-                task,
-                cancellationToken
+            const result = await refine({
+                feature: o.feature,
+                mode: o.mode,
+                task: o.task,
+                evidence: o.evidence,
+                request: o.request,
+                skills: { select: () => ({ text: o.skillContext }) },
+                knownFiles: new Set<string>(),
+                config: DEFAULT_GENERATOR_CONFIG,
+                ai: async p => {
+                    CopilotLogger.logRequest('Karate AI Enhancement', o.logContext, p.user);
+                    const out = await AIProviderRegistry.getInstance().complete(p.user, {
+                        maxTokens: 4096,
+                        temperature: 0.2,
+                        systemPrompt: p.system,
+                        task: o.task,
+                        cancellationToken: o.cancellationToken
+                    });
+                    CopilotLogger.logResponse('Karate AI Enhancement', out, 0);
+                    return out;
+                }
             });
-            const cleaned = this.cleanCopilotResponse(result);
-            if (!this.isValidFeatureOutput(cleaned)) {
-                logger.warn('AI output failed the Karate feature shape gate; preserving original content');
-                return fallback;
+            this.lastRefinement = result;
+            if (result.status === 'rejected') {
+                logger.warn(`AI refinement rejected (${result.findings.map(f => f.ruleId).join(', ') || 'no findings'}); preserving original content`);
             }
-            CopilotLogger.logRequest('Karate AI Enhancement', logContext, prompt);
-            CopilotLogger.logResponse('Karate AI Enhancement', cleaned, 0);
-            return cleaned;
+            return result.text;
         } catch (error) {
             logger.error('Karate AI enhancement failed', error as Error);
-            return fallback;
+            return o.feature;
+        }
+    }
+
+    private static modeForContext(contextType: CopilotFullContext['type'] | 'general'): SourceKind {
+        switch (contextType) {
+            case 'openapi': return 'openapi';
+            case 'postman': return 'postman';
+            case 'confluence': return 'confluence';
+            default: return 'combined';
         }
     }
 
@@ -232,24 +246,14 @@ Use the source evidence as the contract boundary. Return the complete Karate fea
         }
     }
 
-    private static buildInlineEvidence(fullContext?: CopilotFullContext): string {
-        if (!fullContext) return '';
-        const sections: string[] = [];
-        if (fullContext.openApiSpec) sections.push(`OPENAPI EVIDENCE\n${InputSanitizer.sanitizeSpec(fullContext.openApiSpec)}`);
-        if (fullContext.postmanCollection) sections.push(`POSTMAN EVIDENCE\n${InputSanitizer.sanitizeSpec(fullContext.postmanCollection)}`);
-        if (fullContext.confluencePage) sections.push(`REQUIREMENT EVIDENCE\n${InputSanitizer.sanitizeConfluence(fullContext.confluencePage)}`);
-        if (fullContext.requirements?.length) sections.push(`REQUIREMENTS\n${fullContext.requirements.map(item => `- ${InputSanitizer.sanitizeUserInstruction(item)}`).join('\n')}`);
-        return sections.length ? `${sections.join('\n\n')}\n\n` : '';
-    }
-
-    private static isValidFeatureOutput(content: string): boolean {
-        return /^\s*Feature\s*:/mi.test(content)
-            && /^\s*(Scenario|Scenario Outline)\s*:/mi.test(content)
-            && !/```/.test(content);
-    }
-
-    private static cleanCopilotResponse(response: string): string {
-        return response.replace(/```(?:gherkin|feature|karate)?\s*/gi, '').replace(/```/g, '').trim();
+    private static buildInlineEvidence(fullContext?: CopilotFullContext): Evidence[] {
+        if (!fullContext) return [];
+        const evidence: Evidence[] = [];
+        if (fullContext.openApiSpec) evidence.push({ label: 'openapi', text: InputSanitizer.sanitizeSpec(fullContext.openApiSpec) });
+        if (fullContext.postmanCollection) evidence.push({ label: 'postman', text: InputSanitizer.sanitizeSpec(fullContext.postmanCollection) });
+        if (fullContext.confluencePage) evidence.push({ label: 'requirements', text: InputSanitizer.sanitizeConfluence(fullContext.confluencePage) });
+        if (fullContext.requirements?.length) evidence.push({ label: 'requirement-list', text: fullContext.requirements.map(item => `- ${InputSanitizer.sanitizeUserInstruction(item)}`).join('\n') });
+        return evidence;
     }
 
     private static extractScenarios(text: string): string[] {

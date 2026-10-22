@@ -669,10 +669,20 @@ Return ONLY the Karate assertion lines.`;
             }
 
             const { AIProviderRegistry } = await import('./ai/AIProviderRegistry');
-            const promptText = messages.map(message => message.content.toString()).join('\n\n');
-            const result = await AIProviderRegistry.getInstance().complete(promptText, {
+            const { buildPrompt } = await import('../generation/ai/PromptBuilder');
+            const { AgentSkillsService } = await import('./agentSkillsService');
+            const built = buildPrompt({
+                task: 'generate-postman',
+                mode: 'postman',
+                skills: await AgentSkillsService.buildSkillContextForPrompt('postman'),
+                evidence: [],
+                request: messages.map(message => message.content.toString()).join('\n\n'),
+                output: 'steps'
+            });
+            const result = await AIProviderRegistry.getInstance().complete(built.user, {
                 maxTokens: 4096,
                 temperature: 0.2,
+                systemPrompt: built.system,
                 task: 'generate-postman'
             });
 
@@ -808,10 +818,20 @@ NO explanations, NO code blocks, just the Karate statements.`;
             }
 
             const { AIProviderRegistry } = await import('./ai/AIProviderRegistry');
-            const promptText = messages.map(message => message.content.toString()).join('\n\n');
-            const result = await AIProviderRegistry.getInstance().complete(promptText, {
+            const { buildPrompt } = await import('../generation/ai/PromptBuilder');
+            const { AgentSkillsService } = await import('./agentSkillsService');
+            const built = buildPrompt({
+                task: 'generate-postman',
+                mode: 'postman',
+                skills: await AgentSkillsService.buildSkillContextForPrompt('postman'),
+                evidence: [],
+                request: messages.map(message => message.content.toString()).join('\n\n'),
+                output: 'steps'
+            });
+            const result = await AIProviderRegistry.getInstance().complete(built.user, {
                 maxTokens: 2048,
                 temperature: 0.2,
+                systemPrompt: built.system,
                 task: 'generate-postman'
             });
 

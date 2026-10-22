@@ -33,14 +33,23 @@ export function corePrompt(task: AITask): string {
     ].join('\n');
 }
 
-export const OUTPUT_CONTRACT = [
-    'OUTPUT CONTRACT (Karate v2):',
-    '- Return only the complete Karate feature as pure Karate DSL: no markdown fences, no prose before or after.',
-    "- Preserve every `# source:` comment and every `read('classpath:...')` target exactly as written.",
-    '- Never invent endpoints, fields, files or schemas that are not in the evidence or the current feature.',
-    '- Never hard-code URLs or credentials; use the configured base URL variable and environment variables.',
-    '- Never weaken, remove or loosen existing assertions; keep every existing scenario.'
-].join('\n');
+const FIRST_BULLET = '- Return only the complete Karate feature as pure Karate DSL: no markdown fences, no prose before or after.';
+const SCENARIOS_BULLET = '- Return only the new Scenario or Scenario Outline blocks as pure Karate DSL: no Feature header, no markdown fences, no prose.';
+
+const STEPS_BULLET = '- Return only Karate step lines, one per line: no Feature or Scenario headers, no markdown fences, no prose.';
+
+export type OutputShape = 'feature' | 'scenarios' | 'steps';
+
+export function outputContract(task: AITask, shape: OutputShape = task === 'generate-missing-test' ? 'scenarios' : 'feature'): string {
+    return [
+        'OUTPUT CONTRACT (Karate v2):',
+        shape === 'scenarios' ? SCENARIOS_BULLET : shape === 'steps' ? STEPS_BULLET : FIRST_BULLET,
+        "- Preserve every `# source:` comment and every `read('classpath:...')` target exactly as written.",
+        '- Never invent endpoints, fields, files or schemas that are not in the evidence or the current feature.',
+        '- Never hard-code URLs or credentials; use the configured base URL variable and environment variables.',
+        '- Never weaken, remove or loosen existing assertions; keep every existing scenario.'
+    ].join('\n');
+}
 
 export interface PromptInput {
     task: AITask;
@@ -50,6 +59,8 @@ export interface PromptInput {
     feature?: string;
     request?: string;
     findings?: Finding[];
+    /** What the reply must contain; defaults to the whole feature (new scenario blocks for 'generate-missing-test'). */
+    output?: OutputShape;
 }
 
 const attr = (label: string): string => label.replace(/["<>\r\n]/g, ' ').trim();
@@ -57,7 +68,7 @@ const neutralise = (text: string, tag: string): string => text.replace(new RegEx
 
 /** The one place model prompts are assembled. Callers sanitise evidence before passing it in. */
 export function buildPrompt(i: PromptInput): { system: string; user: string } {
-    const system = `${corePrompt(i.task)}\nSource kind: ${i.mode}.\n${OUTPUT_CONTRACT}`;
+    const system = `${corePrompt(i.task)}\nSource kind: ${i.mode}.\n${outputContract(i.task, i.output)}`;
     const parts: string[] = [];
     if (i.skills.trim()) parts.push(i.skills.trim());
     if (i.evidence.length) {
