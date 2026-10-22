@@ -77,7 +77,10 @@ suite('GenerationService Test Suite', () => {
 
     test('generateFromOpenAPI should generate files from spec', async () => {
         const originalResolveOutputPath = FileUtils.resolveOutputPath;
+        const originalGetWorkspaceRoot = FileUtils.getWorkspaceRoot;
         (FileUtils as any).resolveOutputPath = () => tempDir;
+        // The pipeline writes under <workspaceRoot>/<outputPath>; point the root at the temp dir.
+        (FileUtils as any).getWorkspaceRoot = () => tempDir;
 
         const progressCallback = (msg: string, increment: number) => {
             console.log(`Progress: ${msg} (${increment}%)`);
@@ -94,6 +97,7 @@ suite('GenerationService Test Suite', () => {
             assert.ok(result.content.length > 0, 'Should return content');
         } finally {
             (FileUtils as any).resolveOutputPath = originalResolveOutputPath;
+            (FileUtils as any).getWorkspaceRoot = originalGetWorkspaceRoot;
         }
     });
 

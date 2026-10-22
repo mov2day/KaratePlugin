@@ -229,7 +229,7 @@
                 showProgress(message.message, message.percentage);
                 break;
             case 'success':
-                showSuccess(message.message, message.filePath, message.content);
+                showSuccess(message.message, message.filePath, message.content, message.summary);
                 break;
             case 'error':
                 showError(message.message);
@@ -408,12 +408,12 @@
         document.getElementById('progress-container').style.display = 'none';
     }
 
-    function showSuccess(message, filePath, content) {
+    function showSuccess(message, filePath, content, summary) {
         generatedContent = content;
         hideProgress();
         const results = document.getElementById('results');
         const msg = document.getElementById('result-message');
-        msg.textContent = message;
+        msg.textContent = summary && summary.headline ? `${message}. ${summary.headline}` : message;
         msg.dataset.filePath = filePath;
         document.getElementById('preview-content').textContent = content.substring(0, 1500) + (content.length > 1500 ? '\n...' : '');
         results.style.display = 'block';

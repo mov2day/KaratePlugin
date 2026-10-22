@@ -29,6 +29,8 @@ export interface RunGenerationInput {
     useAi: boolean;
     extraFiles?: PipelineInput['extraFiles'];
     scenarios?: PlannedFeature[];
+    /** Appended to the planned OpenAPI features (combined mode). */
+    extraFeatures?: PlannedFeature[];
     evidence?: PipelineInput['evidence'];
     progress: (msg: string, pct: number) => void;
     customInstruction?: string;
@@ -100,7 +102,7 @@ export async function runGenerationForModel(i: RunGenerationInput): Promise<RunG
     let result: PipelineResult;
     try {
         result = await runPipeline({
-            model: i.model, scenarios: i.scenarios, config, project, fsApi: nodeFs, history, skills, ai,
+            model: i.model, scenarios: i.scenarios, extraFeatures: i.extraFeatures, config, project, fsApi: nodeFs, history, skills, ai,
             evidence: i.evidence, request: i.customInstruction?.trim() || undefined,
             generatorVersion: version, sourceRef: i.sourceRef, mode: i.mode, progress: i.progress,
             extraFiles: i.extraFiles, root: i.workspaceRoot

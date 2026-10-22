@@ -9,6 +9,7 @@ import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
 import { SpecHashManager, SpecMetadata } from '../services/specHashManager';
 import { GenerationService } from '../services/GenerationService';
+import { reportSummary } from '../generation/vscode/reportSummary';
 import { GenerationOptions, KarateConfig, HistoryItem, KarateTemplate, TestExecutionOptions, WebviewMessage, KarateStyle } from '../types';
 import { HistoryManager } from '../services/historyManager';
 import { TemplateManager } from '../services/templateManager';
@@ -353,8 +354,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendSuccess(
                 `Generated tests for ${path.basename(filePath)}`,
                 result.files[0],
-                result.content
+                result.content,
+                result.summary
             );
+            void reportSummary(result.summary, `OpenAPI: ${path.basename(filePath)}`);
             await this.sendHistory();
 
         } catch (error) {
@@ -425,8 +428,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendSuccess(
                 `Generated combined tests`,
                 result.files[0],
-                result.content
+                result.content,
+                result.summary
             );
+            void reportSummary(result.summary, `Combined: ${path.basename(openApiPath)}`);
             await this.sendHistory();
 
         } catch (error) {
@@ -478,8 +483,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         this.sendMessage({ type: 'progress', message, percentage });
     }
 
-    private sendSuccess(message: string, filePath: string, content: string) {
-        this.sendMessage({ type: 'success', message, filePath, content });
+    private sendSuccess(message: string, filePath: string, content: string, summary?: { headline: string; details: string[] }) {
+        this.sendMessage({ type: 'success', message, filePath, content, ...(summary ? { summary: { headline: summary.headline, details: summary.details } } : {}) });
     }
 
     private sendError(message: string) {
