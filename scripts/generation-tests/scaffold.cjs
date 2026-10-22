@@ -49,12 +49,59 @@ module.exports = [
         }
     },
     {
-        name: 'scaffold: existing base config is not re-emitted, existing env configs skipped',
+        name: 'scaffold: adopting a base config emits no config or env files, only helpers',
         run() {
-            const m = byPath(plan({ baseConfig: { path: 'src/test/java/karate-config.js', variables: [] }, envConfigs: ['dev'] }));
-            assert.equal(m['src/test/java/karate-config.js'], undefined);
+            const p = project({ baseConfig: { path: 'src/test/java/karate-config.js', variables: ['apiUrl'] }, envConfigs: ['dev'] });
+            const before = JSON.stringify(p);
+            const files = scaffold().planScaffold({ project: p, config: cfg().DEFAULT_GENERATOR_CONFIG, model: model({ schemes: [{ name: 'b', kind: 'bearer' }] }) });
+            assert.deepEqual(files.map(f => f.path).sort(), ['src/test/java/common/auth.feature', 'src/test/java/common/utils.feature']);
+            assert.equal(JSON.stringify(p), before);
+        }
+    },
+    {
+        name: 'scaffold: env already listed is never emitted without base config',
+        run() {
+            const m = byPath(plan({ envConfigs: ['dev'] }));
             assert.equal(m['src/test/java/karate-config-dev.js'], undefined);
             assert.ok(m['src/test/java/karate-config-staging.js']);
+        }
+    },
+    {
+        name: 'scaffold: env files only override url when env var set, no fake host',
+        run() {
+            const m = byPath(plan());
+            const c = m['src/test/java/karate-config-staging.js'].content;
+            assert.match(c, /karate\.sysenv\('STAGING_BASE_URL'\)/);
+            assert.match(c, /if \(url\) \{\s+config\.baseUrl = url;/);
+            assert.doesNotMatch(c, /example\.com/);
+        }
+    },
+    {
+        name: 'scaffold: secret checks match what auth.feature reads, per scheme',
+        run() {
+            const cases = [
+                [{ name: 'b', kind: 'bearer' }, ['API_TOKEN']],
+                [{ name: 'b', kind: 'basic' }, ['API_USER', 'API_PASSWORD']],
+                [{ name: 'o', kind: 'oauth2', tokenUrl: 'https://a/t' }, ['API_CLIENT_ID', 'API_CLIENT_SECRET']],
+                [{ name: 'k', kind: 'apiKey', in: 'header', paramName: 'X' }, ['API_KEY']]
+            ];
+            for (const [scheme, vars] of cases) {
+                const m = byPath(plan({}, {}, { schemes: [scheme] }));
+                const staging = m['src/test/java/karate-config-staging.js'].content;
+                assert.ok(staging.includes(`var required = [${vars.map(v => `'${v}'`).join(', ')}];`), scheme.kind);
+                assert.match(staging, /throw new Error\(missing\.join/);
+                assert.doesNotMatch(m['src/test/java/karate-config-dev.js'].content, /throw/);
+                const auth = m['src/test/java/common/auth.feature'].content;
+                for (const v of vars) assert.ok(auth.includes(`karate.sysenv('${v}'`), v);
+            }
+        }
+    },
+    {
+        name: 'scaffold: multiple schemes add a note naming the ignored ones',
+        run() {
+            const a = byPath(plan({}, {}, { schemes: [{ name: 'one', kind: 'bearer' }, { name: 'two', kind: 'basic' }, { name: 'three', kind: 'apiKey' }] }))['src/test/java/common/auth.feature'].content;
+            assert.match(a, /# Note: .*other schemes ignored: two, three/);
+            assert.equal(gate().runGate(a).ok, true);
         }
     },
     {
@@ -65,8 +112,6 @@ module.exports = [
             assert.match(a, /\* def token = karate\.sysenv\('API_TOKEN', ''\)/);
             assert.match(a, /\* configure auth = \{ type: 'bearer', token: '#\(token\)' \}/);
             assert.match(a, /@ignore/);
-            assert.match(m['src/test/java/karate-config-staging.js'].content, /throw new Error\('API_TOKEN is required'\)/);
-            assert.doesNotMatch(m['src/test/java/karate-config-dev.js'].content, /throw/);
         }
     },
     {
@@ -107,6 +152,7 @@ module.exports = [
             const m = byPath(plan({}, { config: { mode: 'env-json', urlVariable: 'baseUrl', envs: ['dev', 'staging'] } }));
             const j = JSON.parse(m['src/test/java/config/dev.json'].content);
             assert.equal(j.baseUrl, 'http://localhost:8080');
+            assert.equal(JSON.parse(m['src/test/java/config/staging.json'].content).baseUrl, 'http://localhost:8080');
             assert.equal(j.connectTimeout, 5000);
             assert.equal(j.readTimeout, 30000);
             assert.ok(m['src/test/java/config/staging.json']);
@@ -197,6 +243,19 @@ module.exports = [
             const r = writer().OutputWriter.write([feat(BODY)], fsApi, h, OPTS);
             assert.deepEqual(r.updated, ['f/a.feature']);
             assert.deepEqual(r.sideBySide, []);
+        }
+    },
+    {
+        name: 'writer: source with pipes and newlines is sanitised and round-trips',
+        run() {
+            const fsApi = memFs();
+            const h = memHistory();
+            const f = { ...feat(BODY), source: 'a | b\nc\r\nd' };
+            writer().OutputWriter.write([f], fsApi, h, OPTS);
+            const first = fsApi.map.get('f/a.feature').split('\n')[0];
+            assert.match(first, /^# Generated by Karate Test Management 9.9.9 \| source: a b c d \| hash: [0-9a-f]{64}$/);
+            const r = writer().OutputWriter.write([{ ...f, content: BODY + '  * def q = 1\n' }], fsApi, memHistory(), OPTS);
+            assert.deepEqual(r.updated, ['f/a.feature']);
         }
     }
 ];

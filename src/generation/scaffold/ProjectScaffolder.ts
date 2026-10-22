@@ -45,23 +45,51 @@ function baseConfigJs(urlVar: string, baseUrl: string, envJson: boolean): string
     ].join('\n');
 }
 
-function envConfigJs(env: string, urlVar: string, hasScheme: boolean): string {
+function requiredSecrets(s: SecurityScheme | undefined): string[] {
+    switch (s?.kind) {
+        case undefined:
+            return [];
+        case 'basic':
+            return ['API_USER', 'API_PASSWORD'];
+        case 'oauth2':
+            return ['API_CLIENT_ID', 'API_CLIENT_SECRET'];
+        case 'apiKey':
+            return ['API_KEY'];
+        default:
+            return ['API_TOKEN'];
+    }
+}
+
+function envConfigJs(env: string, urlVar: string, secrets: string[]): string {
     const lines = [
-        `// Overrides for the '${env}' environment (karate.env = ${env}).`,
+        `// Overrides for the '${env}' environment (karate.env = ${env}). Only overrides when the variable is set.`,
         'function fn() {',
         '  var config = {};',
-        `  config.${urlVar} = karate.sysenv(${q(envVarName(env) + '_BASE_URL')}, ${q(`https://api.${env}.example.com`)});`
+        `  var url = karate.sysenv(${q(envVarName(env) + '_BASE_URL')});`,
+        '  if (url) {',
+        `    config.${urlVar} = url;`,
+        '  }'
     ];
-    if (hasScheme && env !== 'dev') {
-        lines.push("  if (!karate.sysenv('API_TOKEN')) {", "    throw new Error('API_TOKEN is required');", '  }');
+    if (secrets.length > 0 && env !== 'dev') {
+        lines.push(
+            `  var required = [${secrets.map(q).join(', ')}];`,
+            '  var missing = [];',
+            '  for (var i = 0; i < required.length; i++) {',
+            '    if (!karate.sysenv(required[i])) {',
+            '      missing.push(required[i]);',
+            '    }',
+            '  }',
+            '  if (missing.length > 0) {',
+            "    throw new Error(missing.join(', ') + ' is required');",
+            '  }'
+        );
     }
     lines.push('  return config;', '}', '');
     return lines.join('\n');
 }
 
-function envJson(urlVar: string, env: string, baseUrl: string): string {
-    const url = env === 'dev' ? baseUrl : `https://api.${env}.example.com`;
-    return JSON.stringify({ [urlVar]: url, connectTimeout: 5000, readTimeout: 30000 }, null, 2) + '\n';
+function envJson(urlVar: string, baseUrl: string): string {
+    return JSON.stringify({ [urlVar]: baseUrl, connectTimeout: 5000, readTimeout: 30000 }, null, 2) + '\n';
 }
 
 function authSteps(s: SecurityScheme): string[] {
@@ -93,8 +121,9 @@ function authSteps(s: SecurityScheme): string[] {
     }
 }
 
-function authFeature(s: SecurityScheme): string {
-    return ['@ignore', 'Feature: Authentication', '', '  Scenario: Configure authentication', ...authSteps(s).map(l => `    ${l}`), ''].join('\n');
+function authFeature(s: SecurityScheme, ignored: SecurityScheme[]): string {
+    const note = ignored.length > 0 ? [`# Note: only scheme '${s.name}' is configured; other schemes ignored: ${ignored.map(i => i.name).join(', ')}`] : [];
+    return [...note, '@ignore', 'Feature: Authentication', '', '  Scenario: Configure authentication', ...authSteps(s).map(l => `    ${l}`), ''].join('\n');
 }
 
 const UTILS_FEATURE = [
@@ -118,15 +147,16 @@ export function planScaffold(ctx: ScaffoldContext): ScaffoldFile[] {
         files.push({ path: joinPath(root, p), content, owner: 'user', reason });
     };
 
-    if (!project.baseConfig) add('karate-config.js', baseConfigJs(urlVar, baseUrl, envJsonMode), 'Base Karate configuration');
-    for (const env of config.config.envs) {
-        if (envJsonMode) {
-            if (!project.hasEnvJson || !project.envConfigs.includes(env)) add(`config/${env}.json`, envJson(urlVar, env, baseUrl), `Environment config for ${env}`);
-        } else if (!project.envConfigs.includes(env)) {
-            add(`karate-config-${env}.js`, envConfigJs(env, urlVar, model.schemes.length > 0), `Environment overrides for ${env}`);
+    if (!project.baseConfig) {
+        add('karate-config.js', baseConfigJs(urlVar, baseUrl, envJsonMode), 'Base Karate configuration');
+        const secrets = requiredSecrets(model.schemes[0]);
+        for (const env of config.config.envs) {
+            if (project.envConfigs.includes(env)) continue;
+            if (envJsonMode) add(`config/${env}.json`, envJson(urlVar, baseUrl), `Environment config for ${env}`);
+            else add(`karate-config-${env}.js`, envConfigJs(env, urlVar, secrets), `Environment overrides for ${env}`);
         }
     }
-    if (model.schemes.length > 0) add('common/auth.feature', authFeature(model.schemes[0]), 'Authentication setup from spec security schemes');
+    if (model.schemes.length > 0) add('common/auth.feature', authFeature(model.schemes[0], model.schemes.slice(1)), 'Authentication setup from spec security schemes');
     add('common/utils.feature', UTILS_FEATURE, 'Shared helper functions');
     return files;
 }
