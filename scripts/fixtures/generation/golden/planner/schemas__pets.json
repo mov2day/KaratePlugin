@@ -1,0 +1,6 @@
+{
+  "id": "#number",
+  "name": "#string",
+  "tag": "##string",
+  "status": "##string? ['available', 'pending', 'sold'].includes(_)"
+}

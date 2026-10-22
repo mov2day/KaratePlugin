@@ -1,0 +1,8 @@
+{
+  "id": "#number",
+  "name": "#string",
+  "tag": "##string",
+  "status": "##string? ['available', 'pending', 'sold'].includes(_)",
+  "ownerName": "#string",
+  "ownerEmail": "##string"
+}
