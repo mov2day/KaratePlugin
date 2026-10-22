@@ -17,7 +17,7 @@ import type { GenerationModel, SourceKind } from '../model/TestModel';
 import { refine } from '../ai/AiRefiner';
 import type { AiCall, RefineResult, SkillSource } from '../ai/AiRefiner';
 import { planOpenApi } from '../plan/OpenApiPlanner';
-import type { PlannedFeature } from '../plan/OpenApiPlanner';
+import type { PlanOptions, PlannedFeature } from '../plan/OpenApiPlanner';
 import { parseFeature, runGate } from '../quality/QualityGate';
 import type { Finding } from '../quality/QualityGate';
 import { renderFeature } from '../render/FeatureRenderer';
@@ -37,6 +37,8 @@ export interface PipelineInput {
     scenarios?: PlannedFeature[];
     /** Features appended to the planner output in openapi/combined modes (e.g. draft requirement scenarios). */
     extraFeatures?: PlannedFeature[];
+    /** Forwarded to the OpenAPI planner (e.g. per-spec file prefix in batch runs). */
+    planOptions?: PlanOptions;
     config: GeneratorConfig;
     project: ProjectInfo;
     fsApi: FsLike & { write(p: string, content: string): void };
@@ -150,7 +152,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
     if (i.scenarios) {
         planned = i.scenarios;
     } else if (i.mode === 'openapi' || i.mode === 'combined') {
-        const plan = planOpenApi(model, config);
+        const plan = planOpenApi(model, config, i.planOptions);
         planned = [...plan.features, ...(i.extraFeatures ?? [])];
         warnings.push(...plan.warnings);
         for (const f of plan.files) {dataFiles.push({ path: joinPath(cpRoot, f.path), content: f.content, owner: f.owner });}

@@ -5,6 +5,7 @@ import { logger } from '../utils/logger';
 import { OpenAPIParser } from '../services/openApiParser';
 import { FileUtils } from '../utils/fileUtils';
 import type { GenerationModel } from '../generation/model/TestModel';
+import { planBatchNamespacing } from '../generation/plan/BatchNamespacing';
 import { planOpenApi } from '../generation/plan/OpenApiPlanner';
 import { formatSummary, mergeResults } from '../generation/pipeline/Summary';
 import type { GenerationSummary } from '../generation/pipeline/Summary';
@@ -66,10 +67,9 @@ export async function generateFromDirectory(folderUri: vscode.Uri, context: vsco
                 }
             }
 
-            const owners = new Map<string, number>();
             const plannedPaths = parsed.map(p => planOpenApi(p.model, loaded.config).features.map(f => f.relativePath));
-            plannedPaths.forEach(paths => new Set(paths).forEach(rel => owners.set(rel, (owners.get(rel) ?? 0) + 1)));
-            const colliding = parsed.map((_, idx) => plannedPaths[idx].some(rel => (owners.get(rel) ?? 0) > 1));
+            const namespaces = planBatchNamespacing(parsed.map((p, idx) => ({ specName: p.specName, featurePaths: plannedPaths[idx] })));
+            const colliding = namespaces.map(n => n.subfolder !== undefined);
 
             const results: PipelineResult[] = [];
             const succeeded: string[] = [];
@@ -80,13 +80,14 @@ export async function generateFromDirectory(folderUri: vscode.Uri, context: vsco
                 const spec = parsed[i];
                 progress.report({ increment: 0, message: `Processing ${spec.baseName} (${i + 1}/${parsed.length})` });
                 try {
-                    const config = colliding[i]
-                        ? { ...loaded.config, layout: { ...loaded.config.layout, outputRoot: `${loaded.config.layout.outputRoot}/${spec.specName}` } }
+                    const ns = namespaces[i];
+                    const config = ns.subfolder
+                        ? { ...loaded.config, layout: { ...loaded.config.layout, outputRoot: `${loaded.config.layout.outputRoot}/${ns.subfolder}` } }
                         : loaded.config;
                     // Config discovery is shared; scaffold files are written once and later runs keep the existing ones.
                     const run = await runGenerationForModel({
                         context, workspaceRoot, model: spec.model, sourceRef: spec.baseName, mode: 'openapi', useAi,
-                        config, progress: toIncrementalProgress(progress, { from: 0, to: increment })
+                        config, planOptions: { filePrefix: ns.filePrefix }, progress: toIncrementalProgress(progress, { from: 0, to: increment })
                     });
                     results.push(run);
                     succeeded.push(spec.baseName);
@@ -100,7 +101,7 @@ export async function generateFromDirectory(folderUri: vscode.Uri, context: vsco
             const base = formatSummary(mergeResults(results));
             const details = [...base.details];
             if (colliding.some(Boolean)) {
-                details.push('Note: specs that share feature paths were written to per-spec sub-folders');
+                details.push('Note: specs that share feature paths were written to per-spec sub-folders; data and schema files are namespaced per spec');
             }
             if (failures.length > 0) {
                 details.push(`Skipped specs (${failures.length})`);

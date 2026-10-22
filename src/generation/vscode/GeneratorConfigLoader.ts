@@ -1,9 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import type { KarateStyle } from '../../types';
 import { resolveGeneratorConfig } from '../config/GeneratorConfig';
 import type { GeneratorConfig } from '../config/GeneratorConfig';
-import { mapSettingsToConfig } from '../config/SettingsMapping';
+import { layerStyle, mapSettingsToConfig } from '../config/SettingsMapping';
 import type { LoaderSettings } from '../config/SettingsMapping';
 
 export interface LoadedGeneratorConfig {
@@ -14,7 +15,8 @@ export interface LoadedGeneratorConfig {
 
 /** Glue between VS Code settings / the generator config file and the pure resolver. */
 export class GeneratorConfigLoader {
-    static async load(workspaceRoot: string): Promise<LoadedGeneratorConfig> {
+    /** `opts.fallbackStyle` (e.g. a learned style) sits below the shared-style file and the config file. */
+    static async load(workspaceRoot: string, opts: { fallbackStyle?: KarateStyle | null } = {}): Promise<LoadedGeneratorConfig> {
         const warnings: string[] = [];
         const root = vscode.workspace.getConfiguration('karateDsl');
         let explicit = false;
@@ -36,12 +38,15 @@ export class GeneratorConfigLoader {
             configMode: read<string>('generation.configMode')
         };
 
+        let sharedStyle: unknown;
         const stylePath = read<string>('generation.sharedStylePath');
         if (stylePath) {
             const resolved = path.isAbsolute(stylePath) ? stylePath : path.join(workspaceRoot, stylePath);
             const style = GeneratorConfigLoader.readJson(resolved, warnings);
-            if (style !== undefined) {raw.style = style;}
+            if (style !== undefined) {sharedStyle = style;}
         }
+        const styleLayer = layerStyle(sharedStyle, opts.fallbackStyle ?? undefined);
+        if (styleLayer !== undefined) {raw.style = styleLayer;}
 
         const configFile = root.get<string>('generation.configFile', '.karate-generator.json') || '.karate-generator.json';
         const filePath = path.isAbsolute(configFile) ? configFile : path.join(workspaceRoot, configFile);

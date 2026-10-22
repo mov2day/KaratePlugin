@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { AgentSkillsService } from '../../services/agentSkillsService';
 import { AIProviderRegistry } from '../../services/ai/AIProviderRegistry';
 import { CopilotService } from '../../services/copilotService';
+import type { KarateStyle } from '../../types';
 import { logger } from '../../utils/logger';
 import type { AiCall } from '../ai/AiRefiner';
 import { loadSkillPack } from '../ai/SkillPack';
@@ -15,7 +16,7 @@ import { runPipeline } from '../pipeline/GenerationPipeline';
 import type { PipelineInput, PipelineResult } from '../pipeline/GenerationPipeline';
 import { formatSummary } from '../pipeline/Summary';
 import type { GenerationSummary } from '../pipeline/Summary';
-import type { PlannedFeature } from '../plan/OpenApiPlanner';
+import type { PlanOptions, PlannedFeature } from '../plan/OpenApiPlanner';
 import { GeneratorConfigLoader } from './GeneratorConfigLoader';
 import { nodeFs } from './NodeFs';
 import { WorkspaceHashStore } from './WorkspaceHashStore';
@@ -29,11 +30,17 @@ export interface RunGenerationInput {
     useAi: boolean;
     extraFiles?: PipelineInput['extraFiles'];
     scenarios?: PlannedFeature[];
+    /** Forwarded to the planner (batch runs namespace data/schema files per spec). */
+    planOptions?: PlanOptions;
     /** Appended to the planned OpenAPI features (combined mode). */
     extraFeatures?: PlannedFeature[];
     evidence?: PipelineInput['evidence'];
     progress: (msg: string, pct: number) => void;
     customInstruction?: string;
+    /** Learned style: used only when neither a shared-style file nor .karate-generator.json sets a style. */
+    learnedStyle?: KarateStyle | null;
+    /** Extra warnings to surface in the summary (e.g. an ignored template). */
+    notes?: string[];
     /** Adjust the loaded config (e.g. restrict scenario categories) before the pipeline runs. */
     configure?: (config: GeneratorConfig) => GeneratorConfig;
     /** Pre-loaded config for batch runs (skips reloading and re-warning). */
@@ -87,7 +94,7 @@ function actualFeaturePath(r: PipelineResult, featurePath: string): string | und
 export async function runGenerationForModel(i: RunGenerationInput): Promise<RunGenerationResult> {
     let config = i.config;
     if (!config) {
-        const loaded = await GeneratorConfigLoader.load(i.workspaceRoot);
+        const loaded = await GeneratorConfigLoader.load(i.workspaceRoot, { fallbackStyle: i.learnedStyle });
         for (const w of loaded.warnings) {logger.warn(`Generator config: ${w}`);}
         config = loaded.config;
     }
@@ -102,7 +109,7 @@ export async function runGenerationForModel(i: RunGenerationInput): Promise<RunG
     let result: PipelineResult;
     try {
         result = await runPipeline({
-            model: i.model, scenarios: i.scenarios, extraFeatures: i.extraFeatures, config, project, fsApi: nodeFs, history, skills, ai,
+            model: i.model, scenarios: i.scenarios, extraFeatures: i.extraFeatures, planOptions: i.planOptions, config, project, fsApi: nodeFs, history, skills, ai,
             evidence: i.evidence, request: i.customInstruction?.trim() || undefined,
             generatorVersion: version, sourceRef: i.sourceRef, mode: i.mode, progress: i.progress,
             extraFiles: i.extraFiles, root: i.workspaceRoot
@@ -130,6 +137,7 @@ export async function runGenerationForModel(i: RunGenerationInput): Promise<RunG
             firstContent = '';
         }
     }
+    result.warnings.push(...(i.notes ?? []));
     return { ...result, createdPaths, firstContent, summary: formatSummary(result) };
 }
 

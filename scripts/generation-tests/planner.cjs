@@ -628,5 +628,32 @@ module.exports = [
             golden('planner/warnings.txt', planned.warnings.join('\n') + '\n');
             golden('planner/exploratory.feature', text(plan({ scenarios: { exploratory: true } }))['pets/pets.feature']);
         }
+    },
+    {
+        name: 'planner: filePrefix namespaces data and schema files and their read() references, gate-clean',
+        run() {
+            const cfg = config();
+            const planned = planner().planOpenApi(buildModel(), cfg, { filePrefix: 'Billing API' });
+            assert.ok(planned.files.length > 0);
+            for (const f of planned.files) assert.match(f.path, /^(data|schemas)\/billing-api\//, f.path);
+            const txt = all(planned, cfg);
+            const refs = [...txt.matchAll(/classpath:((?:data|schemas)\/[^']+)/g)].map(m => m[1]);
+            assert.ok(refs.length > 0);
+            for (const r of refs) assert.ok(planned.files.some(f => f.path === r), `dangling ref ${r}`);
+            const known = new Set([...planned.files.map(f => f.path), 'common/auth.feature', 'common/utils.feature']);
+            for (const f of planned.features) {
+                const g = gate().runGate(renderer().renderFeature(f.feature, { style: cfg.style }), { knownFiles: known, config: cfg });
+                assert.deepEqual(g.findings.filter(x => x.severity === 'error'), [], f.relativePath);
+            }
+        }
+    },
+    {
+        name: 'planner: inlineSchemas with externalize false emits no classpath data/schema references and no files',
+        run() {
+            const cfg = config({ data: { externalize: false } });
+            const planned = planner().planOpenApi(buildModel(), cfg, { inlineSchemas: true });
+            assert.deepEqual(planned.files, []);
+            assert.ok(!/classpath:(data|schemas)\//.test(all(planned, cfg)));
+        }
     }
 ];

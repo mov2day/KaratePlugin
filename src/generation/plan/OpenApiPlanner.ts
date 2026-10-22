@@ -126,8 +126,11 @@ class Planner {
     private readonly unsupported: Map<string, string>;
     private readonly ops: OperationModel[];
 
-    constructor(private readonly model: GenerationModel, private readonly config: GeneratorConfig) {
+    private readonly dir: string;
+
+    constructor(private readonly model: GenerationModel, private readonly config: GeneratorConfig, private readonly opts: PlanOptions = {}) {
         this.style = config.style;
+        this.dir = opts.filePrefix ? `${slug(opts.filePrefix)}/` : '';
         this.unsupported = new Map(model.unsupported.map(u => [u.sourceRef, u.reason]));
         this.ops = [...model.operations].sort((a, b) => cmp(a.path, b.path) || cmp(a.method, b.method));
     }
@@ -239,7 +242,7 @@ class Planner {
 
     private collectFiles(): PlannedFile[] {
         for (const [resource, entries] of this.data) {
-            if (this.config.data.externalize) {this.files.set(`data/${resource}.json`, `${JSON.stringify(entries, null, 2)}\n`);}
+            if (this.config.data.externalize) {this.files.set(`data/${this.dir}${resource}.json`, `${JSON.stringify(entries, null, 2)}\n`);}
         }
         return [...this.files.entries()].sort((a, b) => cmp(a[0], b[0])).map(([path, content]) => ({ path, content, owner: 'user' as const }));
     }
@@ -269,7 +272,7 @@ class Planner {
         if (truncated(op.body?.schema)) {return this.planDraft(op, 'Request body schema was truncated (too large to expand); provide the request body manually');}
 
         const bad = this.unsatisfiable(op);
-        if (bad) {return this.planDraft(op, `Cannot generate a value matching pattern ${bad}; provide a valid value in data/${domainOf(op)}.json`);}
+        if (bad) {return this.planDraft(op, `Cannot generate a value matching pattern ${bad}; provide a valid value in data/${this.dir}${domainOf(op)}.json`);}
 
         const ok = successResponses(op);
         if (ok.length === 0) {
@@ -331,7 +334,7 @@ class Planner {
         this.data.set(domain, entries);
         const steps: KarateStep[] = [];
         if (this.config.data.externalize) {
-            steps.push(st('*', `def ${pv} = karate.copy(read('classpath:data/${domain}.json')[${jsLiteral(op.id)}])`));
+            steps.push(st('*', `def ${pv} = karate.copy(read('classpath:data/${this.dir}${domain}.json')[${jsLiteral(op.id)}])`));
         } else {
             steps.push(st('*', `def ${pv} =`, { docString: JSON.stringify(value, null, 2) }));
         }
@@ -416,8 +419,8 @@ class Planner {
         this.schemaNames.set(domain, names);
         const existing = names.get(json);
         if (existing) {return existing;}
-        let name = names.size === 0 ? `schemas/${domain}.json` : `schemas/${domain}-${slug(hint) || 'schema'}.json`;
-        for (let n = 2; this.files.has(name); n++) {name = `schemas/${domain}-${slug(hint) || 'schema'}-${n}.json`;}
+        let name = names.size === 0 ? `schemas/${this.dir}${domain}.json` : `schemas/${this.dir}${domain}-${slug(hint) || 'schema'}.json`;
+        for (let n = 2; this.files.has(name); n++) {name = `schemas/${this.dir}${domain}-${slug(hint) || 'schema'}-${n}.json`;}
         this.files.set(name, `${json}\n`);
         names.set(json, name);
         return name;
@@ -431,6 +434,9 @@ class Planner {
         const isArray = rs.type === 'array';
         if (isArray && !isObj(rs.items)) {return { steps: [st('And', "match response == '#[]'")], comments: [] };}
         const ks = toKarateSchema(isArray ? (rs.items as JsonSchema) : rs, { optionalAsDoubleHash: true });
+        if (this.opts.inlineSchemas) {
+            return { steps: [st('And', `match ${isArray ? 'each ' : ''}response ==`, { docString: JSON.stringify(ks, null, 2) })], comments: [] };
+        }
         const file = this.schemaFile(domainOf(op), ks, hint);
         return { steps: [st('And', `match ${isArray ? 'each ' : ''}response == read('classpath:${file}')`)], comments: [] };
     }
@@ -719,6 +725,13 @@ class Planner {
     }
 }
 
-export function planOpenApi(model: GenerationModel, config: GeneratorConfig): PlanResult {
-    return new Planner(model, config).plan();
+export interface PlanOptions {
+    /** Namespaces data and schema files per source: `data/<prefix>/<domain>.json`, `schemas/<prefix>/<domain>.json` (read() references follow). */
+    filePrefix?: string;
+    /** Emit response schemas inline (a docstring on the match step) instead of `schemas/*.json` files. Request bodies are inline when `config.data.externalize` is false. */
+    inlineSchemas?: boolean;
+}
+
+export function planOpenApi(model: GenerationModel, config: GeneratorConfig, opts: PlanOptions = {}): PlanResult {
+    return new Planner(model, config, opts).plan();
 }

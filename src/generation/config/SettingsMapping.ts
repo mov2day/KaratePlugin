@@ -30,3 +30,11 @@ export function mapSettingsToConfig(s: LoaderSettings): Partial<GeneratorConfig>
     if (s.style !== undefined) {out.style = s.style as Record<string, unknown>;}
     return out as unknown as Partial<GeneratorConfig>;
 }
+
+/**
+ * Style for the settings layer: the shared-style file when one was read, otherwise the learned style.
+ * Applied before the config file, so precedence is file > shared style > learned style > defaults.
+ */
+export function layerStyle(shared: unknown | undefined, learned: unknown | undefined): unknown | undefined {
+    return shared !== undefined ? shared : learned;
+}

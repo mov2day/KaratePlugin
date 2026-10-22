@@ -43,5 +43,18 @@ module.exports = [
             assert.equal(config.layout.outputRoot, 'x/y');
             assert.equal(config.layout.classpathRoot, 'src/test/java');
         }
+    },
+    {
+        name: 'settings-mapping: style precedence is file > shared style > learned style > defaults',
+        run() {
+            const m = require('../../out/generation/config/SettingsMapping');
+            const r = require('../../out/generation/config/GeneratorConfig');
+            const resolve = (file, shared, learned) => r.resolveGeneratorConfig(file, m.mapSettingsToConfig({ style: m.layerStyle(shared, learned) })).config.style;
+            const def = r.DEFAULT_GENERATOR_CONFIG.style.indentation;
+            assert.equal(resolve(undefined, undefined, undefined).indentation, def);
+            assert.equal(resolve(undefined, undefined, { indentation: '\t' }).indentation, '\t', 'learned beats default');
+            assert.equal(resolve(undefined, { indentation: '    ' }, { indentation: '\t' }).indentation, '    ', 'shared beats learned');
+            assert.equal(resolve({ style: { indentation: '   ' } }, { indentation: '    ' }, { indentation: '\t' }).indentation, '   ', 'file beats both');
+        }
     }
 ];

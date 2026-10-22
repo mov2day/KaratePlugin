@@ -229,6 +229,13 @@ export class GenerationService {
         const workspaceRoot = FileUtils.getWorkspaceRoot();
         if (!workspaceRoot) throw new Error('No workspace folder is open');
 
+        const notes: string[] = [];
+        if (this._template) {
+            const note = `Template '${options.templateId ?? 'custom'}' is ignored by the Karate v2 generator (use .karate-generator.json style/layout)`;
+            logger.info(note);
+            notes.push(note);
+        }
+
         const run = await runGenerationForModel({
             context: this.context,
             workspaceRoot,
@@ -239,6 +246,8 @@ export class GenerationService {
             extraFeatures: extras.extraFeatures,
             evidence: extras.evidence,
             customInstruction: options.customInstruction,
+            learnedStyle: this._learnedStyle,
+            notes,
             configure: (c: GeneratorConfig) => ({
                 ...c,
                 scenarios: { ...c.scenarios, categories: categoriesForScenarioTypes(options.scenarioTypes, c.scenarios.categories) }

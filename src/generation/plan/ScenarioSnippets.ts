@@ -15,8 +15,9 @@ export function renderScenariosForOperations(model: GenerationModel, sourceRefs:
     const wanted = new Set(sourceRefs);
     const operations = model.operations.filter(o => wanted.has(o.sourceRef));
     if (operations.length === 0) {return '';}
-    const snippetConfig: GeneratorConfig = { ...config, scenarios: { ...config.scenarios, crud: false } };
-    const plan = planOpenApi({ ...model, operations }, snippetConfig);
+    // Snippets merge into existing files, so they must not reference data/schema files that may not exist: inline both.
+    const snippetConfig: GeneratorConfig = { ...config, scenarios: { ...config.scenarios, crud: false }, data: { ...config.data, externalize: false } };
+    const plan = planOpenApi({ ...model, operations }, snippetConfig, { inlineSchemas: true });
     const scenarios = plan.features.flatMap(f => f.feature.scenarios);
     return scenarios.map(s => renderScenario(s, config.style)).join('\n\n');
 }

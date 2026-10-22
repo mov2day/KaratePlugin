@@ -334,7 +334,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 throw new Error('GenerationService not initialized');
             }
 
-            service.setLearnedStyle(this._learnedStyle);
+            service.setLearnedStyle(this._learnedStyle); // used as the lowest-precedence style layer
+            // NOTE: templates no longer shape OpenAPI output; GenerationService reports them as ignored in the summary.
             if (templateId) {
                 const template = await this._templateManager?.getTemplate(templateId);
                 service.setTemplate(template?.content || null);

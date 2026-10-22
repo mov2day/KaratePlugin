@@ -17,7 +17,8 @@ module.exports = [
             assert.ok(text.includes('Scenario'), text);
             assert.ok(!/^\s*Feature:/m.test(text));
             assert.ok(!/^\s*Background:/m.test(text));
-            assert.ok(text.includes(op.method.toLowerCase()) || /method /.test(text));
+            assert.match(text, new RegExp(`method ${op.method.toLowerCase()}\\b`), 'snippet performs the operation method');
+            assert.ok(text.includes(`source: ${op.sourceRef}`), 'snippet carries the source comment');
         }
     },
     {
@@ -33,6 +34,25 @@ module.exports = [
             const m = model();
             const op = m.operations[0];
             assert.equal(out('generation/plan/ScenarioSnippets').operationSourceRef(op.method, op.path), op.sourceRef);
+        }
+    },
+    {
+        name: 'scenario-snippets: no data/schema file references and the snippet is gate-clean inside a standard Feature',
+        run() {
+            const m = model();
+            const c = cfg();
+            const snip = out('generation/plan/ScenarioSnippets');
+            const render = out('generation/render/FeatureRenderer');
+            const gate = out('generation/quality/QualityGate');
+            for (const op of m.operations) {
+                const text = snip.renderScenariosForOperations(m, [op.sourceRef], c);
+                if (!text) continue;
+                assert.ok(!/classpath:data\//.test(text) && !/classpath:schemas\//.test(text), `${op.sourceRef}: file reference in snippet\n${text}`);
+                const feature = `Feature: Wrap\n\n  Background:\n    * url baseUrl\n    * callonce read('classpath:common/auth.feature')\n\n${text}\n`;
+                const g = gate.runGate(feature, { knownFiles: new Set(['common/auth.feature', 'common/utils.feature']), config: c });
+                assert.deepEqual(g.findings.filter(f => f.severity === 'error'), [], `${op.sourceRef}\n${feature}`);
+            }
+            void render;
         }
     }
 ];
