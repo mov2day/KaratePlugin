@@ -41,10 +41,34 @@ const AI_RULES = {
     empty: 'V2-AI-001',
     dropped: 'V2-AI-002',
     invented: 'V2-AI-003',
-    shape: 'V2-AI-004'
+    shape: 'V2-AI-004',
+    docstring: 'V2-AI-005'
 } as const;
 
 const err = (ruleId: string, line: number, message: string): Finding => ({ ruleId, severity: 'error', line, message });
+
+/**
+ * New docstring state after `line`. A trimmed line starting with `"""` toggles; outside a docstring a step line that
+ * ends with a single `"""` (Karate's inline opener, `* text x = """`) opens one.
+ */
+function docToggle(line: string, inDoc: boolean): boolean {
+    const t = line.trim();
+    if (t.startsWith('"""')) return !inDoc;
+    if (!inDoc && t.endsWith('"""') && t.split('"""').length === 2) return true;
+    return inDoc;
+}
+
+/** Line (1-based) of a docstring opener that is never closed, if any. */
+export function unterminatedDocstring(text: string): number | undefined {
+    let inDoc = false;
+    let opener = 0;
+    text.split(/\r?\n/).forEach((line, idx) => {
+        const next = docToggle(line, inDoc);
+        if (next && !inDoc) opener = idx + 1;
+        inDoc = next;
+    });
+    return inDoc ? opener : undefined;
+}
 
 const FEATURE_LINE = /^\s*Feature\s*:/;
 const FENCE_ONLY = /^\s*```\s*$/;
@@ -69,7 +93,8 @@ export function cleanOutput(raw: string): string {
         const line = all[n];
         if (!featureSeen && !inDoc && FEATURE_LINE.test(line)) featureSeen = true;
         if (featureSeen || opened) {
-            if (line.trim().startsWith('"""')) inDoc = !inDoc;
+            const next = docToggle(line, inDoc);
+            if (next !== inDoc) inDoc = next;
             else if (!inDoc && FENCE_ONLY.test(line)) { end = n; break; }
             continue;
         }
@@ -85,7 +110,8 @@ export function cleanOutput(raw: string): string {
     let last = first;
     for (let n = first; n < lines.length; n++) {
         const t = lines[n].trim();
-        if (t.startsWith('"""')) { docOpen = !docOpen; last = n; continue; }
+        const nextDoc = docToggle(lines[n], docOpen);
+        if (nextDoc !== docOpen) { docOpen = nextDoc; last = n; continue; }
         if (docOpen || t === '' || !isProse(lines[n])) last = n;
     }
     return lines.slice(from, last + 1).join('\n').trim();
@@ -183,6 +209,10 @@ function check(raw: string, i: RefineInput, inputParsed: ParsedFeature, known: s
     const parsed = parseFeature(text);
     if (parsed.featureLine === undefined) {
         return { text, problems: [err(AI_RULES.shape, 1, 'Output has no Feature: line')], warnings: [], empty: false };
+    }
+    const unterminated = unterminatedDocstring(text);
+    if (unterminated !== undefined) {
+        return { text, problems: [err(AI_RULES.docstring, unterminated, 'AI output has an unterminated docstring')], warnings: [], empty: false };
     }
     const gate = newGateErrors(text, i, baseline);
     const problems = [

@@ -184,6 +184,56 @@ module.exports = [
         }
     },
     {
+        name: 'ai-refine: unterminated docstring is rejected with V2-AI-005 and the original returned',
+        async run() {
+            const open = FEATURE.replace("And match response == []", "* text x =\n    \"\"\"\n    body\n  And match response == []") + '\n```\nHope this helps';
+            const r = await refiner().refine(input(async () => open));
+            assert.equal(r.status, 'rejected');
+            assert.equal(r.text, FEATURE);
+            assert.ok(r.findings.some(f => f.ruleId === 'V2-AI-005' && f.line > 0));
+            assert.equal(r.attempts, 2);
+        }
+    },
+    {
+        name: 'ai-refine: retry recovers from an unterminated docstring',
+        async run() {
+            const open = FEATURE.replace("And match response == []", "* text x =\n    \"\"\"\n    body\n  And match response == []");
+            const fixed = FEATURE.replace('list again', 'list orders again');
+            const { ai, calls } = recorder([open, fixed]);
+            const r = await refiner().refine(input(ai));
+            assert.equal(r.status, 'refined');
+            assert.equal(r.attempts, 2);
+            assert.ok(calls[1].user.includes('V2-AI-005'));
+        }
+    },
+    {
+        name: 'ai-refine: inline docstring opener closed properly is accepted and its content kept',
+        async run() {
+            const inline = FEATURE.replace("And match response == []", "* text x = \"\"\"\n  ```\n  keep\n  \"\"\"\n  And match response == []");
+            const cleaned = refiner().cleanOutput('```gherkin\n' + inline + '\n```\nthanks');
+            assert.equal(cleaned, inline.trim());
+            assert.equal(refiner().unterminatedDocstring(inline), undefined);
+            // the full pipeline with the standard (next-line) opener
+            const std = FEATURE.replace("And match response == []", "* text x =\n  \"\"\"\n  ```\n  keep\n  \"\"\"\n  And match response == []");
+            const r = await refiner().refine(input(async () => '```gherkin\n' + std + '\n```\nthanks'));
+            assert.equal(r.status, 'refined', JSON.stringify(r.findings));
+            assert.ok(r.text.includes('  ```\n  keep'));
+            assert.ok(!r.text.includes('thanks'));
+        }
+    },
+    {
+        name: 'ai-refine: singular evidence accepts plural path but still rejects an invented sibling',
+        async run() {
+            const ev = [{ label: 'o', text: 'GET /order returns an order' }];
+            const ok = await refiner().refine(input(async () => FEATURE.replace('list again', 'list again 2'), { evidence: ev, feature: FEATURE.replace("path 'orders'", "path 'order'") }));
+            assert.equal(ok.status, 'refined', JSON.stringify(ok.findings));
+            assert.ok(ok.text.includes("path 'orders'"), 'plural form accepted via stem');
+            const bad = await refiner().refine(input(async () => FEATURE.replace("Given path 'orders'\n  When method get\n  Then status 200\n  And match response == []\n\nScenario: list again", "Given path 'invoices'\n  When method get\n  Then status 200\n  And match response == []\n\nScenario: list again"), { evidence: ev }));
+            assert.equal(bad.status, 'rejected');
+            assert.ok(bad.findings.some(f => /invoices/.test(f.message)));
+        }
+    },
+    {
         name: 'ai-refine: dropping one of two same-named scenarios is detected; CRLF input is unchanged',
         async run() {
             const dup = join(...HEAD, 'Scenario: same', '  Given path \'orders\'', '  When method get', '  Then status 200', '  And match response == []', '', 'Scenario: same', '  Given path \'orders\'', '  When method get', '  Then status 404', '  And match response == {}', '');
