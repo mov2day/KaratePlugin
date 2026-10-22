@@ -1,2 +1,1 @@
 POST /pets/{petId}/photo: Unsupported request body content type: multipart/form-data (multipart form data is not generated)
-DELETE /pets/{petId}: requires apiKeyAuth but common/auth.feature configures only 'bearerAuth'; add credentials for it

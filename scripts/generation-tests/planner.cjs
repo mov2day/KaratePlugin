@@ -507,7 +507,7 @@ module.exports = [
                 assert.match(f.path, /^(data|schemas)\/[a-z0-9-]+\.json$/);
                 JSON.parse(f.content);
             }
-            assert.ok(planned.warnings.some(w => /apiKeyAuth/.test(w) && /bearerAuth/.test(w)), 'scheme mismatch warning expected');
+            assert.ok(!planned.warnings.some(w => /cannot configure/.test(w)), 'no scheme mismatch warning: both schemes are configured');
         }
     },
     {
@@ -519,19 +519,61 @@ module.exports = [
         }
     },
     {
-        name: 'fix2: wrong-scheme operations are drafts; chain is a draft naming the operation',
+        name: 'fix2: operations requiring a configured non-primary scheme are runnable; the petstore CRUD chain is not a draft',
         run() {
             const planned = plan({}, mini({
                 '/things': { get: { operationId: 'listThings', security: [{ apiKeyAuth: [] }], responses: { '200': { description: 'ok' } } } },
                 ...crudPaths('/gadgets', { del: { apiKeyAuth: [] } })
             }));
             const list = bySource(planned, 'GET /things').filter(s => s.category === 'positive');
-            assert.equal(list[0].draftReason, 'Requires apiKeyAuth; common/auth.feature configures bearerAuth');
+            assert.equal(list[0].draftReason, undefined);
             const chain = planned.features.find(f => f.relativePath === 'gadgets/gadgets-crud.feature').feature.scenarios[0];
-            assert.match(chain.draftReason, /DELETE \/gadgets\/\{id\}.*apiKeyAuth/);
-            assert.ok(planned.warnings.some(w => /apiKeyAuth/.test(w)));
-            const okChain = plan({}, mini(crudPaths('/gadgets', {}))).features.find(f => f.relativePath === 'gadgets/gadgets-crud.feature').feature.scenarios[0];
-            assert.equal(okChain.draftReason, undefined);
+            assert.equal(chain.draftReason, undefined);
+            assert.ok(!chain.tags.includes('@ignore'));
+            assert.ok(!planned.warnings.some(w => /apiKeyAuth/.test(w)));
+            const pet = plan();
+            assert.ok(scenarios(pet).filter(s => /DELETE \/pets/.test(s.source || '')).every(s => s.draftReason === undefined));
+            const petChain = pet.features.find(f => /crud/.test(f.relativePath)).feature.scenarios[0];
+            assert.equal(petChain.draftReason, undefined);
+        }
+    },
+    {
+        name: 'auth: alternatives are OR; only fully unsatisfiable operations become drafts',
+        run() {
+            const model = buildModel({
+                openapi: '3.0.0',
+                components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' }, other: { type: 'http', scheme: 'basic' }, mtls: { type: 'http', scheme: 'digest' } } },
+                paths: {
+                    '/or': { get: { operationId: 'orOp', security: [{ other: [] }, { bearerAuth: [] }], responses: { '200': { description: 'ok' } } } },
+                    '/none': { get: { operationId: 'noneOp', security: [{ other: [] }], responses: { '200': { description: 'ok' } } } }
+                }
+            }, 'alt');
+            model.schemes = [{ name: 'bearerAuth', kind: 'bearer' }, { name: 'other', kind: 'basic' }];
+            model.operations.forEach(o => { o.security = o.path === '/or' ? ['other', 'bearerAuth'] : ['other']; });
+            const planned = plan({}, model);
+            assert.equal(bySource(planned, 'GET /or').find(s => s.category === 'positive').draftReason, undefined);
+            const none = bySource(planned, 'GET /none').find(s => s.category === 'positive');
+            assert.match(none.draftReason, /Requires other; common\/auth\.feature provides bearerAuth/);
+            assert.ok(planned.warnings.some(w => /GET \/none/.test(w) && /other/.test(w)));
+        }
+    },
+    {
+        name: 'auth: query/cookie apiKey operations get the per-scenario step',
+        run() {
+            const mk = where => {
+                const model = buildModel({
+                    openapi: '3.0.0',
+                    components: { securitySchemes: { qKey: { type: 'apiKey', in: where, name: 'k' } } },
+                    paths: { '/x': { get: { operationId: 'getX', security: [{ qKey: [] }], responses: { '200': { description: 'ok' } } } } }
+                }, 'q');
+                model.operations.forEach(o => { o.security = ['qKey']; });
+                return plan({}, model);
+            };
+            const q = mk('query');
+            const t = text(q)['x/x.feature'];
+            assert.match(t, /And param k = apiKey/);
+            assert.equal(bySource(q, 'GET /x').find(s => s.category === 'positive').draftReason, undefined);
+            assert.match(text(mk('cookie'))['x/x.feature'], /And cookie k = apiKey/);
         }
     },
     {

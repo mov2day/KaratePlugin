@@ -136,9 +136,8 @@ Feature: Pets API
     When method patch
     Then assert responseStatus < 500
 
-  @ignore @exploratory @op=deletePet @domain=pets
+  @exploratory @op=deletePet @domain=pets
   Scenario: PATCH /pets/{petId} is not accepted
-    # Draft: Requires apiKeyAuth; common/auth.feature configures bearerAuth
     # source: PATCH /pets/{petId}
     # Exploratory: expectation is not declared in the contract
     * def petId = 999999999

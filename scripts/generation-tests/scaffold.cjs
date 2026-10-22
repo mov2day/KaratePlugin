@@ -97,11 +97,71 @@ module.exports = [
         }
     },
     {
-        name: 'scaffold: multiple schemes add a note naming the ignored ones',
+        name: 'scaffold: bearer + header apiKey yields one configure auth, one configure headers, secrets cover both',
         run() {
-            const a = byPath(plan({}, {}, { schemes: [{ name: 'one', kind: 'bearer' }, { name: 'two', kind: 'basic' }, { name: 'three', kind: 'apiKey' }] }))['src/test/java/common/auth.feature'].content;
-            assert.match(a, /# Note: .*other schemes ignored: two, three/);
+            const schemes = [{ name: 'bearerAuth', kind: 'bearer' }, { name: 'apiKeyAuth', kind: 'apiKey', in: 'header', paramName: 'X-API-Key' }];
+            const m = byPath(plan({}, {}, { schemes }));
+            const a = m['src/test/java/common/auth.feature'].content;
+            assert.equal(a.match(/configure auth/g).length, 1);
+            assert.equal(a.match(/configure headers/g).length, 1);
+            assert.match(a, /# Configures: bearerAuth, apiKeyAuth/);
+            assert.match(a, /karate\.sysenv\('API_TOKEN'/);
+            assert.match(a, /\* def apiKey = karate\.sysenv\('API_KEY', ''\)/);
+            assert.match(a, /\* configure headers = \{ 'X-API-Key': '#\(apiKey\)' \}/);
+            assert.ok(m['src/test/java/karate-config-staging.js'].content.includes("var required = ['API_TOKEN', 'API_KEY'];"));
             assert.equal(gate().runGate(a).ok, true);
+        }
+    },
+    {
+        name: 'scaffold: several header apiKeys share one configure headers with disambiguated variables',
+        run() {
+            const schemes = [{ name: 'keyA', kind: 'apiKey', in: 'header', paramName: 'X-A' }, { name: 'tenant-key', kind: 'apiKey', in: 'header', paramName: 'X-T' }];
+            const m = byPath(plan({}, {}, { schemes }));
+            const a = m['src/test/java/common/auth.feature'].content;
+            assert.equal(a.match(/configure headers/g).length, 1);
+            assert.match(a, /karate\.sysenv\('API_KEY_KEY_A', ''\)/);
+            assert.match(a, /karate\.sysenv\('API_KEY_TENANT_KEY', ''\)/);
+            assert.match(a, /configure headers = \{ 'X-A': '#\(apiKeyKeyA\)', 'X-T': '#\(apiKeyTenantKey\)' \}/);
+            assert.ok(m['src/test/java/karate-config-staging.js'].content.includes("var required = ['API_KEY_KEY_A', 'API_KEY_TENANT_KEY'];"));
+            assert.equal(gate().runGate(a).ok, true);
+        }
+    },
+    {
+        name: 'scaffold: apiKey in query defines the variable only; no header, not a required secret',
+        run() {
+            const m = byPath(plan({}, {}, { schemes: [{ name: 'q', kind: 'apiKey', in: 'query', paramName: 'key' }] }));
+            const a = m['src/test/java/common/auth.feature'].content;
+            assert.doesNotMatch(a, /configure headers/);
+            assert.match(a, /\* def apiKey = karate\.sysenv\('API_KEY', ''\)/);
+            assert.match(a, /per-scenario step needed: q/);
+            assert.doesNotMatch(m['src/test/java/karate-config-staging.js'].content, /throw/);
+            assert.equal(gate().runGate(a).ok, true);
+        }
+    },
+    {
+        name: 'scaffold: basic + bearer: first declared is primary, the other is reported unsupported',
+        run() {
+            const a = byPath(plan({}, {}, { schemes: [{ name: 'one', kind: 'basic' }, { name: 'two', kind: 'bearer' }] }))['src/test/java/common/auth.feature'].content;
+            assert.equal(a.match(/configure auth/g).length, 1);
+            assert.match(a, /type: 'basic'/);
+            assert.doesNotMatch(a, /API_TOKEN/);
+            assert.match(a, /# Cannot configure.*: two/);
+            assert.equal(gate().runGate(a).ok, true);
+        }
+    },
+    {
+        name: 'auth-schemes: planAuth classification',
+        run() {
+            const { planAuth } = require('../../out/generation/scaffold/AuthSchemes');
+            const p = planAuth([
+                { name: 'oidc', kind: 'openIdConnect' }, { name: 'h', kind: 'apiKey', in: 'header', paramName: 'X' },
+                { name: 'c', kind: 'apiKey', in: 'cookie', paramName: 'sid' }, { name: 'b', kind: 'bearer' }
+            ]);
+            assert.equal(p.primary.name, 'oidc');
+            assert.deepEqual([...p.configured], ['oidc', 'h']);
+            assert.deepEqual([...p.viaStep], ['c']);
+            assert.deepEqual(p.unsupported.map(s => s.name), ['b']);
+            assert.deepEqual(planAuth([{ name: 'solo', kind: 'apiKey', in: 'header' }]).apiKeyVars.get('solo'), { env: 'API_KEY', variable: 'apiKey' });
         }
     },
     {

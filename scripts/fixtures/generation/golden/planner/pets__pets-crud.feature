@@ -5,9 +5,8 @@ Feature: Pets API - CRUD lifecycle
     * url baseUrl
     * callonce read('classpath:common/auth.feature')
 
-  @ignore @positive @op=createPet @domain=pets @crud @lock=pets
+  @positive @op=createPet @domain=pets @crud @lock=pets
   Scenario: Pets lifecycle - create, read, update, delete
-    # Draft: DELETE /pets/{petId}: Requires apiKeyAuth; common/auth.feature configures bearerAuth
     # source: POST /pets
     # Covers: GET /pets/{petId}, PUT /pets/{petId}, DELETE /pets/{petId}
     * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])

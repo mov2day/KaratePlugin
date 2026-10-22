@@ -4,6 +4,9 @@ import type { KarateFeature, KarateScenario, KarateStep, KarateStyle } from '../
 import type { GeneratorConfig, ScenarioCategory } from '../config/GeneratorConfig';
 import type { GenerationModel, JsonSchema, OperationModel, ResponseModel, SecurityScheme } from '../model/TestModel';
 import { jsLiteral, numericBounds, unsatisfiablePattern, validExtreme, valueFor, violation, withoutFlagged } from './dataFactory';
+import { slug } from './slug';
+import { planAuth } from '../scaffold/AuthSchemes';
+import type { AuthPlan } from '../scaffold/AuthSchemes';
 import { toKarateSchema } from './schemaMatch';
 
 export interface PlannedFeature {
@@ -67,9 +70,6 @@ const st = (keyword: KarateStep['keyword'], text: string, extra: Partial<KarateS
 const isObj = (v: unknown): v is JsonSchema => typeof v === 'object' && v !== null && !Array.isArray(v);
 const truncated = (s: JsonSchema | undefined): boolean => isObj(s) && s['x-truncated'] === true;
 
-function slug(s: string): string {
-    return s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-}
 const titleCase = (s: string): string => slug(s).split('-').filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
 const tagSafe = (s: string): string => s.replace(/[^A-Za-z0-9_.-]/g, '_');
 const normTag = (t: string): string => (t.startsWith('@') ? t : `@${t}`);
@@ -122,6 +122,7 @@ class Planner {
     private readonly warningList: string[] = [];
     private readonly items: Item[] = [];
     private readonly style: KarateStyle;
+    private readonly auth: AuthPlan;
     private readonly mismatchWarned = new Set<string>();
     private readonly unsupported: Map<string, string>;
     private readonly ops: OperationModel[];
@@ -130,6 +131,7 @@ class Planner {
 
     constructor(private readonly model: GenerationModel, private readonly config: GeneratorConfig, private readonly opts: PlanOptions = {}) {
         this.style = config.style;
+        this.auth = planAuth(model.schemes);
         this.dir = opts.filePrefix ? `${slug(opts.filePrefix)}/` : '';
         this.unsupported = new Map(model.unsupported.map(u => [u.sourceRef, u.reason]));
         this.ops = [...model.operations].sort((a, b) => cmp(a.path, b.path) || cmp(a.method, b.method));
@@ -184,16 +186,32 @@ class Planner {
         this.items.push({ base: this.baseFor(op, kind), kind, secured: kind === 'security' ? false : secured, domain: domainOf(op), scenario });
     }
 
+    /** Scheme names the operation accepts (alternatives, OR semantics). */
+    private requiredNames(op: OperationModel): string[] {
+        return Array.isArray(op.security) ? op.security : [];
+    }
+
+    private satisfiable(op: OperationModel): boolean {
+        const names = this.requiredNames(op);
+        return names.length === 0 || names.some(n => this.auth.configured.has(n) || this.auth.viaStep.has(n));
+    }
+
+    /** The query/cookie apiKey scheme this operation must apply with a per-scenario step, when auth.feature does not configure an alternative. */
+    private stepScheme(op: OperationModel): SecurityScheme | undefined {
+        const names = this.requiredNames(op);
+        if (names.some(n => this.auth.configured.has(n))) {return undefined;}
+        return this.auth.queryKeys.find(k => names.includes(k.name));
+    }
+
     private mismatchReason(op: OperationModel): string | undefined {
-        const first = this.model.schemes[0]?.name;
-        if (!first || !Array.isArray(op.security) || op.security.length === 0 || op.security.includes(first)) {return undefined;}
-        return `Requires ${op.security.join(', ')}; common/auth.feature configures ${first}`;
+        if (this.satisfiable(op)) {return undefined;}
+        const available = [...this.auth.configured, ...this.auth.viaStep];
+        return `Requires ${this.requiredNames(op).join(', ')}; common/auth.feature provides ${available.join(', ') || 'no credentials'}`;
     }
 
     private warnSchemeMismatch(op: OperationModel): void {
-        const first = this.model.schemes[0].name;
-        if (!Array.isArray(op.security) || op.security.length === 0 || op.security.includes(first)) {return;}
-        const message = `${op.sourceRef}: requires ${op.security.join(', ')} but common/auth.feature configures only '${first}'; add credentials for it`;
+        if (this.satisfiable(op)) {return;}
+        const message = `${op.sourceRef}: requires ${this.requiredNames(op).join(', ')} but common/auth.feature cannot configure it; add credentials for it`;
         if (!this.mismatchWarned.has(message)) {
             this.mismatchWarned.add(message);
             this.warn(message);
@@ -393,15 +411,18 @@ class Planner {
                 request.push([`param ${quote(q.name)} = ${jsLiteral(q.example ?? valueFor(q.schema, q.name))}`]);
             }
         }
-        const scheme = this.model.schemes[0];
-        const authHeader = (n: string): boolean => n.toLowerCase() === 'authorization' || (scheme?.kind === 'apiKey' && scheme.in !== 'query' && scheme.paramName?.toLowerCase() === n.toLowerCase());
+        const headerKeyNames = new Set(this.auth.headerKeys.map(k => (k.paramName ?? 'X-API-Key').toLowerCase()));
+        const authHeader = (n: string): boolean => n.toLowerCase() === 'authorization' || headerKeyNames.has(n.toLowerCase());
         for (const h of op.headerParams) {
             if (!h.required || authHeader(h.name)) {continue;}
             const generated = h.schema.format === 'uuid' || /request-?id|correlation|trace/i.test(h.name);
             request.push([`header ${h.name} = ${generated ? 'karate.uuid()' : jsLiteral(h.example ?? valueFor(h.schema, h.name))}`]);
         }
-        if (o.auth !== false && this.secured(op) && scheme?.kind === 'apiKey' && scheme.in === 'query') {request.push([`param ${quote(scheme.paramName ?? 'api_key')} = apiKey`]);}
-        if (o.auth !== false && this.secured(op) && scheme?.kind === 'apiKey' && scheme.in === 'cookie') {request.push([`cookie ${scheme.paramName ?? 'api_key'} = apiKey`]);}
+        const viaStep = o.auth !== false && this.secured(op) ? this.stepScheme(op) : undefined;
+        if (viaStep) {
+            const variable = this.auth.apiKeyVars.get(viaStep.name)!.variable;
+            request.push([viaStep.in === 'cookie' ? `cookie ${viaStep.paramName ?? 'api_key'} = ${variable}` : `param ${quote(viaStep.paramName ?? 'api_key')} = ${variable}`]);
+        }
         if (hasBody) {request.push([`request ${pv}`]);}
 
         const steps = [...defs, ...body];
