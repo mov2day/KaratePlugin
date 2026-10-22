@@ -96,6 +96,7 @@ export class CopilotService {
         apiEndpoint: string,
         requirements?: string[]
     ): Promise<string[]> {
+        this.lastRefinement = undefined;
         try {
             const skillContext = await AgentSkillsService.buildSkillContextForPrompt('general');
             const requirementText = requirements?.length

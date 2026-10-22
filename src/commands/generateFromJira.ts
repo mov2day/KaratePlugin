@@ -143,7 +143,7 @@ export async function generateFromJira(context: vscode.ExtensionContext): Promis
                         feature: featureContent,
                         mode: 'jira',
                         task: 'generate-jira',
-                        evidence: [{ label: 'jira-acceptance-criteria', text: featureContent }],
+                        evidence: [{ label: 'jira-acceptance-criteria', text: contents.map(c => `${c.issueKey} - ${c.summary}\n${c.acceptanceCriteria.map(ac => InputSanitizer.sanitizeJiraContent(ac)).join('\n')}`).join('\n\n') }],
                         request: 'Replace each placeholder step with real Karate DSL steps (Given path, When method, Then status, And match) using realistic test data. Keep the Feature/Background/Scenario structure and the @jira tags.',
                         skills: { select: () => ({ text: skillText }) },
                         knownFiles: new Set<string>(),
