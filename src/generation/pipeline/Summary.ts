@@ -28,10 +28,13 @@ export function mergeResults(results: PipelineResult[]): PipelineResult {
         written: { created: [], updated: [], skippedExisting: [], sideBySide: [] },
         features: [], draftScenarios: 0, warnings: [], gate: { errors: 0, warnings: 0 }
     };
+    const addUnique = (target: string[], items: string[]): void => {
+        for (const x of items) {if (!target.includes(x)) {target.push(x);}}
+    };
     for (const r of results) {
-        merged.written.created.push(...r.written.created);
-        merged.written.updated.push(...r.written.updated);
-        merged.written.skippedExisting.push(...r.written.skippedExisting);
+        addUnique(merged.written.created, r.written.created);
+        addUnique(merged.written.updated, r.written.updated);
+        addUnique(merged.written.skippedExisting, r.written.skippedExisting);
         merged.written.sideBySide.push(...r.written.sideBySide);
         merged.features.push(...r.features);
         merged.draftScenarios += r.draftScenarios;
@@ -43,7 +46,12 @@ export function mergeResults(results: PipelineResult[]): PipelineResult {
     return merged;
 }
 
-export function formatSummary(r: PipelineResult): GenerationSummary {
+export interface SummaryOptions {
+    /** Features whose draft scenarios are expected (e.g. requirement drafts); they are listed but do not raise the level. */
+    expectedDraftFeature?: (featurePath: string) => boolean;
+}
+
+export function formatSummary(r: PipelineResult, opts: SummaryOptions = {}): GenerationSummary {
     const w = r.written;
     const rejected = r.features.filter(f => f.refinement?.status === 'rejected');
     const parts: string[] = [];
@@ -98,6 +106,7 @@ export function formatSummary(r: PipelineResult): GenerationSummary {
         for (const x of r.warnings) {details.push(`  ${x}`);}
     }
 
-    const level = r.gate.errors > 0 || rejected.length > 0 || w.sideBySide.length > 0 || r.draftScenarios > 0 ? 'warning' : 'info';
+    const unexpectedDrafts = r.features.some(f => f.draft && !(opts.expectedDraftFeature?.(f.path) ?? false));
+    const level = r.gate.errors > 0 || rejected.length > 0 || w.sideBySide.length > 0 || unexpectedDrafts ? 'warning' : 'info';
     return { headline, details, level };
 }

@@ -138,7 +138,7 @@ export async function runGenerationForModel(i: RunGenerationInput): Promise<RunG
         }
     }
     result.warnings.push(...(i.notes ?? []));
-    return { ...result, createdPaths, firstContent, summary: formatSummary(result) };
+    return { ...result, createdPaths, firstContent, summary: formatSummary(result, { expectedDraftFeature: i.mode === 'combined' ? p => p.endsWith('-requirements.feature') : undefined }) };
 }
 
 /** Adapt a `withProgress` reporter (incremental) to the pipeline's absolute 0-100 callback, optionally scaled into a slice. */

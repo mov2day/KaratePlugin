@@ -68,7 +68,7 @@ module.exports = [
         }
     },
     {
-        name: 'summary: mergeSummaries combines results for batch runs',
+        name: 'summary: mergeResults combines batch results and de-duplicates shared paths',
         run() {
             const a = result({ written: { created: ['a'], updated: [], skippedExisting: [], sideBySide: [] }, features: [{ path: 'a.feature', findings: [], draft: false }] });
             const b = result({ written: { created: ['b'], updated: [], skippedExisting: [], sideBySide: [] }, features: [{ path: 'b.feature', findings: [], draft: false }], warnings: ['w'] });
@@ -76,6 +76,22 @@ module.exports = [
             assert.deepEqual(m.written.created, ['a', 'b']);
             assert.equal(m.features.length, 2);
             assert.deepEqual(m.warnings, ['w']);
+            const shared = { written: { created: [], updated: [], skippedExisting: ['cfg.js'], sideBySide: [] } };
+            const d = mod().mergeResults([result(shared), result(shared)]);
+            assert.deepEqual(d.written.skippedExisting, ['cfg.js']);
+        }
+    },
+    {
+        name: 'summary: expected requirement drafts are listed but do not escalate the level',
+        run() {
+            const r = result({ draftScenarios: 2, features: [{ path: 'x/pets-requirements.feature', findings: [], draft: true }] });
+            const only = mod().formatSummary(r, { expectedDraftFeature: p => p.endsWith('-requirements.feature') });
+            assert.equal(only.level, 'info');
+            assert.match(only.headline, /2 draft/);
+            assert.ok(only.details.some(d => d.includes('pets-requirements.feature')));
+            const mixed = mod().formatSummary({ ...r, features: [...r.features, { path: 'x/pets.feature', findings: [], draft: true }] }, { expectedDraftFeature: p => p.endsWith('-requirements.feature') });
+            assert.equal(mixed.level, 'warning');
+            assert.equal(mod().formatSummary(r).level, 'warning');
         }
     }
 ];

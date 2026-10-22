@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { logger } from '../../utils/logger';
 import type { GenerationSummary } from '../pipeline/Summary';
 
 let channel: vscode.OutputChannel | undefined;
@@ -28,5 +29,7 @@ export function reportSummary(summary: GenerationSummary, title?: string, openPa
             const doc = await vscode.workspace.openTextDocument(openPath);
             await vscode.window.showTextDocument(doc);
         }
+    }).then(undefined, (error: unknown) => {
+        logger.warn('Could not show generation summary', error instanceof Error ? error : new Error(String(error)));
     });
 }

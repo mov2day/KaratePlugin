@@ -243,10 +243,10 @@ export class AgentSkillsService {
      * Load (once) the bundled, manifest-driven Karate v2 skill pack. Returns null when it is unavailable.
      */
     static getPack(): SkillPack | null {
-        if (this.pack !== undefined) {
+        if (this.pack) {
             return this.pack;
         }
-        this.pack = null;
+        // Only a loaded pack is cached: a null result before setExtensionPath() must not stick.
         if (this.extensionPath) {
             try {
                 this.pack = loadSkillPack(path.join(this.extensionPath, 'skills'), nodeFs);
@@ -254,7 +254,7 @@ export class AgentSkillsService {
                 logger.error('Failed to load the Karate skill pack', error as Error);
             }
         }
-        return this.pack;
+        return this.pack ?? null;
     }
 
     /**
