@@ -16,6 +16,10 @@ export interface KarateScenario {
     tags?: string[];
     category?: 'positive' | 'negative' | 'edge' | 'boundary' | 'security';
     domain?: string;
+    examples?: { columns: string[]; rows: string[][] };
+    comments?: string[];
+    source?: string;
+    draftReason?: string;
 }
 
 export interface KarateStep {
