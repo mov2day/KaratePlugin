@@ -1,15 +1,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { GeneratorConfig, resolveGeneratorConfig } from '../config/GeneratorConfig';
+import { resolveGeneratorConfig } from '../config/GeneratorConfig';
+import type { GeneratorConfig } from '../config/GeneratorConfig';
+import { mapSettingsToConfig } from '../config/SettingsMapping';
+import type { LoaderSettings } from '../config/SettingsMapping';
 
 export interface LoadedGeneratorConfig {
     config: GeneratorConfig;
     warnings: string[];
     source: 'file' | 'settings' | 'defaults';
 }
-
-type Plain = Record<string, unknown>;
 
 /** Glue between VS Code settings / the generator config file and the pure resolver. */
 export class GeneratorConfigLoader {
@@ -25,37 +26,30 @@ export class GeneratorConfigLoader {
             return value;
         };
 
-        const settings: Plain = {};
-        const put = (section: string, key: string, value: unknown): void => {
-            if (value === undefined) return;
-            const target = (settings[section] as Plain | undefined) ?? {};
-            target[key] = value;
-            settings[section] = target;
+        const raw: LoaderSettings = {
+            structuringStrategy: read<string>('generation.structuringStrategy'),
+            autoTag: read<boolean>('generation.autoTag'),
+            outputPath: read<string>('outputPath'),
+            scenarioOutlineThreshold: read<number>('generation.scenarioOutlineThreshold'),
+            smartTestData: read<boolean>('generation.smartTestData'),
+            exploratory: read<boolean>('generation.exploratory'),
+            configMode: read<string>('generation.configMode')
         };
-
-        put('layout', 'strategy', read<string>('generation.structuringStrategy'));
-        put('tags', 'auto', read<boolean>('generation.autoTag'));
-        put('layout', 'outputRoot', read<string>('outputPath'));
-        put('scenarios', 'outlineThreshold', read<number>('generation.scenarioOutlineThreshold'));
-        put('data', 'smart', read<boolean>('generation.smartTestData'));
-        put('scenarios', 'exploratory', read<boolean>('generation.exploratory'));
-        put('config', 'mode', read<string>('generation.configMode'));
 
         const stylePath = read<string>('generation.sharedStylePath');
         if (stylePath) {
             const resolved = path.isAbsolute(stylePath) ? stylePath : path.join(workspaceRoot, stylePath);
             const style = GeneratorConfigLoader.readJson(resolved, warnings);
-            if (style !== undefined) settings.style = style;
+            if (style !== undefined) raw.style = style;
         }
 
         const configFile = root.get<string>('generation.configFile', '.karate-generator.json') || '.karate-generator.json';
         const filePath = path.isAbsolute(configFile) ? configFile : path.join(workspaceRoot, configFile);
-        const fileExists = fs.existsSync(filePath);
-        const file = fileExists ? GeneratorConfigLoader.readJson(filePath, warnings) : undefined;
+        const file = GeneratorConfigLoader.readJson(filePath, warnings);
 
-        const resolved = resolveGeneratorConfig(file, settings as Partial<GeneratorConfig>);
+        const resolved = resolveGeneratorConfig(file, mapSettingsToConfig(raw));
         warnings.push(...resolved.warnings);
-        const source = fileExists ? 'file' : explicit ? 'settings' : 'defaults';
+        const source = file !== undefined ? 'file' : explicit ? 'settings' : 'defaults';
         return { config: resolved.config, warnings, source };
     }
 

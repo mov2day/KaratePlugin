@@ -151,5 +151,16 @@ module.exports = [
             assert.ok(out.endsWith('Then status 200\n') && !out.endsWith('\n\n'));
             assert.ok(out.includes('      { "a": 1 }'));
         }
+    },
+    {
+        name: 'render: multi-line comments emit one # line each',
+        run() {
+            const f = { name: 'F', scenarios: [{ name: 'S', draftReason: 'line one\r\nline two\nline three', steps: [step('*', 'print 1')] }] };
+            const text = r().renderFeature(f, { style: style(), header: ['h1\nh2'] });
+            assert.ok(text.startsWith('# h1\n# h2\nFeature: F'));
+            assert.ok(text.includes('    # Draft: line one\n    # line two\n    # line three\n'));
+            const parsed = parser().parseFeature(text);
+            assert.equal(parsed.scenarios.length, 1);
+        }
     }
 ];

@@ -19,7 +19,10 @@ const pad = (style: KarateStyle, depth: number): string => (style.indentation ||
  * produce invalid feature files, so every style renders `#`.
  */
 function comment(style: KarateStyle, depth: number, text: string): string {
-    return `${pad(style, depth)}# ${text}`;
+    return text
+        .split(/\r?\n/)
+        .map(line => `${pad(style, depth)}# ${line}`.trimEnd())
+        .join('\n');
 }
 
 const normalizeTag = (tag: string): string => (tag.startsWith('@') ? tag : `@${tag}`);

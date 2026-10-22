@@ -17,6 +17,7 @@ export interface ProjectInfo {
 const SEARCH_DIRS = ['src/test/java', 'src/test/resources', '.'];
 const DEFAULT_CLASSPATH_ROOT = 'src/test/java';
 const MAX_JAVA_DEPTH = 8;
+const SKIP_DIRS = new Set(['node_modules', 'target', 'build', 'out', '.git']);
 
 const rel = (dir: string, name: string): string => (dir === '.' ? name : `${dir}/${name}`);
 const abs = (root: string, relPath: string): string => (relPath === '.' ? root : `${root.replace(/\/+$/, '')}/${relPath}`);
@@ -89,6 +90,7 @@ function safeList(fsApi: FsLike, dir: string): string[] {
 function hasJunit6(fsApi: FsLike, dir: string, depth: number): boolean {
     if (depth > MAX_JAVA_DEPTH) return false;
     for (const name of safeList(fsApi, dir)) {
+        if (SKIP_DIRS.has(name)) continue;
         const p = `${dir}/${name}`;
         if (name.endsWith('.java')) {
             try {
@@ -131,7 +133,8 @@ export function discoverProject(root: string, fsApi: FsLike): ProjectInfo {
     const hasEnvJson = fsApi.exists(configDir) && safeList(fsApi, configDir).some(n => n.endsWith('.json'));
 
     let runnerStyle: ProjectInfo['runnerStyle'];
-    if (hasJunit6(fsApi, cpAbs, 0)) runnerStyle = 'junit6';
+    const javaAbs = abs(root, DEFAULT_CLASSPATH_ROOT);
+    if (hasJunit6(fsApi, cpAbs, 0) || (javaAbs !== cpAbs && hasJunit6(fsApi, javaAbs, 0))) runnerStyle = 'junit6';
     else if (!fsApi.exists(abs(root, 'pom.xml')) && !fsApi.exists(abs(root, 'build.gradle'))) runnerStyle = 'cli';
     else runnerStyle = 'unknown';
 

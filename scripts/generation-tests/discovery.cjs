@@ -99,5 +99,16 @@ module.exports = [
             assert.equal(Object.getPrototypeOf(config), Object.prototype);
             assert.equal(config.polluted, undefined);
         }
+    },
+    {
+        name: 'discovery: junit6 scan skips node_modules/target and finds src/test/java when classpath root is resources',
+        run() {
+            const J = 'import io.karatelabs.junit6.Karate;';
+            const base = { 'src/test/resources/karate-config.js': 'function fn() { return { baseUrl: "x" }; }', 'pom.xml': '<p/>' };
+            assert.equal(discover({ ...base, 'src/test/java/app/RunTest.java': J }).runnerStyle, 'junit6');
+            assert.equal(discover({ ...base, 'src/test/resources/node_modules/dep/RunTest.java': J }).runnerStyle, 'unknown');
+            assert.equal(discover({ ...base, 'src/test/resources/target/x/RunTest.java': J }).runnerStyle, 'unknown');
+            assert.equal(discover({ ...base, 'src/test/resources/a/b/c/d/e/f/g/h/i/j/RunTest.java': J }).runnerStyle, 'unknown');
+        }
     }
 ];
