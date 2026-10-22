@@ -242,7 +242,7 @@ export class AgentSkillsService {
     /**
      * Load (once) the bundled, manifest-driven Karate v2 skill pack. Returns null when it is unavailable.
      */
-    private static getPack(): SkillPack | null {
+    static getPack(): SkillPack | null {
         if (this.pack !== undefined) {
             return this.pack;
         }

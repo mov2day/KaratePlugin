@@ -35,6 +35,8 @@ export interface PipelineInput {
     model: GenerationModel;
     /** Adapter-provided features for non-OpenAPI modes; when absent the OpenAPI planner runs on `model`. */
     scenarios?: PlannedFeature[];
+    /** Features appended to the planner output in openapi/combined modes (e.g. draft requirement scenarios). */
+    extraFeatures?: PlannedFeature[];
     config: GeneratorConfig;
     project: ProjectInfo;
     fsApi: FsLike & { write(p: string, content: string): void };
@@ -42,6 +44,8 @@ export interface PipelineInput {
     skills?: SkillSource;
     ai?: AiCall;
     evidence?: { label: string; text: string }[];
+    /** Optional user instruction forwarded to the AI refiner. */
+    request?: string;
     generatorVersion: string;
     sourceRef: string;
     mode: SourceKind;
@@ -147,7 +151,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
         planned = i.scenarios;
     } else if (i.mode === 'openapi' || i.mode === 'combined') {
         const plan = planOpenApi(model, config);
-        planned = plan.features;
+        planned = [...plan.features, ...(i.extraFeatures ?? [])];
         warnings.push(...plan.warnings);
         for (const f of plan.files) {dataFiles.push({ path: joinPath(cpRoot, f.path), content: f.content, owner: f.owner });}
     } else {
@@ -227,7 +231,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
                 progress(`Refining ${pf.relativePath}`, 25 + Math.floor((n / Math.max(1, planned.length)) * 45));
                 try {
                     const res = await refine({
-                        feature: deterministic, mode: i.mode, task: 'enhance-feature', evidence: i.evidence ?? [],
+                        feature: deterministic, mode: i.mode, task: 'enhance-feature', evidence: i.evidence ?? [], request: i.request,
                         skills: i.skills ?? NO_SKILLS, ai: i.ai, knownFiles, config
                     });
                     r.refinement = res;

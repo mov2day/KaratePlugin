@@ -340,5 +340,16 @@ module.exports = [
             assert.ok(!text.includes('response != null'));
             assert.match(text, /@ignore @positive\n\s*Scenario: literal url/);
         }
+    },
+    {
+        name: 'pipeline: extraFeatures are written alongside the planned OpenAPI features (combined mode)',
+        async run() {
+            const i = base({ mode: 'combined', extraFeatures: [plannedFeature('Reqs', [okScenario('from confluence')])] });
+            const r = await run(i);
+            const files = featureFiles(i.fsApi);
+            assert.ok(files.includes('src/test/karate/pets/pets.feature'));
+            assert.ok(files.includes('src/test/karate/bad/Reqs.feature'));
+            assert.equal(r.features.length, 5);
+        }
     }
 ];
