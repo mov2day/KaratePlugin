@@ -22,7 +22,7 @@ import { parseFeature, runGate } from '../quality/QualityGate';
 import type { Finding } from '../quality/QualityGate';
 import { renderFeature } from '../render/FeatureRenderer';
 import { planScaffold } from '../scaffold/ProjectScaffolder';
-import { OutputWriter } from '../write/OutputWriter';
+import { OutputWriter, WriteError } from '../write/OutputWriter';
 import type { HashStore, WriteFile, WriteReport } from '../write/OutputWriter';
 
 export interface DryRunResult {
@@ -73,7 +73,19 @@ export interface PipelineResult {
 const NO_SKILLS: SkillSource = { select: () => ({ text: '' }) };
 
 const slash = (p: string): string => p.replace(/\\/g, '/');
-const joinPath = (...parts: string[]): string => slash(parts.filter(p => p !== '' && p !== '.').join('/')).replace(/\/{2,}/g, '/');
+const isAbsolute = (p: string): boolean => /^([a-zA-Z]:)?\//.test(slash(p));
+/** Normalise one path part: forward slashes, no leading `./`, no duplicate or trailing slashes. */
+function normPart(p: string): string {
+    let out = slash(p).replace(/\/{2,}/g, '/');
+    while (out.startsWith('./')) {out = out.slice(2);}
+    if (out.length > 1) {out = out.replace(/\/+$/, '');}
+    return out === '.' ? '' : out;
+}
+const joinPath = (...parts: string[]): string => {
+    const norm = parts.map(normPart).filter(p => p !== '');
+    return normPart(norm.join('/'));
+};
+const MAX_WALK_DEPTH = 6;
 const errorsOf = (findings: Finding[]): Finding[] => findings.filter(f => f.severity === 'error');
 const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -119,7 +131,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
         }
     };
     const warnings: string[] = [];
-    const full = (p: string): string => (i.root ? joinPath(i.root, p) : joinPath(p));
+    const full = (p: string): string => (i.root && !isAbsolute(p) ? joinPath(i.root, p) : joinPath(p));
     const cpRoot = joinPath(project.classpathRoot);
     const classpathRel = (p: string): string | undefined => (p.startsWith(`${cpRoot}/`) ? p.slice(cpRoot.length + 1) : undefined);
 
@@ -142,13 +154,20 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
         throw new Error(`runPipeline: mode "${i.mode}" requires "scenarios"`);
     }
 
-    const supportFiles = [
-        ...scaffold.map(f => ({ path: joinPath(f.path), content: f.content, owner: f.owner })),
-        ...dataFiles,
-        ...(i.extraFiles ?? []).map(f => ({ ...f, path: joinPath(f.path) }))
-    ];
+    const uniqueSupport: { path: string; content: string; owner: 'user' | 'generated' }[] = [];
     const seen = new Set<string>();
-    const uniqueSupport = supportFiles.filter(f => (seen.has(f.path) ? false : (seen.add(f.path), true)));
+    const addSupport = (f: { path: string; content: string; owner: 'user' | 'generated' }, label: string): void => {
+        const path = joinPath(f.path);
+        if (seen.has(path)) {
+            warnings.push(`${label} "${path}" collides with another generated file of the same path; kept the first, dropped this one`);
+            return;
+        }
+        seen.add(path);
+        uniqueSupport.push({ ...f, path });
+    };
+    for (const f of scaffold) {addSupport(f, 'Scaffold file');}
+    for (const f of dataFiles) {addSupport(f, 'Planned data/schema file');}
+    for (const f of i.extraFiles ?? []) {addSupport(f, 'Extra file');}
 
     // classpath files that exist in this run, plus helpers already on disk
     const knownFiles = new Set<string>();
@@ -156,14 +175,29 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
         const rel = classpathRel(f.path);
         if (rel) {knownFiles.add(rel);}
     }
-    try {
-        for (const dir of ['common']) {
-            const abs = full(joinPath(cpRoot, dir));
-            if (fsApi.exists(abs)) {for (const n of fsApi.list(abs)) {if (n.endsWith('.feature')) {knownFiles.add(`${dir}/${n}`);}}}
+    // Existing project files under common/, data/ and schemas/ are referenceable too.
+    const walk = (dirRel: string, depth: number, visited: Set<string>): void => {
+        if (depth > MAX_WALK_DEPTH) {return;}
+        const abs = full(joinPath(cpRoot, dirRel));
+        if (visited.has(abs)) {return;}
+        visited.add(abs);
+        let names: string[];
+        try {
+            if (!fsApi.exists(abs)) {return;}
+            names = fsApi.list(abs);
+        } catch {
+            return;
         }
-    } catch {
-        /* unreadable helper directory: only this run's files are known */
-    }
+        for (const n of names) {
+            const rel = `${dirRel}/${n}`;
+            let children: string[] = [];
+            if (!/\.[A-Za-z0-9]+$/.test(n)) {
+                try { children = fsApi.list(full(joinPath(cpRoot, rel))); } catch { children = []; }
+            }
+            if (children.length > 0) {walk(rel, depth + 1, visited);} else {knownFiles.add(rel);}
+        }
+    };
+    for (const dir of ['common', 'data', 'schemas']) {walk(dir, 0, new Set());}
 
     // (3)-(5) render, refine, gate
     progress('Rendering features', 25);
@@ -178,6 +212,10 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
     for (let n = 0; n < planned.length; n++) {
         const pf = planned[n];
         const path = full(joinPath(config.layout.outputRoot, pf.relativePath));
+        if (featureFiles.some(f => f.path === path) || seen.has(joinPath(path))) {
+            warnings.push(`${pf.relativePath}: path "${path}" collides with another generated file (feature "${pf.feature.name}", ${pf.feature.scenarios.length} scenario(s), source ${i.sourceRef}); kept the first, dropped this one`);
+            continue;
+        }
         const pct = 25 + Math.floor(((n + 1) / Math.max(1, planned.length)) * 45);
         let r: Rendered;
         let tags: string[] | undefined;
@@ -223,9 +261,12 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
                     gate = runGate(r.text, { knownFiles, config });
                 }
                 if (!gate.ok) {
+                    const wasAttributed = attributable;
                     tags = ['@ignore'];
                     r.text = renderFeature(attributable ? draftScenarios(pf.feature, byScenario) : pf.feature, { style: config.style, featureTags: tags });
-                    warnings.push(`${pf.relativePath}: quality gate errors could not be attributed to scenarios; whole Feature marked @ignore`);
+                    warnings.push(wasAttributed
+                        ? `${pf.relativePath}: quality gate errors persisted after demoting scenarios to drafts; whole Feature marked @ignore`
+                        : `${pf.relativePath}: quality gate errors could not be attributed to a scenario; whole Feature marked @ignore`);
                 }
             }
         } catch (e) {
@@ -254,26 +295,34 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
     try {
         written = OutputWriter.write(files, fsApi, history, { generatorVersion: i.generatorVersion });
     } catch (e) {
-        warnings.push(`Writing failed (${msg(e)})`);
+        if (e instanceof WriteError) {
+            written = e.partial;
+            const n = written.created.length + written.updated.length + written.skippedExisting.length + written.sideBySide.length;
+            warnings.push(`Writing failed at "${e.failedPath}" (${e.message}); ${n} file(s) were already written`);
+        } else {
+            warnings.push(`Writing failed (${msg(e)})`);
+        }
     }
     progress('Files written', 90);
 
     // (7) optional dry run
     let dryRun: DryRunResult | undefined;
     if (config.gate.dryRun !== 'off' && i.dryRun) {
-        progress('Dry-running generated features', 92);
         const featurePaths = new Set(featureFiles.map(f => f.path));
         const touched = [
             ...written.created.filter(p => featurePaths.has(p)),
             ...written.updated.filter(p => featurePaths.has(p)),
             ...written.sideBySide.filter(s => featurePaths.has(s.path)).map(s => s.generatedPath)
         ];
-        try {
+        if (touched.length > 0) {progress('Dry-running generated features', 92);}
+        if (touched.length === 0) {
+            dryRun = { status: 'skipped', message: 'No feature files were written; dry run skipped' };
+        } else {try {
             dryRun = await i.dryRun(touched);
             for (const f of dryRun.findings ?? []) {warnings.push(`Dry run: ${f.ruleId} ${f.message}`);}
         } catch (e) {
             dryRun = { status: 'failed', message: `Dry run could not complete: ${msg(e)}` };
-        }
+        }}
     }
 
     progress('Done', 100);

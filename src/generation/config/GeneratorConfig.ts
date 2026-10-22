@@ -62,7 +62,7 @@ const ARRAY_ENUMS: Record<string, readonly string[]> = {
 const LEGACY_STYLE_KEYS = ['indentation', 'variableCase', 'commentStyle', 'lineSpacing'];
 
 function typeOk(def: unknown, value: unknown): boolean {
-    if (Array.isArray(def)) return Array.isArray(value);
+    if (Array.isArray(def)) {return Array.isArray(value);}
     return typeof def === typeof value;
 }
 
@@ -122,14 +122,14 @@ function merge(base: Plain, over: Plain): Plain {
 
 /** Accept the legacy `sharedStylePath` shape (style fields at the top level) alongside the new schema. */
 function normalizeFile(file: unknown): Plain {
-    if (!isPlain(file)) return {};
+    if (!isPlain(file)) {return {};}
     const legacy: Plain = {};
     const rest: Plain = {};
     for (const [k, v] of Object.entries(file)) {
-        if (LEGACY_STYLE_KEYS.includes(k)) legacy[k] = v;
-        else Object.defineProperty(rest, k, { value: v, enumerable: true, writable: true, configurable: true });
+        if (LEGACY_STYLE_KEYS.includes(k)) {legacy[k] = v;}
+        else {Object.defineProperty(rest, k, { value: v, enumerable: true, writable: true, configurable: true });}
     }
-    if (Object.keys(legacy).length === 0) return rest;
+    if (Object.keys(legacy).length === 0) {return rest;}
     const style = isPlain(rest.style) ? { ...legacy, ...rest.style } : legacy;
     return { ...rest, style };
 }

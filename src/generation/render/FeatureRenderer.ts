@@ -20,7 +20,7 @@ const pad = (style: KarateStyle, depth: number): string => (style.indentation ||
  */
 function comment(style: KarateStyle, depth: number, text: string): string {
     return text
-        .split(/\r?\n/)
+        .split(/\r\n|\r|\n/)
         .map(line => `${pad(style, depth)}# ${line}`.trimEnd())
         .join('\n');
 }
@@ -33,7 +33,7 @@ function blankLines(style: KarateStyle): string[] {
 
 function tableLines(rows: string[][], style: KarateStyle, depth: number): string[] {
     const widths: number[] = [];
-    for (const row of rows) row.forEach((cell, i) => { widths[i] = Math.max(widths[i] ?? 0, cell.length); });
+    for (const row of rows) {row.forEach((cell, i) => { widths[i] = Math.max(widths[i] ?? 0, cell.length); });}
     return rows.map(row => `${pad(style, depth)}| ${row.map((cell, i) => cell.padEnd(widths[i])).join(' | ')} |`);
 }
 
@@ -57,16 +57,16 @@ export function renderScenario(s: KarateScenario, style: KarateStyle): string {
 
     const base = (s.tags ?? []).map(normalizeTag);
     const tags = [...new Set(s.draftReason !== undefined ? ['@ignore', ...base] : base)];
-    if (tags.length > 0) lines.push(`${pad(style, d)}${tags.join(' ')}`);
+    if (tags.length > 0) {lines.push(`${pad(style, d)}${tags.join(' ')}`);}
 
     lines.push(`${pad(style, d)}${s.examples ? 'Scenario Outline' : 'Scenario'}: ${s.name}`);
-    if (s.draftReason !== undefined) lines.push(comment(style, STEP_DEPTH, `Draft: ${s.draftReason}`));
-    if (s.description) lines.push(comment(style, STEP_DEPTH, s.description));
-    if (s.source) lines.push(comment(style, STEP_DEPTH, `source: ${s.source}`));
+    if (s.draftReason !== undefined) {lines.push(comment(style, STEP_DEPTH, `Draft: ${s.draftReason}`));}
+    if (s.description) {lines.push(comment(style, STEP_DEPTH, s.description));}
+    if (s.source) {lines.push(comment(style, STEP_DEPTH, `source: ${s.source}`));}
     // KarateScenario.comments carries no step index, so they sit under the header, before the first step.
-    for (const c of s.comments ?? []) lines.push(comment(style, STEP_DEPTH, c));
+    for (const c of s.comments ?? []) {lines.push(comment(style, STEP_DEPTH, c));}
 
-    for (const step of s.steps) lines.push(renderStep(step, style, STEP_DEPTH));
+    for (const step of s.steps) {lines.push(renderStep(step, style, STEP_DEPTH));}
 
     if (s.examples) {
         lines.push('');
@@ -81,8 +81,8 @@ export function renderFeature(feature: KarateFeature, opts: RenderOptions): stri
     const lines: string[] = [];
     const gap = blankLines(style);
 
-    for (const h of opts.header ?? []) lines.push(comment(style, 0, h));
-    if (opts.featureTags && opts.featureTags.length > 0) lines.push(opts.featureTags.map(normalizeTag).join(' '));
+    for (const h of opts.header ?? []) {lines.push(comment(style, 0, h));}
+    if (opts.featureTags && opts.featureTags.length > 0) {lines.push(opts.featureTags.map(normalizeTag).join(' '));}
     lines.push(`Feature: ${feature.name}`);
     for (const d of feature.description ? feature.description.split('\n') : []) {
         lines.push(`${pad(style, 1)}${d}`);
@@ -95,7 +95,7 @@ export function renderFeature(feature: KarateFeature, opts: RenderOptions): stri
             ...feature.background.steps.map(step => renderStep(step, style, STEP_DEPTH))
         ]);
     }
-    for (const s of feature.scenarios) blocks.push([renderScenario(s, style)]);
+    for (const s of feature.scenarios) {blocks.push([renderScenario(s, style)]);}
 
     for (const block of blocks) {
         lines.push(...gap, ...block);

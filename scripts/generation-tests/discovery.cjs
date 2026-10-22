@@ -108,6 +108,9 @@ module.exports = [
             assert.equal(discover({ ...base, 'src/test/java/app/RunTest.java': J }).runnerStyle, 'junit6');
             assert.equal(discover({ ...base, 'src/test/resources/node_modules/dep/RunTest.java': J }).runnerStyle, 'unknown');
             assert.equal(discover({ ...base, 'src/test/resources/target/x/RunTest.java': J }).runnerStyle, 'unknown');
+            assert.equal(discover({ ...base, 'src/test/resources/build/x/RunTest.java': J }).runnerStyle, 'unknown');
+            assert.equal(discover({ ...base, 'src/test/resources/out/x/RunTest.java': J }).runnerStyle, 'unknown');
+            assert.equal(discover({ ...base, 'src/test/resources/.git/x/RunTest.java': J }).runnerStyle, 'unknown');
             assert.equal(discover({ ...base, 'src/test/resources/a/b/c/d/e/f/g/h/i/j/RunTest.java': J }).runnerStyle, 'unknown');
         }
     }

@@ -111,9 +111,9 @@ function authSteps(s: SecurityScheme): string[] {
         case 'apiKey': {
             const name = s.paramName ?? 'X-API-Key';
             const steps = ["* def apiKey = karate.sysenv('API_KEY', '')"];
-            if (s.in === 'query') steps.push(`# Query API key: scenarios add 'param ${name} = apiKey' to each request.`);
-            else if (s.in === 'cookie') steps.push(`# Cookie API key: scenarios add 'cookie ${name} = apiKey' to each request.`);
-            else steps.push(`* configure headers = { ${q(name)}: '#(apiKey)' }`);
+            if (s.in === 'query') {steps.push(`# Query API key: scenarios add 'param ${name} = apiKey' to each request.`);}
+            else if (s.in === 'cookie') {steps.push(`# Cookie API key: scenarios add 'cookie ${name} = apiKey' to each request.`);}
+            else {steps.push(`* configure headers = { ${q(name)}: '#(apiKey)' }`);}
             return steps;
         }
         default:
@@ -151,12 +151,12 @@ export function planScaffold(ctx: ScaffoldContext): ScaffoldFile[] {
         add('karate-config.js', baseConfigJs(urlVar, baseUrl, envJsonMode), 'Base Karate configuration');
         const secrets = requiredSecrets(model.schemes[0]);
         for (const env of config.config.envs) {
-            if (project.envConfigs.includes(env)) continue;
-            if (envJsonMode) add(`config/${env}.json`, envJson(urlVar, baseUrl), `Environment config for ${env}`);
-            else add(`karate-config-${env}.js`, envConfigJs(env, urlVar, secrets), `Environment overrides for ${env}`);
+            if (project.envConfigs.includes(env)) {continue;}
+            if (envJsonMode) {add(`config/${env}.json`, envJson(urlVar, baseUrl), `Environment config for ${env}`);}
+            else {add(`karate-config-${env}.js`, envConfigJs(env, urlVar, secrets), `Environment overrides for ${env}`);}
         }
     }
-    if (model.schemes.length > 0) add('common/auth.feature', authFeature(model.schemes[0], model.schemes.slice(1)), 'Authentication setup from spec security schemes');
+    if (model.schemes.length > 0) {add('common/auth.feature', authFeature(model.schemes[0], model.schemes.slice(1)), 'Authentication setup from spec security schemes');}
     add('common/utils.feature', UTILS_FEATURE, 'Shared helper functions');
     return files;
 }

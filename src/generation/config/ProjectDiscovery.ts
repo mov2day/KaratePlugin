@@ -28,14 +28,14 @@ function balancedLiteral(src: string, start: number): string | undefined {
     for (let i = start; i < src.length; i++) {
         const ch = src[i];
         if (ch === '"' || ch === "'" || ch === '`') {
-            for (i++; i < src.length && src[i] !== ch; i++) if (src[i] === '\\') i++;
+            for (i++; i < src.length && src[i] !== ch; i++) {if (src[i] === '\\') {i++;}}
         } else if (ch === '/' && src[i + 1] === '/') {
-            while (i < src.length && src[i] !== '\n') i++;
+            while (i < src.length && src[i] !== '\n') {i++;}
         } else if (ch === '/' && src[i + 1] === '*') {
             const end = src.indexOf('*/', i + 2);
             i = end < 0 ? src.length : end + 1;
-        } else if (ch === '{') depth++;
-        else if (ch === '}' && --depth === 0) return src.slice(start, i + 1);
+        } else if (ch === '{') {depth++;}
+        else if (ch === '}' && --depth === 0) {return src.slice(start, i + 1);}
     }
     return undefined;
 }
@@ -49,19 +49,19 @@ function topLevelKeys(literal: string): string[] {
         if (ch === '"' || ch === "'" || ch === '`') {
             const quote = ch;
             const begin = i + 1;
-            for (i++; i < literal.length && literal[i] !== quote; i++) if (literal[i] === '\\') i++;
-            if (depth === 1 && quote !== '`' && /^\s*:/.test(literal.slice(i + 1))) keys.push(literal.slice(begin, i));
+            for (i++; i < literal.length && literal[i] !== quote; i++) {if (literal[i] === '\\') {i++;}}
+            if (depth === 1 && quote !== '`' && /^\s*:/.test(literal.slice(i + 1))) {keys.push(literal.slice(begin, i));}
         } else if (ch === '/' && literal[i + 1] === '/') {
-            while (i < literal.length && literal[i] !== '\n') i++;
+            while (i < literal.length && literal[i] !== '\n') {i++;}
         } else if (ch === '/' && literal[i + 1] === '*') {
             const end = literal.indexOf('*/', i + 2);
             i = end < 0 ? literal.length : end + 1;
-        } else if (ch === '{' || ch === '[' || ch === '(') depth++;
-        else if (ch === '}' || ch === ']' || ch === ')') depth--;
+        } else if (ch === '{' || ch === '[' || ch === '(') {depth++;}
+        else if (ch === '}' || ch === ']' || ch === ')') {depth--;}
         else if (depth === 1 && /[A-Za-z_$]/.test(ch) && !/[\w$]/.test(literal[i - 1] ?? '')) {
             const m = /^[A-Za-z_$][\w$]*/.exec(literal.slice(i));
             if (m) {
-                if (/^\s*:/.test(literal.slice(i + m[0].length))) keys.push(m[0]);
+                if (/^\s*:/.test(literal.slice(i + m[0].length))) {keys.push(m[0]);}
                 i += m[0].length - 1;
             }
         }
@@ -71,7 +71,7 @@ function topLevelKeys(literal: string): string[] {
 
 function analyzeConfig(src: string): { urlVariable?: string; variables: string[] } {
     const m = /\b(?:var|let|const)\s+config\s*=\s*\{|\breturn\s*\{/.exec(src);
-    if (!m) return { variables: [] };
+    if (!m) {return { variables: [] };}
     const literal = balancedLiteral(src, m.index + m[0].length - 1);
     const variables = literal ? topLevelKeys(literal) : [];
     const urls = variables.filter(k => /^\w*[uU]rl$|^host$/.test(k));
@@ -88,17 +88,17 @@ function safeList(fsApi: FsLike, dir: string): string[] {
 }
 
 function hasJunit6(fsApi: FsLike, dir: string, depth: number): boolean {
-    if (depth > MAX_JAVA_DEPTH) return false;
+    if (depth > MAX_JAVA_DEPTH) {return false;}
     for (const name of safeList(fsApi, dir)) {
-        if (SKIP_DIRS.has(name)) continue;
+        if (SKIP_DIRS.has(name)) {continue;}
         const p = `${dir}/${name}`;
         if (name.endsWith('.java')) {
             try {
-                if (fsApi.read(p).includes('io.karatelabs.junit6')) return true;
+                if (fsApi.read(p).includes('io.karatelabs.junit6')) {return true;}
             } catch {
                 /* unreadable file: skip */
             }
-        } else if (!name.includes('.') && hasJunit6(fsApi, p, depth + 1)) return true;
+        } else if (!name.includes('.') && hasJunit6(fsApi, p, depth + 1)) {return true;}
     }
     return false;
 }
@@ -108,7 +108,7 @@ export function discoverProject(root: string, fsApi: FsLike): ProjectInfo {
     let baseConfig: ProjectInfo['baseConfig'];
     for (const dir of SEARCH_DIRS) {
         const relPath = rel(dir, 'karate-config.js');
-        if (!fsApi.exists(abs(root, relPath))) continue;
+        if (!fsApi.exists(abs(root, relPath))) {continue;}
         classpathRoot = dir;
         let analysis: { urlVariable?: string; variables: string[] } = { variables: [] };
         try {
@@ -125,7 +125,7 @@ export function discoverProject(root: string, fsApi: FsLike): ProjectInfo {
     if (baseConfig) {
         for (const name of safeList(fsApi, cpAbs)) {
             const m = /^karate-config-(.+)\.js$/.exec(name);
-            if (m) envConfigs.push(m[1]);
+            if (m) {envConfigs.push(m[1]);}
         }
     }
 
@@ -134,9 +134,9 @@ export function discoverProject(root: string, fsApi: FsLike): ProjectInfo {
 
     let runnerStyle: ProjectInfo['runnerStyle'];
     const javaAbs = abs(root, DEFAULT_CLASSPATH_ROOT);
-    if (hasJunit6(fsApi, cpAbs, 0) || (javaAbs !== cpAbs && hasJunit6(fsApi, javaAbs, 0))) runnerStyle = 'junit6';
-    else if (!fsApi.exists(abs(root, 'pom.xml')) && !fsApi.exists(abs(root, 'build.gradle'))) runnerStyle = 'cli';
-    else runnerStyle = 'unknown';
+    if (hasJunit6(fsApi, cpAbs, 0) || (javaAbs !== cpAbs && hasJunit6(fsApi, javaAbs, 0))) {runnerStyle = 'junit6';}
+    else if (!fsApi.exists(abs(root, 'pom.xml')) && !fsApi.exists(abs(root, 'build.gradle'))) {runnerStyle = 'cli';}
+    else {runnerStyle = 'unknown';}
 
     return { classpathRoot, baseConfig, envConfigs, hasEnvJson, runnerStyle };
 }

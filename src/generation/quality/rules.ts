@@ -44,7 +44,7 @@ function finder(rule: { id: string; severity: 'error' | 'warning' }) {
 
 /** Tags a rule should evaluate: feature tags (unless the feature is ignored) plus tags of non-ignored scenarios. */
 function activeTags(p: ParsedFeature): Tag[] {
-    if (isFeatureIgnored(p)) return [];
+    if (isFeatureIgnored(p)) {return [];}
     return [...p.tags, ...active(p).flatMap(s => s.tags)];
 }
 
@@ -77,7 +77,7 @@ const cfg001: Rule = {
         const f = finder(cfg001);
         const out: Finding[] = [];
         for (const s of scanSteps(p)) {
-            if (/^url\s+['"]https?:/i.test(s.text)) out.push(f(s.line, 'Hard-coded URL in feature', 'Use a config variable such as baseUrl'));
+            if (/^url\s+['"]https?:/i.test(s.text)) {out.push(f(s.line, 'Hard-coded URL in feature', 'Use a config variable such as baseUrl'));}
         }
         return out;
     }
@@ -91,8 +91,8 @@ const cfg002: Rule = {
         const bgUrl = (p.background?.steps ?? []).some(isUrlStep);
         for (const s of active(p)) {
             const idx = s.steps.findIndex(isMethod);
-            if (idx < 0) continue;
-            if (bgUrl || s.steps.slice(0, idx).some(isUrlStep)) continue;
+            if (idx < 0) {continue;}
+            if (bgUrl || s.steps.slice(0, idx).some(isUrlStep)) {continue;}
             out.push(f(s.steps[idx].line, 'Request is made but no url is set in Background or scenario', "Add '* url baseUrl' to Background"));
         }
         return out;
@@ -110,7 +110,7 @@ const sec001: Rule = {
                 continue;
             }
             for (const l of textLines(s)) {
-                if (hasSecretKey(l.text)) out.push(f(l.line, 'Literal secret value in step', 'Read it from karate.sysenv(...) or a config variable'));
+                if (hasSecretKey(l.text)) {out.push(f(l.line, 'Literal secret value in step', 'Read it from karate.sysenv(...) or a config variable'));}
             }
         }
         return out;
@@ -121,7 +121,7 @@ function hasSecretKey(text: string): boolean {
     SECRET_KEY.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = SECRET_KEY.exec(text)) !== null) {
-        if (isSecretValue(m[3])) return true;
+        if (isSecretValue(m[3])) {return true;}
     }
     return false;
 }
@@ -133,8 +133,8 @@ const assert001: Rule = {
         const out: Finding[] = [];
         for (const s of active(p)) {
             const m = s.steps.find(isMethod);
-            if (!m) continue;
-            if (s.steps.some(x => /^status\s+\S/.test(x.text) || refsStatus(x))) continue;
+            if (!m) {continue;}
+            if (s.steps.some(x => /^status\s+\S/.test(x.text) || refsStatus(x))) {continue;}
             out.push(f(m.line, 'Scenario makes a request but never asserts the status', "Add 'Then status <code>'"));
         }
         return out;
@@ -148,11 +148,11 @@ const assert002: Rule = {
         const out: Finding[] = [];
         for (const s of active(p)) {
             const m = s.steps.find(isMethod);
-            if (!m) continue;
+            if (!m) {continue;}
             const is2xx = s.steps.some(x => /^status\s+2\d\d\b/.test(x.text) || (refsStatus(x) && /\b2\d\d\b/.test(x.text)));
-            if (!is2xx) continue;
+            if (!is2xx) {continue;}
             const hasBody = s.steps.some(x => /^(assert|match)\b/.test(x.text) && !/\bresponseStatus\b/.test(x.text));
-            if (!hasBody) out.push(f(m.line, '2xx scenario has no body assertion', "Add a 'match response ...' step"));
+            if (!hasBody) {out.push(f(m.line, '2xx scenario has no body assertion', "Add a 'match response ...' step"));}
         }
         return out;
     }
@@ -163,11 +163,11 @@ const draft001: Rule = {
     check: p => {
         const f = finder(draft001);
         const out: Finding[] = [];
-        if (isFeatureIgnored(p)) return out;
+        if (isFeatureIgnored(p)) {return out;}
         const blocks = [...(p.background ? [p.background] : []), ...active(p)];
         for (const b of blocks) {
-            for (const s of b.steps) if (/\bTODO\b/.test(s.text)) out.push(f(s.line, 'TODO/placeholder step left in a non-@ignore scenario', 'Complete the step or tag the scenario @ignore'));
-            for (const c of b.comments) if (/\bTODO\b/.test(c.text)) out.push(f(c.line, 'TODO comment left in a non-@ignore scenario', 'Complete the scenario or tag it @ignore'));
+            for (const s of b.steps) {if (/\bTODO\b/.test(s.text)) {out.push(f(s.line, 'TODO/placeholder step left in a non-@ignore scenario', 'Complete the step or tag the scenario @ignore'));}}
+            for (const c of b.comments) {if (/\bTODO\b/.test(c.text)) {out.push(f(c.line, 'TODO comment left in a non-@ignore scenario', 'Complete the scenario or tag it @ignore'));}}
         }
         return out.sort((a, b) => a.line - b.line);
     }
@@ -180,8 +180,8 @@ const dup001: Rule = {
         const seen = new Set<string>();
         const out: Finding[] = [];
         for (const s of p.scenarios) {
-            if (!s.name) continue;
-            if (seen.has(s.name)) out.push(f(s.startLine, `Duplicate scenario name "${s.name}"`, 'Give each scenario a unique name'));
+            if (!s.name) {continue;}
+            if (seen.has(s.name)) {out.push(f(s.startLine, `Duplicate scenario name "${s.name}"`, 'Give each scenario a unique name'));}
             seen.add(s.name);
         }
         return out;
@@ -192,7 +192,7 @@ const callRule = (rule: Rule, needle: string, message: string): Rule['check'] =>
     const f = finder(rule);
     const out: Finding[] = [];
     for (const s of scanSteps(p)) {
-        for (const l of textLines(s)) if (stripStrings(l.text).includes(needle)) out.push(f(l.line, message));
+        for (const l of textLines(s)) {if (stripStrings(l.text).includes(needle)) {out.push(f(l.line, message));}}
     }
     return out;
 };
@@ -227,15 +227,15 @@ const ref001: Rule = {
     check: (p, ctx) => {
         const f = finder(ref001);
         const out: Finding[] = [];
-        if (!ctx.knownFiles) return out;
+        if (!ctx.knownFiles) {return out;}
         const known = ctx.knownFiles;
         for (const s of scanSteps(p)) {
             const re = /read\(\s*(['"])classpath:([^'"]+)\1/g;
             let m: RegExpExecArray | null;
             while ((m = re.exec(s.text)) !== null) {
                 const name = m[2].replace(/^\/+/, '').replace(/@[\w=-]+$/, '');
-                if (/[#{}]/.test(name)) continue;
-                if (!known.has(name)) out.push(f(s.line, `read('classpath:${m[2]}') does not resolve to a known file`, 'Create the file or fix the path'));
+                if (/[#{}]/.test(name)) {continue;}
+                if (!known.has(name)) {out.push(f(s.line, `read('classpath:${m[2]}') does not resolve to a known file`, 'Create the file or fix the path'));}
             }
         }
         return out;
@@ -249,15 +249,15 @@ const tag001: Rule = {
     check: (p, ctx) => {
         const f = finder(tag001);
         const out: Finding[] = [];
-        if (!ctx.config) return out;
+        if (!ctx.config) {return out;}
         const taxonomy = ctx.config.tags.taxonomy;
         for (const t of activeTags(p)) {
             const m = /^@(positive|negative|edge|boundary|security|exploratory)$/i.exec(t.name);
-            if (!m) continue;
+            if (!m) {continue;}
             const category = m[1].toLowerCase() as typeof TAG_CATEGORIES[number];
             const want = taxonomy[category];
             const wantTag = want.startsWith('@') ? want : `@${want}`;
-            if (t.name !== wantTag) out.push(f(t.line, `Tag ${t.name} is not the configured ${category} tag`, `Use ${wantTag}`));
+            if (t.name !== wantTag) {out.push(f(t.line, `Tag ${t.name} is not the configured ${category} tag`, `Use ${wantTag}`));}
         }
         return out;
     }

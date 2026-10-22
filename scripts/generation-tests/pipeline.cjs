@@ -70,7 +70,8 @@ module.exports = [
             assert.equal(r.written.sideBySide.length, 0);
             assert.ok(r.written.created.includes('src/test/java/karate-config.js'));
             assert.ok(r.warnings.some(w => /multipart/.test(w)), 'planner warnings are surfaced');
-            assert.ok(r.draftScenarios >= 0);
+            assert.ok(r.draftScenarios > 0, 'petstore plan contains drafts');
+            assert.ok(r.features.some(f => f.draft));
         }
     },
     {
@@ -223,6 +224,121 @@ module.exports = [
         async run() {
             await assert.rejects(() => run({ ...base(), model: undefined }), /model/);
             await assert.rejects(() => run({ ...base(), fsApi: undefined }), /fsApi/);
+        }
+    },
+    {
+        name: 'pipeline: project-only files under common/, data/, schemas/ (recursive) are known; missing ones are not',
+        async run() {
+            const existing = { 'src/test/java/schemas/user.json': '{}', 'src/test/java/common/sub/x.feature': 'Feature: x\n' };
+            const withRefs = refs => async p => (await echo(p)).replace('* url baseUrl', `* url baseUrl\n${refs.map(r => `    * def v${Math.abs(r.length)} = read('classpath:${r}')`).join('\n')}`);
+            const good = await run(base({ fsApi: memFs(existing), ai: withRefs(['schemas/user.json', 'common/sub/x.feature']) }));
+            const pets = good.features.find(f => f.path.endsWith('pets/pets.feature'));
+            assert.equal(pets.refinement.status, 'refined', JSON.stringify(pets.refinement.findings));
+            assert.equal(good.gate.errors, 0);
+            const bad = await run(base({ fsApi: memFs(existing), ai: withRefs(['schemas/nope.json']) }));
+            const badPets = bad.features.find(f => f.path.endsWith('pets/pets.feature'));
+            assert.equal(badPets.refinement.status, 'rejected');
+            assert.ok(badPets.refinement.findings.some(f => f.ruleId === 'V2-REF-001'));
+        }
+    },
+    {
+        name: 'pipeline: trailing-slash classpathRoot still yields known files; ./ prefixes normalise',
+        async run() {
+            const ai = async p => (await echo(p)).replace('* url baseUrl', "* url baseUrl\n    * def v = read('classpath:schemas/nope.json')");
+            const i = base({ project: project({ classpathRoot: 'src/test/java/' }), ai, extraFiles: [{ path: './src/test/java//extra.txt', content: 'x', owner: 'user' }] });
+            const r = await run(i);
+            assert.equal(r.features.find(f => f.path.endsWith('pets/pets.feature')).refinement.status, 'rejected');
+            assert.ok(i.fsApi.exists('src/test/java/karate-config.js'));
+            assert.ok(i.fsApi.exists('src/test/java/extra.txt'));
+            assert.ok(r.written.created.includes('src/test/java/extra.txt'));
+        }
+    },
+    {
+        name: 'pipeline: root prefix applies to relative paths but not to an absolute outputRoot',
+        async run() {
+            const rel = base({ root: '/ws/' });
+            await run(rel);
+            assert.ok(rel.fsApi.exists('/ws/src/test/karate/system/system.feature'));
+            assert.ok(rel.fsApi.exists('/ws/src/test/java/karate-config.js'));
+            const abs = base({ root: '/ws', config: config({ layout: { outputRoot: '/abs/out' } }) });
+            await run(abs);
+            assert.ok(abs.fsApi.exists('/abs/out/system/system.feature'));
+            assert.ok(![...abs.fsApi.map.keys()].some(k => k.startsWith('/ws//abs')));
+        }
+    },
+    {
+        name: 'pipeline: write failure returns the partial report, warns, and still dry-runs the written features',
+        async run() {
+            const i = base();
+            const realWrite = i.fsApi.write;
+            i.fsApi.write = (p, c) => { if (p.endsWith('system/system.feature')) throw new Error('disk full'); realWrite(p, c); };
+            let got;
+            const r = await run({ ...i, dryRun: async files => { got = files; return { status: 'passed', message: 'ok' }; } });
+            assert.ok(r.warnings.some(w => /system\/system\.feature/.test(w) && /disk full/.test(w) && /already written/.test(w)), r.warnings.join('|'));
+            assert.ok(r.written.created.length >= 5);
+            assert.ok(!r.written.created.some(p => p.endsWith('system/system.feature')));
+            assert.equal(got.length, 3);
+            assert.equal(r.dryRun.status, 'passed');
+        }
+    },
+    {
+        name: 'pipeline: failing 3rd write reports exactly the two earlier files; dry run is skipped when no feature was written',
+        async run() {
+            const i = base();
+            const realWrite = i.fsApi.write;
+            let n = 0;
+            i.fsApi.write = (p, c) => { if (++n === 3) throw new Error('boom'); realWrite(p, c); };
+            let called = false;
+            const r = await run({ ...i, dryRun: async () => { called = true; return { status: 'passed', message: '' }; } });
+            assert.equal(r.written.created.length, 2);
+            assert.ok(r.warnings.some(w => /boom/.test(w) && /2 file/.test(w)));
+            assert.equal(called, false);
+            assert.equal(r.dryRun.status, 'skipped');
+        }
+    },
+    {
+        name: 'pipeline: OutputWriter throws WriteError with the partial report',
+        run() {
+            const { OutputWriter, WriteError } = out('generation/write/OutputWriter');
+            const f = memFs();
+            let n = 0;
+            const fsApi = { ...f, write: (p, c) => { if (++n === 2) throw new Error('nope'); f.write(p, c); } };
+            try {
+                OutputWriter.write([{ path: 'a', content: '1', owner: 'user' }, { path: 'b', content: '2', owner: 'user' }], fsApi, history(), { generatorVersion: '1' });
+                assert.fail('should throw');
+            } catch (e) {
+                assert.ok(e instanceof WriteError);
+                assert.equal(e.failedPath, 'b');
+                assert.deepEqual(e.partial.created, ['a']);
+            }
+        }
+    },
+    {
+        name: 'pipeline: duplicate feature paths keep the first with a warning; extraFiles never override scaffold files',
+        async run() {
+            const a = plannedFeature('Dup', [okScenario('first')]);
+            const b = { ...plannedFeature('Dup', [okScenario('second'), okScenario('third')]) };
+            const i = base({ model: scoutModel(), mode: 'scout', scenarios: [a, b], extraFiles: [{ path: 'src/test/java/karate-config.js', content: '// mine', owner: 'user' }] });
+            const r = await run(i);
+            assert.equal(r.features.length, 1);
+            const text = i.fsApi.read('src/test/karate/bad/Dup.feature');
+            assert.ok(text.includes('first') && !text.includes('second'));
+            assert.ok(r.warnings.some(w => /bad\/Dup\.feature/.test(w) && /2 scenario/.test(w) && /collides/.test(w)), r.warnings.join('|'));
+            assert.ok(r.warnings.some(w => /karate-config\.js/.test(w) && /collides/.test(w)));
+            assert.ok(!i.fsApi.read('src/test/java/karate-config.js').includes('// mine'));
+        }
+    },
+    {
+        name: 'pipeline: refined text that keeps pre-existing gate errors is reverted to the deterministic text',
+        async run() {
+            const ai = async p => (await echo(p)).replace('Then status 200', 'Then status 200\n    And match response != null');
+            const i = base({ model: scoutModel(), mode: 'scout', ai, scenarios: [plannedFeature('Bad', [urlScenario('literal url')])] });
+            const r = await run(i);
+            assert.equal(r.features[0].refinement.status, 'rejected');
+            assert.ok(r.warnings.some(w => /refined output failed the quality gate/.test(w)));
+            const text = i.fsApi.read('src/test/karate/bad/Bad.feature');
+            assert.ok(!text.includes('response != null'));
+            assert.match(text, /@ignore @positive\n\s*Scenario: literal url/);
         }
     }
 ];

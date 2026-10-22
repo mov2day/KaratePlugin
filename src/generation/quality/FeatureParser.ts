@@ -30,8 +30,8 @@ const SCENARIO_RE = /^(Scenario Outline|Scenario Template|Scenario|Example)\s*:\
 function parseTags(trimmed: string, line: number): Tag[] {
     const tags: Tag[] = [];
     for (const token of trimmed.split(/\s+/)) {
-        if (token.startsWith('#')) break;
-        if (token.startsWith('@') && token.length > 1) tags.push({ name: token, line });
+        if (token.startsWith('#')) {break;}
+        if (token.startsWith('@') && token.length > 1) {tags.push({ name: token, line });}
     }
     return tags;
 }
@@ -54,22 +54,22 @@ export function parseFeature(text: string): ParsedFeature {
         const lineNo = i + 1;
         const trimmed = lines[i].trim();
         if (inDocString) {
-            if (trimmed.startsWith('"""')) inDocString = false;
-            else lastStep?.doc.push({ line: lineNo, text: trimmed });
-            if (current) current.endLine = lineNo;
+            if (trimmed.startsWith('"""')) {inDocString = false;}
+            else {lastStep?.doc.push({ line: lineNo, text: trimmed });}
+            if (current) {current.endLine = lineNo;}
             continue;
         }
-        if (trimmed === '') continue;
+        if (trimmed === '') {continue;}
         if (trimmed.startsWith('"""')) {
             inDocString = true;
-            if (current) current.endLine = lineNo;
+            if (current) {current.endLine = lineNo;}
             continue;
         }
         if (trimmed.startsWith('#')) {
             const owner = block();
             // after a block exists, a comment belongs to it; only comments before a block's header go to the next block
-            if (owner) owner.comments.push({ line: lineNo, text: trimmed });
-            else pendingComments.push({ line: lineNo, text: trimmed });
+            if (owner) {owner.comments.push({ line: lineNo, text: trimmed });}
+            else {pendingComments.push({ line: lineNo, text: trimmed });}
             continue;
         }
         if (trimmed.startsWith('@')) {
@@ -115,7 +115,7 @@ export function parseFeature(text: string): ParsedFeature {
         if (/^Examples\s*:/.test(trimmed)) {
             pendingTags = []; // tags above Examples belong to the table, not the next scenario
             pendingComments = [];
-            if (current) current.endLine = lineNo;
+            if (current) {current.endLine = lineNo;}
             continue;
         }
         const st = STEP_RE.exec(trimmed);
@@ -126,7 +126,7 @@ export function parseFeature(text: string): ParsedFeature {
             if (target) {
                 target.comments.push(...pendingComments);
                 target.steps.push(step);
-                if (current) current.endLine = lineNo;
+                if (current) {current.endLine = lineNo;}
             } else {
                 parsed.orphanSteps.push(step);
             }
@@ -134,7 +134,7 @@ export function parseFeature(text: string): ParsedFeature {
             continue;
         }
         // table rows, multi-line JSON continuation, etc.
-        if (current) current.endLine = lineNo;
+        if (current) {current.endLine = lineNo;}
     }
     return parsed;
 }

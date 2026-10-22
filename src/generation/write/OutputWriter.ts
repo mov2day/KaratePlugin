@@ -53,32 +53,44 @@ function render(file: WriteFile, version: string): { text: string; hash: string 
     return { text, hash };
 }
 
+/** Thrown when a file write fails mid-run; `partial` reports what was already written. */
+export class WriteError extends Error {
+    constructor(readonly failedPath: string, readonly partial: WriteReport, cause: unknown) {
+        super(cause instanceof Error ? cause.message : String(cause));
+        this.name = 'WriteError';
+    }
+}
+
 export const OutputWriter = {
     write(files: WriteFile[], fsApi: WritableFs, history: HashStore, options: WriteOptions): WriteReport {
         const report: WriteReport = { created: [], updated: [], skippedExisting: [], sideBySide: [] };
         for (const file of files) {
-            const out = render(file, options.generatorVersion);
-            if (!fsApi.exists(file.path)) {
-                fsApi.write(file.path, out.text);
-                history.set(file.path, out.hash);
-                report.created.push(file.path);
-                continue;
-            }
-            if (file.owner === 'user') {
-                report.skippedExisting.push(file.path);
-                continue;
-            }
-            const current = splitHeader(normalize(fsApi.read(file.path)));
-            const currentHash = sha256(current.body);
-            if (currentHash === history.get(file.path) || currentHash === current.headerHash) {
-                fsApi.write(file.path, out.text);
-                history.set(file.path, out.hash);
-                report.updated.push(file.path);
-            } else {
-                const generatedPath = generatedSiblingPath(file.path);
-                fsApi.write(generatedPath, out.text);
-                history.set(generatedPath, out.hash);
-                report.sideBySide.push({ path: file.path, generatedPath });
+            try {
+                const out = render(file, options.generatorVersion);
+                if (!fsApi.exists(file.path)) {
+                    fsApi.write(file.path, out.text);
+                    history.set(file.path, out.hash);
+                    report.created.push(file.path);
+                    continue;
+                }
+                if (file.owner === 'user') {
+                    report.skippedExisting.push(file.path);
+                    continue;
+                }
+                const current = splitHeader(normalize(fsApi.read(file.path)));
+                const currentHash = sha256(current.body);
+                if (currentHash === history.get(file.path) || currentHash === current.headerHash) {
+                    fsApi.write(file.path, out.text);
+                    history.set(file.path, out.hash);
+                    report.updated.push(file.path);
+                } else {
+                    const generatedPath = generatedSiblingPath(file.path);
+                    fsApi.write(generatedPath, out.text);
+                    history.set(generatedPath, out.hash);
+                    report.sideBySide.push({ path: file.path, generatedPath });
+                }
+            } catch (e) {
+                throw new WriteError(file.path, report, e);
             }
         }
         return report;

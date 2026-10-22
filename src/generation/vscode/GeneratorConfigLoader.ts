@@ -22,7 +22,7 @@ export class GeneratorConfigLoader {
         const read = <T>(key: string): T | undefined => {
             const info = root.inspect<T>(key);
             const value = info?.workspaceFolderValue ?? info?.workspaceValue ?? info?.globalValue;
-            if (value !== undefined) explicit = true;
+            if (value !== undefined) {explicit = true;}
             return value;
         };
 
@@ -40,7 +40,7 @@ export class GeneratorConfigLoader {
         if (stylePath) {
             const resolved = path.isAbsolute(stylePath) ? stylePath : path.join(workspaceRoot, stylePath);
             const style = GeneratorConfigLoader.readJson(resolved, warnings);
-            if (style !== undefined) raw.style = style;
+            if (style !== undefined) {raw.style = style;}
         }
 
         const configFile = root.get<string>('generation.configFile', '.karate-generator.json') || '.karate-generator.json';
@@ -55,7 +55,7 @@ export class GeneratorConfigLoader {
 
     private static readJson(filePath: string, warnings: string[]): unknown {
         try {
-            if (!fs.existsSync(filePath)) return undefined;
+            if (!fs.existsSync(filePath)) {return undefined;}
             return JSON.parse(fs.readFileSync(filePath, 'utf8'));
         } catch (e) {
             warnings.push(`Could not parse ${filePath}: ${e instanceof Error ? e.message : String(e)}; ignoring it`);

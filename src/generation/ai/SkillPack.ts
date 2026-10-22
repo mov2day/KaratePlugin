@@ -52,8 +52,8 @@ function splitSections(body: string): Section[] {
     const sections: Section[] = [{ heading: '', text: '' }];
     let inFence = false;
     for (const line of body.split('\n')) {
-        if (/^\s*```/.test(line)) inFence = !inFence;
-        if (!inFence && /^## /.test(line)) sections.push({ heading: line.trim(), text: '' });
+        if (/^\s*```/.test(line)) {inFence = !inFence;}
+        if (!inFence && /^## /.test(line)) {sections.push({ heading: line.trim(), text: '' });}
         const current = sections[sections.length - 1];
         current.text += (current.text ? '\n' : '') + line;
     }
@@ -113,11 +113,11 @@ export class SkillPack {
         const lengthOf = (i: number): number => render(chosen[i], kept[i]).length;
         const dropOne = (i: number): boolean => {
             for (const sectionIdx of dropOrder(chosen[i].sections)) {
-                if (!kept[i][sectionIdx]) continue;
+                if (!kept[i][sectionIdx]) {continue;}
                 kept[i][sectionIdx] = false;
                 trimmed.add(chosen[i].entry.id);
                 // Nothing but the preamble left: drop the whole skill.
-                if (chosen[i].sections.every((s, k) => s.heading === '' || !kept[i][k])) kept[i] = kept[i].map(() => false);
+                if (chosen[i].sections.every((s, k) => s.heading === '' || !kept[i][k])) {kept[i] = kept[i].map(() => false);}
                 return true;
             }
             if (kept[i].some(Boolean)) {
@@ -144,7 +144,7 @@ export class SkillPack {
         const parts: string[] = [];
         chosen.forEach((s, i) => {
             const text = render(s, kept[i]);
-            if (!text) return;
+            if (!text) {return;}
             included.push(s.entry.id);
             parts.push(text);
         });
@@ -155,10 +155,10 @@ export class SkillPack {
             text = '';
             for (const s of chosen) {
                 const rules = s.sections.find(sec => sec.heading === RULES_HEADING);
-                if (!rules) continue;
+                if (!rules) {continue;}
                 const piece = `# ${s.name}\n${rules.text}`;
                 const next = text ? `${text}\n\n${piece}` : piece;
-                if (next.length > budget) continue;
+                if (next.length > budget) {continue;}
                 text = next;
                 included.push(s.entry.id);
                 trimmed.add(s.entry.id);
@@ -170,7 +170,7 @@ export class SkillPack {
 
 export function loadSkillPack(dir: string, fsApi: FsLike): SkillPack {
     const manifestPath = `${dir}/manifest.json`;
-    if (!fsApi.exists(manifestPath)) throw new Error(`Skill manifest not found: ${manifestPath}`);
+    if (!fsApi.exists(manifestPath)) {throw new Error(`Skill manifest not found: ${manifestPath}`);}
     let manifest: { skills?: ManifestEntry[] };
     try {
         manifest = JSON.parse(fsApi.read(manifestPath));
@@ -180,7 +180,7 @@ export function loadSkillPack(dir: string, fsApi: FsLike): SkillPack {
     const skills: LoadedSkill[] = [];
     for (const entry of manifest.skills ?? []) {
         const file = `${dir}/${entry.file}`;
-        if (!fsApi.exists(file)) continue;
+        if (!fsApi.exists(file)) {continue;}
         skills.push(parseSkill(entry, fsApi.read(file)));
     }
     return new SkillPack(skills);
@@ -193,14 +193,14 @@ export interface UserSkill {
 
 /** Cut `text` to at most `max` chars at a line boundary without leaving a code fence open. */
 function truncateSafely(text: string, max: number): string {
-    if (text.length <= max) return text;
+    if (text.length <= max) {return text;}
     let cut = text.slice(0, Math.max(0, max));
     const nl = cut.lastIndexOf('\n');
-    if (nl >= 0) cut = cut.slice(0, nl);
+    if (nl >= 0) {cut = cut.slice(0, nl);}
     const lines = cut.split('\n');
     let open = -1;
-    lines.forEach((line, i) => { if (/^\s*```/.test(line)) open = open < 0 ? i : -1; });
-    if (open >= 0) cut = lines.slice(0, open).join('\n');
+    lines.forEach((line, i) => { if (/^\s*```/.test(line)) {open = open < 0 ? i : -1;} });
+    if (open >= 0) {cut = lines.slice(0, open).join('\n');}
     return cut.replace(/\s+$/, '');
 }
 
@@ -214,9 +214,9 @@ export function appendUserSkills(packText: string, userSkills: UserSkill[], allo
     for (const skill of userSkills) {
         const header = `\n\n# ${skill.name} (workspace skill)\n`;
         const room = limit - out.length - header.length;
-        if (room <= 0) break;
+        if (room <= 0) {break;}
         const body = truncateSafely(skill.content.trim(), room);
-        if (!body) continue;
+        if (!body) {continue;}
         out += header + body;
     }
     return out;
