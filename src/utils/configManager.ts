@@ -133,4 +133,28 @@ export class ConfigManager {
         const config = vscode.workspace.getConfiguration('karateDsl');
         return config.get<boolean>('generation.autoTag', true);
     }
+
+    /**
+     * Get the generator config file path (relative to the workspace root)
+     */
+    static getGeneratorConfigFile(): string {
+        const config = vscode.workspace.getConfiguration('karateDsl');
+        return config.get<string>('generation.configFile', '.karate-generator.json');
+    }
+
+    /**
+     * Check if opt-in @exploratory scenario generation is enabled
+     */
+    static isExploratoryEnabled(): boolean {
+        const config = vscode.workspace.getConfiguration('karateDsl');
+        return config.get<boolean>('generation.exploratory', false);
+    }
+
+    /**
+     * Get the generated-test environment config mode
+     */
+    static getConfigMode(): 'standard' | 'env-json' {
+        const config = vscode.workspace.getConfiguration('karateDsl');
+        return config.get<'standard' | 'env-json'>('generation.configMode', 'standard');
+    }
 }

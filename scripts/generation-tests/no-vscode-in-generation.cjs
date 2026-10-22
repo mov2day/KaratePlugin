@@ -16,6 +16,7 @@ module.exports = {
         if (!fs.existsSync(dir)) return;
         const bad = [];
         for (const file of walk(dir)) {
+            if (path.relative(dir, file).split(path.sep)[0] === 'vscode') continue; // the only vscode-aware glue
             const text = fs.readFileSync(file, 'utf8');
             if (/require\(\s*["']vscode["']\s*\)/.test(text) || /require\(\s*["'](?:\.\.?\/)+utils\/logger["']\s*\)/.test(text)) bad.push(path.relative(dir, file));
         }

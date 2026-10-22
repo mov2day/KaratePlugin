@@ -71,7 +71,7 @@ function sanitize(layer: Plain, schema: Plain, path: string, origin: string, war
     const out: Plain = {};
     for (const [key, value] of Object.entries(layer)) {
         const keyPath = path ? `${path}.${key}` : key;
-        if (!(key in schema)) {
+        if (!Object.prototype.hasOwnProperty.call(schema, key)) {
             warnings.push(`${origin}: unknown config key "${keyPath}" ignored`);
             continue;
         }
@@ -127,7 +127,7 @@ function normalizeFile(file: unknown): Plain {
     const rest: Plain = {};
     for (const [k, v] of Object.entries(file)) {
         if (LEGACY_STYLE_KEYS.includes(k)) legacy[k] = v;
-        else rest[k] = v;
+        else Object.defineProperty(rest, k, { value: v, enumerable: true, writable: true, configurable: true });
     }
     if (Object.keys(legacy).length === 0) return rest;
     const style = isPlain(rest.style) ? { ...legacy, ...rest.style } : legacy;

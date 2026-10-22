@@ -740,6 +740,29 @@
           "default": "",
           "description": "Path to workspace-shared .karate-style.json file (relative or absolute)"
         },
+        "karateDsl.generation.configFile": {
+          "type": "string",
+          "default": ".karate-generator.json",
+          "description": "Path (relative to the workspace root) of the generator config file. Values in this file override karateDsl.generation.* settings"
+        },
+        "karateDsl.generation.exploratory": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt in to generating additional @exploratory scenarios (speculative edge cases beyond the spec)"
+        },
+        "karateDsl.generation.configMode": {
+          "type": "string",
+          "default": "standard",
+          "enum": [
+            "standard",
+            "env-json"
+          ],
+          "description": "How generated tests get environment configuration: standard (karate-config.js layout) or env-json (config/<env>.json files)",
+          "enumDescriptions": [
+            "Standard karate-config.js (an existing one is adopted, never overwritten)",
+            "Per-environment JSON files under config/"
+          ]
+        },
         "karateDsl.mcp.enabled": {
           "type": "boolean",
           "default": false,
