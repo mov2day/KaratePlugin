@@ -339,6 +339,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             if (templateId) {
                 const template = await this._templateManager?.getTemplate(templateId);
                 service.setTemplate(template?.content || null);
+            } else {
+                service.setTemplate(null);
             }
 
             const options: GenerationOptions = {
@@ -378,6 +380,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             if (templateId) {
                 const template = await this._templateManager?.getTemplate(templateId);
                 service.setTemplate(template?.content || null);
+            } else {
+                service.setTemplate(null);
             }
 
             const options: GenerationOptions = {
@@ -412,6 +416,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             if (templateId) {
                 const template = await this._templateManager?.getTemplate(templateId);
                 service.setTemplate(template?.content || null);
+            } else {
+                service.setTemplate(null);
             }
 
             const options: GenerationOptions = {

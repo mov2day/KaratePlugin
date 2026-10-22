@@ -18,5 +18,11 @@ module.exports = [
     { name: 'batch-namespacing: duplicate spec names stay unique', run() {
         const r = fn()([{ specName: 'api', featurePaths: [] }, { specName: 'API', featurePaths: [] }]);
         assert.notEqual(r[0].filePrefix.toLowerCase(), r[1].filePrefix.toLowerCase());
+    } },
+    { name: 'batch-namespacing: pet_store, pet-store and PetStore stay distinct after the planner slug', run() {
+        const slug = require('../../out/generation/plan/slug').slug;
+        const r = fn()(['pet_store', 'pet-store', 'PetStore'].map(specName => ({ specName, featurePaths: [] })));
+        const slugs = r.map(x => slug(x.filePrefix));
+        assert.equal(new Set(slugs).size, 3, slugs.join(','));
     } }
 ];

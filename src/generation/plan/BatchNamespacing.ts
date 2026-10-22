@@ -1,5 +1,7 @@
 /** Decides how specs in a directory batch avoid overwriting each other's output. Pure. */
 
+import { slug } from './slug';
+
 export interface BatchSpec {
     specName: string;
     /** Feature paths (relative to the output root) the spec would write. */
@@ -13,7 +15,7 @@ export interface BatchNamespace {
     subfolder?: string;
 }
 
-const safe = (s: string): string => s.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'spec';
+const safe = (s: string): string => slug(s) || 'spec';
 
 export function planBatchNamespacing(specs: BatchSpec[]): BatchNamespace[] {
     const names: string[] = [];
@@ -21,8 +23,8 @@ export function planBatchNamespacing(specs: BatchSpec[]): BatchNamespace[] {
     for (const s of specs) {
         const base = safe(s.specName);
         let name = base;
-        for (let n = 2; used.has(name.toLowerCase()); n++) {name = `${base}-${n}`;}
-        used.add(name.toLowerCase());
+        for (let n = 2; used.has(name); n++) {name = `${base}-${n}`;}
+        used.add(name);
         names.push(name);
     }
     const owners = new Map<string, number>();
