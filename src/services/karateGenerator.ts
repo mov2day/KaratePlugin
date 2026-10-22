@@ -1,4 +1,5 @@
 import { KarateFeature, KarateScenario, KarateStep, OpenAPIEndpoint } from '../types';
+import { renderFeature, renderScenario, renderStep } from '../generation/render/FeatureRenderer';
 import { ConfigManager } from '../utils/configManager';
 import { OpenAPIParser } from './openApiParser';
 import { FeatureStructurer, StructuringOptions, StructuredOutput } from './FeatureStructurer';
@@ -341,45 +342,7 @@ export class KarateGenerator {
             return this.applyTemplate(feature);
         }
 
-        const lines: string[] = [];
-
-        // Feature declaration
-        lines.push(`Feature: ${feature.name}`);
-        if (feature.description) {
-            lines.push(`  ${feature.description}`);
-        }
-        lines.push('');
-
-        // Background section
-        if (feature.background) {
-            lines.push('  Background:');
-            for (const step of feature.background.steps) {
-                lines.push(this.stepToString(step, 4));
-            }
-            lines.push('');
-        }
-
-        // Scenarios
-        for (const scenario of feature.scenarios) {
-            // Tags
-            if (scenario.tags && scenario.tags.length > 0) {
-                lines.push(`  @${scenario.tags.join(' @')}`);
-            }
-
-            // Scenario declaration
-            lines.push(`  Scenario: ${scenario.name}`);
-            if (scenario.description) {
-                lines.push(`    # ${scenario.description}`);
-            }
-
-            // Steps
-            for (const step of scenario.steps) {
-                lines.push(this.stepToString(step, 4));
-            }
-            lines.push('');
-        }
-
-        return lines.join('\n');
+        return renderFeature(feature, { style: this.style });
     }
 
     /**
@@ -398,40 +361,14 @@ export class KarateGenerator {
     }
 
     private scenarioToString(scenario: KarateScenario): string {
-        const lines: string[] = [];
-        if (scenario.tags && scenario.tags.length > 0) {
-            lines.push(`  @${scenario.tags.join(' @')}`);
-        }
-        lines.push(`  Scenario: ${scenario.name}`);
-        if (scenario.description) {
-            lines.push(`    # ${scenario.description}`);
-        }
-        for (const step of scenario.steps) {
-            lines.push(this.stepToString(step, 4));
-        }
-        return lines.join('\n');
+        return renderScenario(scenario, this.style);
     }
 
     /**
-     * Convert a step to string
+     * Convert a step to string. `indent` is a legacy column count; the renderer takes a depth in indentation levels.
      */
     private stepToString(step: KarateStep, indent: number): string {
-        const indentation = this.style.indentation || '  ';
-        const spaces = indentation.repeat(Math.floor(indent / 2)); // Adjust based on base indent
-        let line = `${spaces}${step.keyword} ${step.text}`;
-
-        if (step.docString) {
-            return `${line}\n${spaces}\"\"\"\n${step.docString}\n${spaces}\"\"\"`;
-        }
-
-        if (step.table) {
-            const tableLines = step.table.map(row =>
-                `${spaces}  | ${row.join(' | ')} |`
-            ).join('\n');
-            return `${line}\n${tableLines}`;
-        }
-
-        return line;
+        return renderStep(step, this.style, Math.floor(indent / 2));
     }
 
     /**

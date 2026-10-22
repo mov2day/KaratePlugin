@@ -103,11 +103,11 @@ Feature: Petstore Secured
     Given path '/pets'
     And request
     """
-{
-  "name": "Buddy",
-  "tag": "dog",
-  "status": "available"
-}
+      {
+        "name": "Buddy",
+        "tag": "dog",
+        "status": "available"
+      }
     """
     When method POST
     Then status 201
@@ -187,11 +187,11 @@ Feature: Petstore Secured
     And def petId = 123
     And request
     """
-{
-  "name": "Buddy",
-  "tag": "dog",
-  "status": "available"
-}
+      {
+        "name": "Buddy",
+        "tag": "dog",
+        "status": "available"
+      }
     """
     When method PUT
     Then status 200
