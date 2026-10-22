@@ -497,53 +497,27 @@ export async function activate(context: vscode.ExtensionContext) {
                     title: "Generating Karate tests...",
                     cancellable: false
                 }, async (progress) => {
-                    progress.report({ increment: 20, message: "Parsing OpenAPI..." });
+                    progress.report({ increment: 10, message: "Parsing OpenAPI..." });
 
-                    // Import services directly
                     const { OpenAPIParser } = await import('./services/openApiParser');
-                    const { KarateGenerator } = await import('./services/karateGenerator');
                     const { FileUtils } = await import('./utils/fileUtils');
-                    const { SharedStyleService } = await import('./services/SharedStyleService');
+                    const { runGenerationForModel, toIncrementalProgress } = await import('./generation/vscode/runGeneration');
+                    const { reportSummary } = await import('./generation/vscode/reportSummary');
 
-                    const parser = new OpenAPIParser();
-                    const generator = new KarateGenerator();
-                    const sharedStyle = SharedStyleService.loadSharedStyle();
-                    if (sharedStyle) {
-                        generator.setStyle(sharedStyle);
+                    const workspaceRoot = FileUtils.getWorkspaceRoot();
+                    if (!workspaceRoot) {
+                        throw new Error('No workspace folder is open');
                     }
+                    const model = await new OpenAPIParser().parseModel(uri.fsPath);
+                    const useAi = vscode.workspace.getConfiguration('karateDsl').get<boolean>('useCopilot', false);
 
-                    // Parse spec
-                    const endpoints = await parser.parseSpec(uri.fsPath);
+                    const run = await runGenerationForModel({
+                        context, workspaceRoot, model, sourceRef: path.basename(uri.fsPath), mode: 'openapi', useAi,
+                        progress: toIncrementalProgress(progress, { from: 10, to: 100 })
+                    });
 
-                    progress.report({ increment: 50, message: "Generating tests..." });
-
-                    // Generate tests
-                    const specFileName = path.basename(uri.fsPath, path.extname(uri.fsPath));
-                    const feature = generator.generateFromOpenAPI(endpoints, specFileName);
-                    feature.background = generator.generateBackground();
-                    const featureContent = generator.featureToString(feature);
-
-                    // Save file
-                    const outputPath = FileUtils.resolveOutputPath();
-                    const outputFile = path.join(outputPath, `${specFileName}.feature`);
-                    const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-                    FileUtils.writeFile(uniqueFile, featureContent);
-
-                    progress.report({ increment: 100 });
-
-                    logger.info(`Direct generation: ${uniqueFile}`);
-
-                    // Show success with option to open file
-                    const action = await vscode.window.showInformationMessage(
-                        `✅ Generated ${endpoints.length} test scenarios`,
-                        'Open File',
-                        'Dismiss'
-                    );
-
-                    if (action === 'Open File') {
-                        const doc = await vscode.workspace.openTextDocument(uniqueFile);
-                        await vscode.window.showTextDocument(doc);
-                    }
+                    logger.info(`Direct generation: ${run.createdPaths.join(', ') || '(none)'}`);
+                    void reportSummary(run.summary, `OpenAPI: ${path.basename(uri.fsPath)}`, run.createdPaths[0]);
 
                     // Try to update history (if webview is ready)
                     try {
@@ -715,6 +689,34 @@ export async function activate(context: vscode.ExtensionContext) {
                     progress.report({ increment: 20 });
                     const diff = await diffService.compareSpecs(oldFile[0].fsPath, newFile[0].fsPath);
 
+                    // Scenarios for added/modified endpoints come from the generation pipeline planner (scenarios only,
+                    // no Feature/Background header, so they merge into existing files). Endpoints the planner cannot
+                    // match fall back to the legacy generator.
+                    const { renderScenariosForOperations, operationSourceRef } = await import('./generation/plan/ScenarioSnippets');
+                    const { GeneratorConfigLoader } = await import('./generation/vscode/GeneratorConfigLoader');
+                    const { OpenAPIParser } = await import('./services/openApiParser');
+                    let snippetModel: Awaited<ReturnType<InstanceType<typeof OpenAPIParser>['parseModel']>> | undefined;
+                    let snippetConfig: Awaited<ReturnType<typeof GeneratorConfigLoader.load>>['config'] | undefined;
+                    try {
+                        const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                        snippetModel = await new OpenAPIParser().parseModel(newFile[0].fsPath);
+                        snippetConfig = wsRoot ? (await GeneratorConfigLoader.load(wsRoot)).config : undefined;
+                        if (!snippetConfig) {
+                            const { DEFAULT_GENERATOR_CONFIG } = await import('./generation/config/GeneratorConfig');
+                            snippetConfig = DEFAULT_GENERATOR_CONFIG;
+                        }
+                    } catch (error) {
+                        logger.warn('Spec diff: could not build generation model; using legacy generator', error as Error);
+                    }
+                    const scenariosFor = (endpoint: any): string => {
+                        if (snippetModel && snippetConfig) {
+                            const text = renderScenariosForOperations(snippetModel, [operationSourceRef(endpoint.method, endpoint.path)], snippetConfig);
+                            if (text) { return text; }
+                        }
+                        logger.info(`Spec diff: no pipeline operation for ${endpoint.method} ${endpoint.path}; using legacy generator`);
+                        return generator.featureToString(generator.generateFromOpenAPI([endpoint], 'temp'));
+                    };
+
                     progress.report({ increment: 40 });
                     const featureFiles = await diffService.findFeatureFiles();
 
@@ -735,10 +737,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
                     for (const endpoint of diff.added) {
                         const target = diffService.matchEndpointToFeatureFile(endpoint, featureFiles);
-                        const feature = generator.generateFromOpenAPI([endpoint], 'temp');
-                        const content = generator.featureToString(feature);
-
                         if (target) {
+                            const content = scenariosFor(endpoint);
                             await diffService.updateFeatureFile(target, endpoint, content);
                             added++;
                         }
@@ -747,8 +747,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     for (const endpoint of diff.modified) {
                         const target = diffService.matchEndpointToFeatureFile(endpoint, featureFiles);
                         if (target) {
-                            const feature = generator.generateFromOpenAPI([endpoint], 'temp');
-                            const content = generator.featureToString(feature);
+                            const content = scenariosFor(endpoint);
                             await diffService.updateFeatureFile(target, endpoint, content);
                             updated++;
                         }
@@ -1475,7 +1474,7 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
                 }
 
                 const { generateFromDirectory } = await import('./commands/generateFromDirectory');
-                await generateFromDirectory(folderUri);
+                await generateFromDirectory(folderUri, context);
             } catch (error) {
                 logger.error('Directory generation failed', error as Error);
                 vscode.window.showErrorMessage(`Failed to generate from directory: ${error}`);
