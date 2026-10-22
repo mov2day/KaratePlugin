@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { logger } from '../utils/logger';
+import { runGate } from '../generation/quality/QualityGate';
 
 /**
  * Validates generated Karate tests for executability
@@ -12,52 +13,7 @@ export class KarateValidator {
      * Returns array of validation errors (empty if valid)
      */
     static validateFeatureContent(content: string): string[] {
-        const errors: string[] = [];
-        const lines = content.split('\n');
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
-            const lineNum = i + 1;
-
-            // Check for invalid URL + path combination
-            if (line.match(/url\s+\w+\s*\+\s*['"`]/)) {
-                errors.push(`Line ${lineNum}: Invalid URL syntax - don't combine url and path`);
-            }
-
-            // Check for invalid path parameter syntax
-            if (line.match(/path\s+['"`]\w+['"`]\s*=/)) {
-                errors.push(`Line ${lineNum}: Invalid path parameter - use 'def varName = value' instead`);
-            }
-
-            // Check for invalid matcher #present
-            if (line.includes('#present')) {
-                errors.push(`Line ${lineNum}: Invalid matcher '#present' - use '#notnull' instead`);
-            }
-
-            // Check for lowercase HTTP methods (warning only)
-            if (line.match(/When\s+method\s+(get|post|put|delete|patch)/)) {
-                errors.push(`Line ${lineNum}: HTTP method should be uppercase (GET, POST, etc.)`);
-            }
-
-            // Check for missing url in Background
-            if (line.startsWith('Background:')) {
-                let hasUrl = false;
-                for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
-                    if (lines[j].includes('* url ') || lines[j].includes('Given url')) {
-                        hasUrl = true;
-                        break;
-                    }
-                    if (lines[j].trim().startsWith('Scenario')) {
-                        break;
-                    }
-                }
-                if (!hasUrl) {
-                    errors.push(`Line ${lineNum}: Background missing 'url' step`);
-                }
-            }
-        }
-
-        return errors;
+        return runGate(content).findings.map(f => `Line ${f.line}: [${f.ruleId}] ${f.message}`);
     }
 
     /**
@@ -104,10 +60,6 @@ export class KarateValidator {
             return false;
         }
 
-        const criticalErrors = this.validateFeatureContent(content).filter(err =>
-            err.includes('Invalid') || err.includes('missing')
-        );
-
-        return criticalErrors.length === 0;
+        return runGate(content).ok;
     }
 }
