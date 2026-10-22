@@ -17,7 +17,7 @@ export interface LoaderSettings {
 export function mapSettingsToConfig(s: LoaderSettings): Partial<GeneratorConfig> {
     const out: Record<string, Record<string, unknown>> = {};
     const put = (section: string, key: string, value: unknown): void => {
-        if (value === undefined) return;
+        if (value === undefined) {return;}
         out[section] = { ...(out[section] ?? {}), [key]: value };
     };
     put('layout', 'strategy', s.structuringStrategy);
@@ -27,6 +27,6 @@ export function mapSettingsToConfig(s: LoaderSettings): Partial<GeneratorConfig>
     put('scenarios', 'exploratory', s.exploratory);
     put('data', 'smart', s.smartTestData);
     put('config', 'mode', s.configMode);
-    if (s.style !== undefined) out.style = s.style as Record<string, unknown>;
+    if (s.style !== undefined) {out.style = s.style as Record<string, unknown>;}
     return out as unknown as Partial<GeneratorConfig>;
 }
