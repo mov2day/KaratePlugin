@@ -18,6 +18,7 @@ export interface ParamModel {
     name: string;
     required: boolean;
     schema: JsonSchema;
+    example?: unknown;
 }
 
 export interface BodyModel {
@@ -30,6 +31,7 @@ export interface ResponseModel {
     status: string;
     schema?: JsonSchema;
     contentType?: string;
+    example?: unknown;
 }
 
 export interface OperationModel {

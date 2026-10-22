@@ -23,10 +23,28 @@ const isJsonType = (ct: string): boolean => {
     const base = ct.split(';')[0].trim().toLowerCase();
     return base === 'application/json' || base.endsWith('+json');
 };
+// eslint-disable-next-line @typescript-eslint/naming-convention
 const truncated = (): JsonSchema => ({ type: 'object', 'x-truncated': true });
+const MAX_NODES = 2000;
+
+const firstExample = (node: any): unknown => {
+    if (!isObject(node)) {
+        return undefined;
+    }
+    if (node.example !== undefined) {
+        return node.example;
+    }
+    if (isObject(node.examples)) {
+        const first: any = Object.values(node.examples)[0];
+        return isObject(first) ? first.value : undefined;
+    }
+    return undefined;
+};
 
 interface Ctx {
     root: any;
+    nodes: number;
+    memo: Map<object, { schema: JsonSchema; size: number }>;
 }
 
 function lookupRef(ref: string, ctx: Ctx): any {
@@ -35,7 +53,12 @@ function lookupRef(ref: string, ctx: Ctx): any {
     }
     let cur: any = ctx.root;
     for (const raw of ref.slice(2).split('/')) {
-        const key = decodeURIComponent(raw).replace(/~1/g, '/').replace(/~0/g, '~');
+        let key: string;
+        try {
+            key = decodeURIComponent(raw).replace(/~1/g, '/').replace(/~0/g, '~');
+        } catch {
+            return undefined;
+        }
         if (!isObject(cur) && !Array.isArray(cur)) {
             return undefined;
         }
@@ -67,13 +90,29 @@ function resolveSchema(node: any, ctx: Ctx, refStack: string[], objStack: any[],
         }
         const target = lookupRef(ref, ctx);
         if (!isObject(target)) {
-            return {};
+            return truncated();
         }
         return resolveSchema(target, ctx, [...refStack, ref], objStack, depth);
     }
     if (objStack.includes(node)) {
         return truncated();
     }
+    // The budget counts the EXPANDED size, so a shared child reused many times still counts every time.
+    const cached = ctx.memo.get(node);
+    if (cached) {
+        ctx.nodes += cached.size;
+        return ctx.nodes > MAX_NODES ? truncated() : cached.schema;
+    }
+    const start = ctx.nodes;
+    if (++ctx.nodes > MAX_NODES) {
+        return truncated();
+    }
+    const result = resolveNode(node, ctx, refStack, objStack, depth);
+    ctx.memo.set(node, { schema: result, size: ctx.nodes - start });
+    return result;
+}
+
+function resolveNode(node: any, ctx: Ctx, refStack: string[], objStack: any[], depth: number): JsonSchema {
     const stack = [...objStack, node];
     const sub = (s: any) => resolveSchema(s, ctx, refStack, stack, depth + 1);
 
@@ -93,6 +132,18 @@ function resolveSchema(node: any, ctx: Ctx, refStack: string[], objStack: any[],
         }
     }
 
+    if (Array.isArray(result.type)) {
+        const types: string[] = result.type;
+        const nonNull = types.find(t => t !== 'null');
+        if (types.includes('null')) {
+            result.nullable = true;
+        }
+        if (nonNull) {
+            result.type = nonNull;
+        } else {
+            delete result.type;
+        }
+    }
     if (Array.isArray(allOf) && allOf.length > 0) {
         result = mergeAllOf([...allOf.map(sub), result]);
     }
@@ -103,6 +154,11 @@ function resolveSchema(node: any, ctx: Ctx, refStack: string[], objStack: any[],
         result['x-note'] = `${choice}: first branch used`;
     }
     return result;
+}
+
+function resolveTop(node: any, ctx: Ctx): JsonSchema {
+    ctx.nodes = 0;
+    return resolveSchema(node, ctx, [], [], 0);
 }
 
 function mergeAllOf(parts: JsonSchema[]): JsonSchema {
@@ -136,7 +192,7 @@ function mergeAllOf(parts: JsonSchema[]): JsonSchema {
 
 function paramSchema(param: any, ctx: Ctx): JsonSchema {
     if (isObject(param.schema)) {
-        return resolveSchema(param.schema, ctx, [], [], 0);
+        return resolveTop(param.schema, ctx);
     }
     // OAS2 inline parameter typing
     const inline: JsonSchema = {};
@@ -205,6 +261,9 @@ function buildResponses(operation: any, api: any, ctx: Ctx): ResponseModel[] {
     const out: ResponseModel[] = [];
     const produces: string[] = operation.produces ?? api.produces ?? [];
     for (const [status, rawResp] of Object.entries(operation.responses ?? {})) {
+        if (status.startsWith('x-')) {
+            continue;
+        }
         const resp = follow(rawResp, ctx);
         const model: ResponseModel = { status };
         if (isObject(resp)) {
@@ -212,13 +271,20 @@ function buildResponses(operation: any, api: any, ctx: Ctx): ResponseModel[] {
                 const ct = Object.keys(resp.content).find(isJsonType);
                 if (ct) {
                     model.contentType = ct;
+                    const rex = firstExample(resp.content[ct]);
+                    if (rex !== undefined) {
+                        model.example = rex;
+                    }
                     if (isObject(resp.content[ct]?.schema)) {
-                        model.schema = resolveSchema(resp.content[ct].schema, ctx, [], [], 0);
+                        model.schema = resolveTop(resp.content[ct].schema, ctx);
                     }
                 }
             } else if (isObject(resp.schema)) {
                 model.contentType = produces.find(isJsonType) ?? 'application/json';
-                model.schema = resolveSchema(resp.schema, ctx, [], [], 0);
+                model.schema = resolveTop(resp.schema, ctx);
+                if (isObject(resp.examples) && resp.examples[model.contentType] !== undefined) {
+                    model.example = resp.examples[model.contentType];
+                }
             }
         }
         out.push(model);
@@ -235,7 +301,7 @@ function unsupportedBody(types: string[]): string {
 
 export function buildOpenApiModel(api: any, sourceName: string): GenerationModel {
     const doc = isObject(api) ? api : {};
-    const ctx: Ctx = { root: doc };
+    const ctx: Ctx = { root: doc, nodes: 0, memo: new Map() };
     const model: GenerationModel = {
         source: 'openapi',
         name: sourceName,
@@ -249,6 +315,7 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
     }
     const globalSecurity = Array.isArray(doc.security) ? securityNames(doc.security) : undefined;
 
+    const usedIds = new Set<string>();
     for (const [path, rawItem] of Object.entries(doc.paths ?? {})) {
         const item = follow(rawItem, ctx);
         if (!isObject(item)) {
@@ -265,7 +332,7 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
             const merged = new Map<string, any>();
             let oas2Body: any;
             const oas2Form: any[] = [];
-            for (const raw of [...(item.parameters ?? []), ...(operation.parameters ?? [])]) {
+            for (const raw of [...(Array.isArray(item.parameters) ? item.parameters : []), ...(Array.isArray(operation.parameters) ? operation.parameters : [])]) {
                 const p = follow(raw, ctx);
                 if (!isObject(p) || !p.name || !p.in) {
                     continue;
@@ -285,6 +352,10 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
                     continue;
                 }
                 const pm: ParamModel = { name: p.name, required: p.in === 'path' ? true : p.required === true, schema: paramSchema(p, ctx) };
+                const pex = firstExample(p);
+                if (pex !== undefined) {
+                    pm.example = pex;
+                }
                 if (p.in === 'path') {
                     pathParams.push(pm);
                 } else if (p.in === 'query') {
@@ -304,7 +375,7 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
                     const media = rb.content[ct] ?? {};
                     body = { contentType: ct };
                     if (isObject(media.schema)) {
-                        body.schema = resolveSchema(media.schema, ctx, [], [], 0);
+                        body.schema = resolveTop(media.schema, ctx);
                     }
                     const example = media.example ?? (isObject(media.examples) ? (Object.values(media.examples)[0] as any)?.value : undefined);
                     if (example !== undefined) {
@@ -319,7 +390,10 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
                 if (ct) {
                     body = { contentType: ct };
                     if (isObject(oas2Body.schema)) {
-                        body.schema = resolveSchema(oas2Body.schema, ctx, [], [], 0);
+                        body.schema = resolveTop(oas2Body.schema, ctx);
+                    }
+                    if (oas2Body['x-example'] !== undefined) {
+                        body.example = oas2Body['x-example'];
                     }
                 } else {
                     model.unsupported.push({ sourceRef, reason: unsupportedBody(consumes) });
@@ -332,15 +406,24 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
 
             let security: OperationModel['security'];
             if (Array.isArray(operation.security)) {
-                security = operation.security.length === 0 ? 'none' : securityNames(operation.security);
+                // Optional auth ({} alongside named schemes) keeps the names; only an all-empty list means 'none'.
+                const names = securityNames(operation.security);
+                security = names.length === 0 ? 'none' : names;
             } else if (globalSecurity !== undefined) {
                 security = globalSecurity.length === 0 ? 'none' : globalSecurity;
             } else {
                 security = 'inherit';
             }
 
+            const baseId: string = operation.operationId || slug(method, path);
+            let id = baseId;
+            for (let n = 2; usedIds.has(id); n++) {
+                id = `${baseId}_${n}`;
+            }
+            usedIds.add(id);
+
             const op: OperationModel = {
-                id: operation.operationId || slug(method, path),
+                id,
                 method: method.toUpperCase(),
                 path,
                 tags: Array.isArray(operation.tags) ? operation.tags : [],

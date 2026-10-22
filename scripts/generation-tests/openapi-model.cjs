@@ -264,5 +264,83 @@ module.exports = [
             assert.deepStrictEqual([...op(m, 'updatePet').responses[0].schema.required].sort(), ['id', 'name', 'ownerName']);
             assert.ok(m.unsupported.length >= 1);
         }
-    }
+    },
+    {
+        name: 'openapi-model: shared DAG does not explode',
+        run() {
+            let child = { type: 'object', properties: { leaf: { type: 'string' } } };
+            for (let d = 0; d < 9; d++) {
+                const props = {};
+                for (let k = 0; k < 6; k++) props['p' + k] = child;
+                child = { type: 'object', properties: props };
+            }
+            const api = { openapi: '3.0.0', paths: { '/d': { get: { operationId: 'd', responses: { '200': { description: 'x', content: { 'application/json': { schema: child } } } } } } } };
+            const t = Date.now();
+            const m = build(api);
+            assert.ok(Date.now() - t < 1000, 'too slow');
+            assert.ok(JSON.stringify(m).length < 5 * 1024 * 1024);
+        }
+    },
+    {
+        name: 'openapi-model: node budget exceeded yields truncation marker',
+        run() {
+            const props = {};
+            for (let i = 0; i < 3000; i++) props['f' + i] = { type: 'object', properties: { a: { type: 'string' } } };
+            const api = { openapi: '3.0.0', paths: { '/b': { get: { operationId: 'b', responses: { '200': { description: 'x', content: { 'application/json': { schema: { type: 'object', properties: props } } } } } } } } };
+            const s = op(build(api), 'b').responses[0].schema;
+            assert.ok(JSON.stringify(s).includes('"x-truncated":true'));
+        }
+    },
+    {
+        name: 'openapi-model: examples captured (OAS3 param/response, OAS2 body/response)',
+        run() {
+            const m3 = build({
+                openapi: '3.0.0',
+                paths: { '/e/{id}': { get: { operationId: 'e', parameters: [
+                    { name: 'id', in: 'path', required: true, schema: { type: 'integer' }, example: 42 },
+                    { name: 'q', in: 'query', schema: { type: 'string' }, examples: { a: { value: 'hello' } } }
+                ], responses: {
+                    '200': { description: 'x', content: { 'application/json': { schema: { type: 'object' }, example: { ok: true } } } },
+                    '201': { description: 'x', content: { 'application/json': { schema: { type: 'object' }, examples: { a: { value: { n: 1 } } } } } },
+                    'x-ext': { foo: 1 }
+                } } } }
+            });
+            const e = op(m3, 'e');
+            assert.strictEqual(e.pathParams[0].example, 42);
+            assert.strictEqual(e.queryParams[0].example, 'hello');
+            assert.deepStrictEqual(e.responses[0].example, { ok: true });
+            assert.deepStrictEqual(e.responses[1].example, { n: 1 });
+            assert.strictEqual(e.responses.length, 2);
+            const m2 = build({
+                swagger: '2.0',
+                paths: { '/x': { post: { operationId: 'x',
+                    parameters: [{ name: 'b', in: 'body', 'x-example': { a: 1 }, schema: { type: 'object' } }],
+                    responses: { '200': { description: 'x', schema: { type: 'object' }, examples: { 'application/json': { r: 2 } } } } } } }
+            });
+            assert.deepStrictEqual(op(m2, 'x').body.example, { a: 1 });
+            assert.deepStrictEqual(op(m2, 'x').responses[0].example, { r: 2 });
+        }
+    },
+    {
+        name: 'openapi-model: optional security, duplicate ids, 3.1 type arrays, bad ref',
+        run() {
+            const m = build({
+                openapi: '3.1.0',
+                components: { securitySchemes: { b: { type: 'http', scheme: 'bearer' } } },
+                paths: {
+                    '/a-b': { get: { security: [{}], responses: {} } },
+                    '/a/b': { get: { security: [{}, { b: [] }], responses: { '200': { description: 'x', content: { 'application/json': { schema: {
+                        type: 'object', properties: { n: { type: ['string', 'null'] }, bad: { $ref: '#/components/%E0%A4%A' } } } } } } } } },
+                    '/a_b': { get: { responses: {} } }
+                }
+            });
+            assert.deepStrictEqual(m.operations.map(o => o.id), ['get_a_b', 'get_a_b_2', 'get_a_b_3']);
+            assert.strictEqual(m.operations[0].security, 'none');
+            assert.deepStrictEqual(m.operations[1].security, ['b']);
+            const s = m.operations[1].responses[0].schema;
+            assert.strictEqual(s.properties.n.type, 'string');
+            assert.strictEqual(s.properties.n.nullable, true);
+            assert.strictEqual(s.properties.bad['x-truncated'], true);
+        }
+    },
 ];
