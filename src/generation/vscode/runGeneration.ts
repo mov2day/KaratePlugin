@@ -132,3 +132,16 @@ export async function runGenerationForModel(i: RunGenerationInput): Promise<RunG
     }
     return { ...result, createdPaths, firstContent, summary: formatSummary(result) };
 }
+
+/** Adapt a `withProgress` reporter (incremental) to the pipeline's absolute 0-100 callback, optionally scaled into a slice. */
+export function toIncrementalProgress(
+    progress: vscode.Progress<{ message?: string; increment?: number }>,
+    slice: { from: number; to: number } = { from: 0, to: 100 }
+): (msg: string, pct: number) => void {
+    let last = 0;
+    return (message, pct) => {
+        const scaled = slice.from + (Math.max(0, Math.min(100, pct)) / 100) * (slice.to - slice.from);
+        progress.report({ message, increment: Math.max(0, scaled - last) });
+        last = Math.max(last, scaled);
+    };
+}
