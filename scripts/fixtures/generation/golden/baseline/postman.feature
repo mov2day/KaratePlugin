@@ -11,6 +11,7 @@ Feature: Pet Store Collection
     And header Accept = 'application/json'
     When method GET
     Then status 200
+    And match response == '#[]'
   Scenario: Create pet
     Given url 'http://localhost:8080'
     And path 'api', 'v1', 'pets'
@@ -21,3 +22,4 @@ Feature: Pet Store Collection
 }
     When method POST
     Then status 201
+    And match response.name == 'Buddy'
