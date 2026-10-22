@@ -6,13 +6,12 @@ Follow the project's existing config; never overwrite it. Keep config light.
 
 ## Config files
 - `karate-config.js` is required and runs before every scenario; `karate-config-<env>.js` loads after it when `karate.env` is set (`-e staging` or `-Dkarate.env=staging`).
-- Files live on the classpath (default `src/test/java`).
-- Config only returns variables and calls `karate.configure`. No auth calls, no big file reads: put token setup in a `callonce` helper (see karate-reuse-isolation).
+- Keep config light: return variables, no big file reads. Suite-wide one-time token setup may use `karate.callSingle`; otherwise use `callonce` in the Background. Generated scaffolding uses `callonce` plus declarative `configure auth` in `common/auth.feature`.
 ```javascript
 function fn() {
   var env = karate.env || 'dev';
   var config = { env: env, baseUrl: karate.sysenv('API_BASE_URL', 'http://localhost:8080') };
-  karate.configure('logging', { report: 'debug', console: 'info' });
+  karate.configure('logging', { report: 'debug' });
   return config;
 }
 ```
@@ -32,7 +31,7 @@ function fn() {
 * configure auth = { type: 'bearer', token: '#(token)' }
 * configure auth = { type: 'oauth2', tokenUrl: '#(tokenUrl)', clientId: '#(id)', clientSecret: '#(secret)' }
 ```
-API keys: `* header X-API-Key = apiKey` or `* param api_key = apiKey`.
+API keys: `* header X-API-Key = apiKey`.
 
 ## Logging
 `configure logging` masks secrets in reports and console:
@@ -43,7 +42,6 @@ API keys: `* header X-API-Key = apiKey` or `* param api_key = apiKey`.
 ## Adopting an existing project
 - Reuse the URL variable already in its config (often `baseUrl`); read the config before naming one.
 - A new project gets a base `karate-config.js` plus one `karate-config-<env>.js` per environment, each returning `baseUrl`.
-- `src/test/java` holds config, features and `classpath:` data together.
 
 ## Rules
 - V2-CFG-001: no literal `http(s)://` in `url`; use a config variable.

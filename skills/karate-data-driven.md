@@ -45,7 +45,7 @@ Scenario Outline: Create post
 * def results = call read('create-user.feature') users
 * match results == '#[2]'
 ```
-Strings in `table` cells are quoted. `call` with an array runs the feature once per element; its keys become variables. Read CSV with `read('classpath:test-data/users.csv')`. Generate rows with `karate.repeat(5, function(i){ return { id: i + 1 } })`.
+Strings in `table` cells are quoted. `call` with an array runs the feature once per element; its keys become variables. Read CSV with `read('classpath:test-data/users.csv')`.
 
 ## Unique test data
 Parallel scenarios must not collide, so generate values.
@@ -64,7 +64,6 @@ Loaded file data is cached and shared. Clone before changing it.
 * def user = karate.copy(base)
 * set user.name = 'Jane'
 ```
-Name data files by content (`valid-admin.json`), organise them by domain, read them with `classpath:`.
 
 ## Rules
 - V2-GHERKIN-001: Outline steps stay above `Examples:`; nothing follows the table.

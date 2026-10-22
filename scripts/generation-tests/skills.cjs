@@ -126,7 +126,7 @@ module.exports = [
             assert.ok(r.included.includes('karate-source-postman'));
             assert.ok(!r.included.includes('karate-source-graphql'));
             assert.ok(!r.included.includes('karate-source-openapi'));
-            assert.ok(r.text.length <= 12000, `len ${r.text.length}`);
+            assert.ok(r.text.length <= 16000, `len ${r.text.length}`);
         }
     },
     {
@@ -153,7 +153,7 @@ module.exports = [
             const a = p.select(q);
             const b = p.select(q);
             assert.deepEqual(a, b);
-            assert.ok(a.text.length <= 12000);
+            assert.ok(a.text.length <= 16000);
             assert.equal(a.included[0], 'karate-v2-core');
             const prio = Object.fromEntries(manifest().skills.map(s => [s.id, s.priority]));
             const order = a.included.map(id => prio[id]);
@@ -215,20 +215,65 @@ module.exports = [
         }
     },
     {
-        name: 'skills: appendUserSkills never displaces or alters pack text',
+        name: 'skills: each skill file stays within its own manifest budgetChars',
         run() {
-            const { appendUserSkills } = pack();
-            const packText = 'P'.repeat(9000);
+            for (const e of manifest().skills) {
+                const n = skillText(e).length;
+                assert.ok(n <= e.budgetChars, `${e.file} is ${n} > budgetChars ${e.budgetChars}`);
+                assert.ok(e.budgetChars - n < 1000, `${e.file}: budgetChars ${e.budgetChars} is not a real guard for ${n}`);
+            }
+        }
+    },
+    {
+        name: 'skills: generate sets include every skill untrimmed at the default budget',
+        run() {
+            const p = pack().loadSkillPack(SKILLS_DIR, fsApi);
+            for (const [mode, task, src] of [['openapi', 'generate-openapi', 'karate-source-openapi'], ['postman', 'generate-postman', 'karate-source-postman'], ['graphql', 'generate-graphql', 'karate-source-graphql']]) {
+                const r = p.select({ mode, task });
+                assert.deepEqual(r.trimmed, [], `${mode}: ${r.trimmed}`);
+                for (const id of ['karate-v2-core', src, 'karate-assertions-schemas', 'karate-project-config', 'karate-reuse-isolation', 'karate-data-driven']) {
+                    assert.ok(r.included.includes(id), `${mode} missing ${id}`);
+                }
+                assert.ok(r.text.length <= pack().DEFAULT_TOTAL_BUDGET);
+            }
+        }
+    },
+    {
+        name: 'skills: enhance sets trim lowest priority first and keep core and checklist rules',
+        run() {
+            const p = pack().loadSkillPack(SKILLS_DIR, fsApi);
+            const r = p.select({ mode: 'openapi', task: 'enhance-feature' }, { budgetChars: 11000 });
+            assert.ok(r.included.includes('karate-v2-core') && r.included.includes('karate-review-checklist'));
+            assert.ok(!r.trimmed.includes('karate-v2-core') && !r.trimmed.includes('karate-review-checklist'));
+            assert.ok(/V2-TAG-001/.test(r.text), 'checklist rules intact');
+        }
+    },
+    {
+        name: 'skills: a tiny budget falls back to the highest-priority Rules sections, never empty',
+        run() {
+            const p = pack().loadSkillPack(SKILLS_DIR, fsApi);
+            const r = p.select({ mode: 'openapi', task: 'generate-openapi' }, { budgetChars: 1500 });
+            assert.ok(r.text.length > 0 && r.text.length <= 1500, `len ${r.text.length}`);
+            assert.ok(r.included.includes('karate-v2-core'));
+            assert.match(r.text, /V2-GHERKIN-001/);
+            assert.equal(fences(r.text) % 2, 0);
+        }
+    },
+    {
+        name: 'skills: appendUserSkills adds at most the allowance and never alters pack text',
+        run() {
+            const { appendUserSkills, USER_SKILL_ALLOWANCE } = pack();
+            assert.equal(USER_SKILL_ALLOWANCE, 2000);
+            const packText = 'P'.repeat(16000);
             const user = [{ name: 'mine', content: 'U'.repeat(5000) }, { name: 'second', content: 'V'.repeat(100) }];
-            const out = appendUserSkills(packText, user, 12000);
+            const out = appendUserSkills(packText, user, 2000);
             assert.ok(out.startsWith(packText));
-            assert.ok(out.length <= 12000, `len ${out.length}`);
+            assert.ok(out.length - packText.length <= 2000, `added ${out.length - packText.length}`);
             assert.ok(out.includes('mine'));
-            const full = appendUserSkills('P'.repeat(12000), user, 12000);
-            assert.equal(full, 'P'.repeat(12000));
-            const over = appendUserSkills('P'.repeat(13000), user, 12000);
-            assert.equal(over, 'P'.repeat(13000), 'pack text is never truncated');
+            const small = appendUserSkills('abc', user);
+            assert.ok(small.length - 3 <= 2000);
             assert.equal(appendUserSkills('abc', [], 100), 'abc');
+            assert.equal(appendUserSkills('abc', user, 0), 'abc');
         }
     },
     {
@@ -236,10 +281,10 @@ module.exports = [
         run() {
             const { appendUserSkills } = pack();
             const content = 'intro\n\n```gherkin\n' + '* def a = 1\n'.repeat(200) + '```\n\nafter\n';
-            for (let budget = 120; budget < 2600; budget += 97) {
-                const out = appendUserSkills('PACK', [{ name: 'u', content }], budget);
-                assert.ok(out.length <= Math.max(budget, 4), `${budget}: ${out.length}`);
-                assert.equal(fences(out) % 2, 0, `budget ${budget}`);
+            for (let allowance = 20; allowance < 2600; allowance += 97) {
+                const out = appendUserSkills('PACK', [{ name: 'u', content }], allowance);
+                assert.ok(out.length - 4 <= allowance, `${allowance}: ${out.length}`);
+                assert.equal(fences(out) % 2, 0, `allowance ${allowance}`);
                 assert.ok(out.startsWith('PACK'));
             }
         }

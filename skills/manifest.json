@@ -10,7 +10,7 @@
         "tasks": "*"
       },
       "priority": 10,
-      "budgetChars": 4800,
+      "budgetChars": 3000,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-API-001",
@@ -31,7 +31,7 @@
         ]
       },
       "priority": 15,
-      "budgetChars": 4800,
+      "budgetChars": 3000,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-ASSERT-001",
@@ -60,7 +60,7 @@
         ]
       },
       "priority": 20,
-      "budgetChars": 4800,
+      "budgetChars": 3000,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-ASSERT-001",
@@ -88,7 +88,7 @@
         ]
       },
       "priority": 20,
-      "budgetChars": 4800,
+      "budgetChars": 3000,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-CFG-001",
@@ -116,7 +116,7 @@
         ]
       },
       "priority": 20,
-      "budgetChars": 4800,
+      "budgetChars": 2500,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-DUP-001",
@@ -144,7 +144,7 @@
         ]
       },
       "priority": 20,
-      "budgetChars": 4800,
+      "budgetChars": 3000,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-ASSERT-001",
@@ -173,7 +173,7 @@
         ]
       },
       "priority": 20,
-      "budgetChars": 4800,
+      "budgetChars": 2500,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-ASSERT-001",
@@ -200,7 +200,7 @@
         ]
       },
       "priority": 30,
-      "budgetChars": 4800,
+      "budgetChars": 3000,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-ASSERT-001",
@@ -226,7 +226,7 @@
         ]
       },
       "priority": 40,
-      "budgetChars": 4800,
+      "budgetChars": 3000,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-CFG-001",
@@ -255,7 +255,7 @@
         ]
       },
       "priority": 45,
-      "budgetChars": 4800,
+      "budgetChars": 3000,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-LOCK-001",
@@ -280,7 +280,7 @@
         ]
       },
       "priority": 50,
-      "budgetChars": 4800,
+      "budgetChars": 2500,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-DUP-001",
@@ -299,7 +299,7 @@
         ]
       },
       "priority": 35,
-      "budgetChars": 4800,
+      "budgetChars": 2500,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-API-001",

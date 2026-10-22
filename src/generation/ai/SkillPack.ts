@@ -30,7 +30,9 @@ export interface SelectOptions {
     budgetChars?: number;
 }
 
-export const DEFAULT_TOTAL_BUDGET = 12_000;
+export const DEFAULT_TOTAL_BUDGET = 16_000;
+/** Extra characters the user's own workspace skills may add after the pack. */
+export const USER_SKILL_ALLOWANCE = 2_000;
 
 interface Section {
     heading: string;
@@ -146,8 +148,23 @@ export class SkillPack {
             included.push(s.entry.id);
             parts.push(text);
         });
-        const text = parts.join('\n\n');
-        return { text: text.length <= budget ? text : '', included: text.length <= budget ? included : [], trimmed: [...trimmed] };
+        let text = parts.join('\n\n');
+        if (text.length > budget || !text) {
+            // Even fully trimmed nothing fits: fall back to the highest-priority Rules sections that do.
+            included.length = 0;
+            text = '';
+            for (const s of chosen) {
+                const rules = s.sections.find(sec => sec.heading === RULES_HEADING);
+                if (!rules) continue;
+                const piece = `# ${s.name}\n${rules.text}`;
+                const next = text ? `${text}\n\n${piece}` : piece;
+                if (next.length > budget) continue;
+                text = next;
+                included.push(s.entry.id);
+                trimmed.add(s.entry.id);
+            }
+        }
+        return { text, included, trimmed: [...trimmed] };
     }
 }
 
@@ -188,14 +205,15 @@ function truncateSafely(text: string, max: number): string {
 }
 
 /**
- * Append the user's own workspace skills after the pack text. The pack text is returned untouched and is
- * never truncated, so user skills only ever use whatever budget the pack left over.
+ * Append the user's own workspace skills after the pack text, adding at most `allowance` characters in total.
+ * The pack text is returned untouched and is never truncated or displaced.
  */
-export function appendUserSkills(packText: string, userSkills: UserSkill[], budget: number): string {
+export function appendUserSkills(packText: string, userSkills: UserSkill[], allowance: number = USER_SKILL_ALLOWANCE): string {
     let out = packText;
+    const limit = packText.length + allowance;
     for (const skill of userSkills) {
         const header = `\n\n# ${skill.name} (workspace skill)\n`;
-        const room = budget - out.length - header.length;
+        const room = limit - out.length - header.length;
         if (room <= 0) break;
         const body = truncateSafely(skill.content.trim(), room);
         if (!body) continue;

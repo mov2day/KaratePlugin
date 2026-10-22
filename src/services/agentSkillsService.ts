@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../utils/logger';
-import { appendUserSkills, loadSkillPack, SkillPack } from '../generation/ai/SkillPack';
+import { appendUserSkills, DEFAULT_TOTAL_BUDGET, loadSkillPack, SkillPack, USER_SKILL_ALLOWANCE } from '../generation/ai/SkillPack';
 import type { UserSkill } from '../generation/ai/SkillPack';
 import type { FsLike } from '../generation/config/ProjectDiscovery';
 import type { SourceKind } from '../generation/model/TestModel';
@@ -40,9 +40,7 @@ export class AgentSkillsService {
     private static skillContentCache: Map<string, string> = new Map();
     private static isSupported: boolean | null = null;
     private static extensionPath: string = '';
-    /** Total prompt budget: the selected pack skills first, then the user's own workspace skills. */
-    private static readonly MAX_PROMPT_CONTEXT_CHARS = 12_000;
-    private static readonly PROMPT_WRAPPER_RESERVE = 220;
+    /** Pack skills use DEFAULT_TOTAL_BUDGET; the user's workspace skills get a separate USER_SKILL_ALLOWANCE after them. */
     private static pack: SkillPack | null | undefined;
 
     /**
@@ -296,7 +294,7 @@ export class AgentSkillsService {
 
     /**
      * Build the skill context string for AI prompts: the selected Karate v2 pack skills, followed by the
-     * user's workspace skills in whatever budget remains.
+     * user's workspace skills within their own small allowance.
      */
     static async buildSkillContextForPrompt(contextType: SkillContextType): Promise<string> {
         const pack = this.getPack();
@@ -304,15 +302,14 @@ export class AgentSkillsService {
             return '';
         }
 
-        const budget = this.MAX_PROMPT_CONTEXT_CHARS - this.PROMPT_WRAPPER_RESERVE;
-        const selection = pack.select(CONTEXT_TO_QUERY[contextType], { budgetChars: budget });
+        const selection = pack.select(CONTEXT_TO_QUERY[contextType], { budgetChars: DEFAULT_TOTAL_BUDGET });
         if (!selection.text) {
             return '';
         }
 
         let body = selection.text;
         try {
-            body = appendUserSkills(body, await this.loadUserSkills(new Set(pack.skillIds())), budget);
+            body = appendUserSkills(body, await this.loadUserSkills(new Set(pack.skillIds())), USER_SKILL_ALLOWANCE);
         } catch (error) {
             logger.error('Error loading workspace skills', error as Error);
         }

@@ -56,9 +56,6 @@ Soft assertions collect several failures in one run; they are restored at scenar
 * configure continueOnStepFailure = false
 ```
 
-## Numbers
-JavaScript loses precision above 9007199254740991. Keep such ids as strings and use `#string` in schemas.
-
 ## Rules
 - V2-ASSERT-001: every scenario that calls `method` asserts the status.
 ```gherkin

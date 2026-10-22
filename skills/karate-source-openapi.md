@@ -27,12 +27,15 @@ Scenario: GET /users/{id} returns 200 with the user
 | boolean, object | `#boolean`, `#object` |
 | array of T | `#[] #string` or `#[] schemaName` |
 | optional or nullable property | `##string` |
-| enum | `#? _ == 'a' \|\| _ == 'b'` |
+| enum | `#? EXPR` (below) |
 | minimum / maximum | `#number? _ >= 0 && _ <= 100` |
 | minLength / maxLength | `#string? _.length >= 1 && _.length <= 50` |
 | minItems | `#[_ >= 1]` |
 | pattern | `#regex STR` (double backslash) |
 
+```gherkin
+* match response.status == '#? _ == "a" || _ == "b"'
+```
 Required property: marker without `##`. Large integer ids (beyond 2^53): quote them and use `#string`. Define each component schema once in the Background and reuse it with `#(name)` or `#[] name`.
 
 ## Security
@@ -48,7 +51,7 @@ Background:
 Create, read, update, delete the same resource in ONE scenario (data from step N feeds step N+1), or use a helper `callonce`. Capture the id with `* def id = response.id`, delete what you created, and use unique names so parallel runs do not collide. Lock shared resources with `@lock=<name>`.
 
 ## Unsupported content
-Webhooks, callbacks, file-upload streaming and other constructs without a Karate mapping: skip them and say so in a `#` comment above an `@ignore` scenario.
+Constructs without a Karate mapping (webhooks, callbacks): skip, noting it in a `#` comment above an `@ignore` scenario.
 
 ## Rules
 - V2-ASSERT-001 and V2-ASSERT-002: assert the documented status, then the schema for 2xx.

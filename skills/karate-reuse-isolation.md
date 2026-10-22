@@ -25,12 +25,10 @@ Scenario:
 - Argument keys become variables in the called feature; a bare `{ id: id }` passes the string 'id', so use `'#(id)'` or `({ id: id })`.
 - `def x = call ...` is isolated; a bare `call read(...)` merges the helper's variables into the caller.
 - An array argument calls the feature once per element.
-- Defaults inside a helper: `* def role = karate.get('role', 'user')`.
-- Select a scenario by tag: `call read('classpath:common.feature@setup')`.
 
 ## One-time setup
-- `callonce` runs once per feature file; the result is cached. Return plain JSON only.
-- `karate.callSingle('classpath:auth/token.feature')` runs once for the whole suite.
+- `callonce` runs once per feature file; the result is cached.
+- `karate.callSingle('classpath:auth/token.feature')` runs once for the whole suite; it should return plain JSON only.
 ```gherkin
 Background:
   * def auth = callonce read('classpath:auth/get-token.feature')

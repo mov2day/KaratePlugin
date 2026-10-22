@@ -47,7 +47,7 @@ Adjust the last line only if the evidence shows `data` is partially filled.
 - Auth: `configure auth` or a header from `karate.sysenv`; never a literal token.
 
 ## Dynamic queries
-Use `replace` with `<token>` placeholders to vary the query text; an Outline works too (`<heroName>` inside the text block).
+Use `replace` with `<token>` placeholders only to vary the query's structure (optional field lists). Values always go in `variables`, never into the text.
 ```gherkin
 And text template =
   """
