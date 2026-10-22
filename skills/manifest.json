@@ -1,0 +1,322 @@
+{
+  "version": 1,
+  "karateVersion": "2.1.4",
+  "skills": [
+    {
+      "id": "karate-v2-core",
+      "file": "karate-v2-core.md",
+      "appliesTo": {
+        "modes": "*",
+        "tasks": "*"
+      },
+      "priority": 10,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-API-001",
+        "V2-API-002",
+        "V2-DUP-001",
+        "V2-GHERKIN-001",
+        "V2-TAG-001"
+      ]
+    },
+    {
+      "id": "karate-repair",
+      "file": "karate-repair.md",
+      "appliesTo": {
+        "modes": "*",
+        "tasks": [
+          "repair-scenario",
+          "analyze-flakiness"
+        ]
+      },
+      "priority": 15,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-ASSERT-001",
+        "V2-LOCK-001"
+      ]
+    },
+    {
+      "id": "karate-source-openapi",
+      "file": "karate-source-openapi.md",
+      "appliesTo": {
+        "modes": [
+          "openapi",
+          "combined"
+        ],
+        "tasks": [
+          "generate-openapi",
+          "generate-postman",
+          "generate-har",
+          "generate-requirements",
+          "generate-graphql",
+          "generate-jira",
+          "generate-missing-test",
+          "enhance-feature",
+          "refine-feature",
+          "analyze-coverage"
+        ]
+      },
+      "priority": 20,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-ASSERT-001",
+        "V2-ASSERT-002",
+        "V2-CFG-001"
+      ]
+    },
+    {
+      "id": "karate-source-postman",
+      "file": "karate-source-postman.md",
+      "appliesTo": {
+        "modes": [
+          "postman"
+        ],
+        "tasks": [
+          "generate-openapi",
+          "generate-postman",
+          "generate-har",
+          "generate-requirements",
+          "generate-graphql",
+          "generate-jira",
+          "generate-missing-test",
+          "enhance-feature",
+          "refine-feature"
+        ]
+      },
+      "priority": 20,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-CFG-001",
+        "V2-SEC-001"
+      ]
+    },
+    {
+      "id": "karate-source-har-session",
+      "file": "karate-source-har-session.md",
+      "appliesTo": {
+        "modes": [
+          "har",
+          "session"
+        ],
+        "tasks": [
+          "generate-openapi",
+          "generate-postman",
+          "generate-har",
+          "generate-requirements",
+          "generate-graphql",
+          "generate-jira",
+          "generate-missing-test",
+          "enhance-feature",
+          "refine-feature"
+        ]
+      },
+      "priority": 20,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-DUP-001",
+        "V2-NUM-001",
+        "V2-SEC-001"
+      ]
+    },
+    {
+      "id": "karate-source-graphql",
+      "file": "karate-source-graphql.md",
+      "appliesTo": {
+        "modes": [
+          "graphql"
+        ],
+        "tasks": [
+          "generate-openapi",
+          "generate-postman",
+          "generate-har",
+          "generate-requirements",
+          "generate-graphql",
+          "generate-jira",
+          "generate-missing-test",
+          "enhance-feature",
+          "refine-feature"
+        ]
+      },
+      "priority": 20,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-ASSERT-001",
+        "V2-ASSERT-002"
+      ]
+    },
+    {
+      "id": "karate-source-requirements",
+      "file": "karate-source-requirements.md",
+      "appliesTo": {
+        "modes": [
+          "jira",
+          "confluence",
+          "combined"
+        ],
+        "tasks": [
+          "generate-openapi",
+          "generate-postman",
+          "generate-har",
+          "generate-requirements",
+          "generate-graphql",
+          "generate-jira",
+          "generate-missing-test",
+          "enhance-feature",
+          "refine-feature"
+        ]
+      },
+      "priority": 20,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-ASSERT-001",
+        "V2-DRAFT-001",
+        "V2-DUP-001"
+      ]
+    },
+    {
+      "id": "karate-assertions-schemas",
+      "file": "karate-assertions-schemas.md",
+      "appliesTo": {
+        "modes": "*",
+        "tasks": [
+          "generate-openapi",
+          "generate-postman",
+          "generate-har",
+          "generate-requirements",
+          "generate-graphql",
+          "generate-jira",
+          "generate-missing-test",
+          "enhance-feature",
+          "refine-feature",
+          "repair-scenario"
+        ]
+      },
+      "priority": 30,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-ASSERT-001",
+        "V2-ASSERT-002",
+        "V2-NUM-001"
+      ]
+    },
+    {
+      "id": "karate-project-config",
+      "file": "karate-project-config.md",
+      "appliesTo": {
+        "modes": "*",
+        "tasks": [
+          "generate-openapi",
+          "generate-postman",
+          "generate-har",
+          "generate-requirements",
+          "generate-graphql",
+          "generate-jira",
+          "generate-missing-test",
+          "enhance-feature",
+          "refine-feature"
+        ]
+      },
+      "priority": 40,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-CFG-001",
+        "V2-CFG-002",
+        "V2-SEC-001"
+      ]
+    },
+    {
+      "id": "karate-reuse-isolation",
+      "file": "karate-reuse-isolation.md",
+      "appliesTo": {
+        "modes": "*",
+        "tasks": [
+          "generate-openapi",
+          "generate-postman",
+          "generate-har",
+          "generate-requirements",
+          "generate-graphql",
+          "generate-jira",
+          "generate-missing-test",
+          "enhance-feature",
+          "refine-feature",
+          "repair-scenario",
+          "analyze-flakiness",
+          "suggest-reusability"
+        ]
+      },
+      "priority": 45,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-LOCK-001",
+        "V2-REF-001"
+      ]
+    },
+    {
+      "id": "karate-data-driven",
+      "file": "karate-data-driven.md",
+      "appliesTo": {
+        "modes": "*",
+        "tasks": [
+          "generate-openapi",
+          "generate-postman",
+          "generate-har",
+          "generate-requirements",
+          "generate-graphql",
+          "generate-jira",
+          "generate-missing-test",
+          "enhance-feature",
+          "refine-feature"
+        ]
+      },
+      "priority": 50,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-DUP-001",
+        "V2-GHERKIN-001"
+      ]
+    },
+    {
+      "id": "karate-review-checklist",
+      "file": "karate-review-checklist.md",
+      "appliesTo": {
+        "modes": "*",
+        "tasks": [
+          "enhance-feature",
+          "refine-feature",
+          "repair-scenario"
+        ]
+      },
+      "priority": 35,
+      "budgetChars": 4800,
+      "verifiedAgainst": "2.1.4",
+      "rules": [
+        "V2-API-001",
+        "V2-API-002",
+        "V2-ASSERT-001",
+        "V2-ASSERT-002",
+        "V2-CFG-001",
+        "V2-CFG-002",
+        "V2-DRAFT-001",
+        "V2-DUP-001",
+        "V2-GHERKIN-001",
+        "V2-LOCK-001",
+        "V2-NUM-001",
+        "V2-REF-001",
+        "V2-SEC-001",
+        "V2-TAG-001"
+      ]
+    }
+  ]
+}

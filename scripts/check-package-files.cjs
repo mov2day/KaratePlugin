@@ -58,7 +58,8 @@ const required = [
   'lib/scout-runtime/playwright-core/index.js',
   'resources/scout-companion/manifest.json',
   'resources/scout-companion/browser-scripts.js',
-  'skills/karate-dsl-reference.md',
+  'skills/manifest.json',
+  'skills/karate-v2-core.md',
   'lib/karate-1.5.0.RC3.jar'
 ];
 

@@ -197,7 +197,7 @@ const callRule = (rule: Rule, needle: string, message: string): Rule['check'] =>
     return out;
 };
 
-const api001: Rule = { id: 'V2-API-001', severity: 'error', check: (p, c) => callRule(api001, 'karate.stop(', 'karate.stop() is not available in Karate v2')(p, c) };
+const api001: Rule = { id: 'V2-API-001', severity: 'error', check: (p, c) => callRule(api001, 'karate.stop(', 'karate.stop() pauses the run until a socket connection is made; never commit it (hangs CI)')(p, c) };
 const api002: Rule = { id: 'V2-API-002', severity: 'warning', check: (p, c) => callRule(api002, 'karate.toJava(', 'karate.toJava() is discouraged in Karate v2')(p, c) };
 
 const num001: Rule = {
