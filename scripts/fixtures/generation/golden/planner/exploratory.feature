@@ -89,6 +89,7 @@ Feature: Pets API
   @edge @op=updatePet @domain=pets
   Scenario Outline: Update a pet - accepts every allowed value of 'status'
     # source: PUT /pets/{petId}
+    # Assumes a resource with this id exists in the target environment
     * def petId = 1
     * def payload = karate.copy(read('classpath:data/pets.json')['updatePet'])
     * set payload.name = 'Buddy-' + karate.uuid()
@@ -135,11 +136,12 @@ Feature: Pets API
     When method patch
     Then assert responseStatus < 500
 
-  @exploratory @op=deletePet @domain=pets
+  @ignore @exploratory @op=deletePet @domain=pets
   Scenario: PATCH /pets/{petId} is not accepted
+    # Draft: Requires apiKeyAuth; common/auth.feature configures bearerAuth
     # source: PATCH /pets/{petId}
     # Exploratory: expectation is not declared in the contract
-    * def petId = 1
+    * def petId = 999999999
     Given path 'pets', petId
     When method patch
     Then assert responseStatus < 500

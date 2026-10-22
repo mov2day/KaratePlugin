@@ -10,16 +10,114 @@ export function jsLiteral(v: unknown): string {
     return JSON.stringify(v) ?? 'null';
 }
 
-const clamp = (n: number, min?: number, max?: number): number => {
+export interface Bound {
+    value: number;
+    exclusive: boolean;
+}
+
+/** Numeric bounds, normalising OAS3.0 boolean and OAS3.1/JSON-Schema numeric exclusive forms. */
+export function numericBounds(s: JsonSchema): { min?: Bound; max?: Bound } {
+    const out: { min?: Bound; max?: Bound } = {};
+    if (typeof s.minimum === 'number') {out.min = { value: s.minimum, exclusive: s.exclusiveMinimum === true };}
+    if (typeof s.exclusiveMinimum === 'number' && (!out.min || s.exclusiveMinimum >= out.min.value)) {out.min = { value: s.exclusiveMinimum, exclusive: true };}
+    if (typeof s.maximum === 'number') {out.max = { value: s.maximum, exclusive: s.exclusiveMaximum === true };}
+    if (typeof s.exclusiveMaximum === 'number' && (!out.max || s.exclusiveMaximum <= out.max.value)) {out.max = { value: s.exclusiveMaximum, exclusive: true };}
+    return out;
+}
+
+/** Smallest/largest valid value for a bound (undefined when a non-integer exclusive bound has no tidy extreme). */
+export function validExtreme(b: Bound, integer: boolean, dir: 1 | -1): number | undefined {
+    if (!b.exclusive) {return b.value;}
+    return integer ? b.value + dir : undefined;
+}
+
+const clamp = (n: number, s: JsonSchema, integer: boolean): number => {
+    const { min, max } = numericBounds(s);
     let v = n;
-    if (typeof min === 'number' && v < min) {v = min;}
-    if (typeof max === 'number' && v > max) {v = max;}
+    if (min && (v < min.value || (min.exclusive && v === min.value))) {v = min.exclusive ? (integer ? min.value + 1 : min.value + 0.5) : min.value;}
+    if (max && (v > max.value || (max.exclusive && v === max.value))) {v = max.exclusive ? (integer ? max.value - 1 : max.value - 0.5) : max.value;}
     return v;
 };
+
+/** Drops properties flagged (readOnly / writeOnly) from an object schema, deeply. Returns a copy. */
+export function withoutFlagged(schema: JsonSchema | undefined, flag: 'readOnly' | 'writeOnly'): JsonSchema | undefined {
+    if (!isObj(schema)) {return schema;}
+    const out: JsonSchema = { ...schema };
+    if (isObj(schema.properties)) {
+        const props: JsonSchema = {};
+        for (const [k, v] of Object.entries(schema.properties)) {
+            if (isObj(v) && v[flag] === true) {continue;}
+            props[k] = withoutFlagged(v as JsonSchema, flag);
+        }
+        out.properties = props;
+        if (Array.isArray(schema.required)) {out.required = schema.required.filter((r: string) => r in props);}
+    }
+    if (isObj(schema.items)) {out.items = withoutFlagged(schema.items, flag);}
+    return out;
+}
+
+type Tok = { set: string[]; min: number; max: number };
+
+/** Tiny generator for trivially simple patterns (literals, \d \w, [classes], {n,m}, one group/alternation). */
+export function fromPattern(pattern: string): string | undefined {
+    let p = pattern;
+    if (p.startsWith('^')) {p = p.slice(1);}
+    if (p.endsWith('$') && !p.endsWith('\\$')) {p = p.slice(0, -1);}
+    const strip = /^\((?:\?:)?(.*)\)$/.exec(p);
+    if (strip && !/[()]/.test(strip[1])) {p = strip[1];}
+    if (/[()]/.test(p)) {return undefined;}
+    p = p.split('|')[0];
+    const toks: Tok[] = [];
+    let i = 0;
+    const cls = (c: string): string[] | undefined => (c === 'd' ? ['0'] : c === 'w' ? ['a'] : c === 's' ? undefined : [c]);
+    while (i < p.length) {
+        let set: string[] | undefined;
+        const c = p[i];
+        if (c === '\\') {
+            set = cls(p[i + 1] ?? '');
+            i += 2;
+        } else if (c === '[') {
+            const end = p.indexOf(']', i);
+            if (end < 0) {return undefined;}
+            const body = p.slice(i + 1, end);
+            if (body.startsWith('^')) {return undefined;}
+            set = [body[0] === '\\' ? (cls(body[1])?.[0] ?? '') : body[0]];
+            i = end + 1;
+        } else if (/[.*+?{}$^]/.test(c)) {
+            return undefined;
+        } else {
+            set = [c];
+            i++;
+        }
+        if (!set || set[0] === '') {return undefined;}
+        let min = 1;
+        let max = 1;
+        const q = p[i];
+        if (q === '?') { min = 0; max = 1; i++; }
+        else if (q === '+') { min = 1; max = 1; i++; }
+        else if (q === '*') { min = 0; max = 0; i++; }
+        else if (q === '{') {
+            const m = /^\{(\d+)(?:,(\d*))?\}/.exec(p.slice(i));
+            if (!m) {return undefined;}
+            min = Number(m[1]);
+            max = min;
+            i += m[0].length;
+        }
+        toks.push({ set, min, max });
+    }
+    const value = toks.map(t => t.set[0].repeat(t.min)).join('');
+    try {
+        return new RegExp(pattern).test(value) ? value : undefined;
+    } catch {
+        return undefined;
+    }
+}
 
 function stringFor(s: JsonSchema, name: string): string {
     const n = name.toLowerCase();
     let v: string;
+    const fromPat = typeof s.pattern === 'string' && !s.format ? fromPattern(s.pattern) : undefined;
+    if (fromPat !== undefined) {return fromPat;}
     switch (s.format) {
         case 'uuid': v = '7c9e6679-7425-40de-944b-e07fc1f90ae7'; break;
         case 'email': v = 'test.user@example.com'; break;
@@ -62,11 +160,11 @@ export function valueFor(schema: JsonSchema | undefined, name = '', depth = 0): 
     switch (type) {
         case 'integer': {
             const base = /(^|_)id$|id$/.test(n) ? 1 : /age/.test(n) ? 30 : /year/.test(n) ? 2024 : 1;
-            return Math.trunc(clamp(base, s.minimum, s.maximum));
+            return Math.trunc(clamp(base, s, true));
         }
         case 'number': {
             const base = /price|amount|cost|total/.test(n) ? 9.99 : 1.5;
-            return clamp(base, s.minimum, s.maximum);
+            return clamp(base, s, false);
         }
         case 'boolean': return true;
         case 'array': {
@@ -101,8 +199,9 @@ export function violation(schema: JsonSchema | undefined): Violation | undefined
         return { expr: jsLiteral(candidate), label: 'value not in enum' };
     }
     if (type === 'integer' || type === 'number') {
-        if (typeof s.minimum === 'number') {return { expr: String(s.minimum - 1), label: `below minimum ${s.minimum}` };}
-        if (typeof s.maximum === 'number') {return { expr: String(s.maximum + 1), label: `above maximum ${s.maximum}` };}
+        const { min, max } = numericBounds(s);
+        if (min) {return { expr: String(min.exclusive ? min.value : min.value - 1), label: `${min.exclusive ? 'at or below exclusive' : 'below'} minimum ${min.value}` };}
+        if (max) {return { expr: String(max.exclusive ? max.value : max.value + 1), label: `${max.exclusive ? 'at or above exclusive' : 'above'} maximum ${max.value}` };}
         return { expr: "'not-a-number'", label: 'wrong type' };
     }
     if (type === 'string') {
@@ -116,4 +215,12 @@ export function violation(schema: JsonSchema | undefined): Violation | undefined
     }
     if (type === 'boolean') {return { expr: "'not-a-boolean'", label: 'wrong type' };}
     return undefined;
+}
+
+/** A pattern the generator cannot satisfy (no example/default/enum/const to fall back on), or undefined. */
+export function unsatisfiablePattern(schema: JsonSchema | undefined): string | undefined {
+    const s = isObj(schema) ? schema : {};
+    if (typeof s.pattern !== 'string' || s.format) {return undefined;}
+    if (s.example !== undefined || s.default !== undefined || s.const !== undefined || (Array.isArray(s.enum) && s.enum.length > 0)) {return undefined;}
+    return fromPattern(s.pattern) === undefined ? s.pattern : undefined;
 }

@@ -1,6 +1,7 @@
 // Converts a JSON schema into a Karate match schema (markers such as #string, ##number, #[] #string).
 // Pure: no vscode, no I/O.
 import type { JsonSchema } from '../model/TestModel';
+import { numericBounds } from './dataFactory';
 
 export interface KarateSchemaOptions {
     /** Mark non-required properties as optional (`##marker`). When false they stay strict. */
@@ -28,11 +29,16 @@ const exceedsSafeInteger = (s: JsonSchema): boolean => {
 const jsList = (values: unknown[]): string =>
     `[${values.map(v => (typeof v === 'string' ? `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'` : JSON.stringify(v))).join(', ')}]`;
 
+/** OpenAPI `pattern` is an unanchored search; Karate `#regex` matches the whole value. */
+function anchored(pattern: string): string {
+    return pattern.startsWith('^') && pattern.endsWith('$') && !pattern.endsWith('\\$') ? pattern : `.*(?:${pattern}).*`;
+}
+
 function scalar(s: JsonSchema, type: string): string {
     if (type === 'string') {
         if (Array.isArray(s.enum) && s.enum.length > 0) {return `#string? ${jsList(s.enum)}.includes(_)`;}
         if (s.format === 'uuid') {return '#uuid';}
-        if (typeof s.pattern === 'string' && s.pattern !== '') {return `#regex ${s.pattern}`;}
+        if (typeof s.pattern === 'string' && s.pattern !== '') {return `#regex ${anchored(s.pattern)}`;}
         const parts: string[] = [];
         if (typeof s.minLength === 'number' && s.minLength > 0) {parts.push(`_.length >= ${s.minLength}`);}
         if (typeof s.maxLength === 'number') {parts.push(`_.length <= ${s.maxLength}`);}
@@ -42,8 +48,9 @@ function scalar(s: JsonSchema, type: string): string {
         if (exceedsSafeInteger(s)) {return '#string';}
         if (Array.isArray(s.enum) && s.enum.length > 0) {return `#number? ${jsList(s.enum)}.includes(_)`;}
         const parts: string[] = [];
-        if (typeof s.minimum === 'number') {parts.push(`_ >= ${s.minimum}`);}
-        if (typeof s.maximum === 'number') {parts.push(`_ <= ${s.maximum}`);}
+        const { min, max } = numericBounds(s);
+        if (min) {parts.push(`_ ${min.exclusive ? '>' : '>='} ${min.value}`);}
+        if (max) {parts.push(`_ ${max.exclusive ? '<' : '<='} ${max.value}`);}
         return parts.length > 0 ? `#number? ${parts.join(' && ')}` : '#number';
     }
     return '#boolean';

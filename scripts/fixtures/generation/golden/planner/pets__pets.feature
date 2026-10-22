@@ -77,6 +77,7 @@ Feature: Pets API
   @edge @op=updatePet @domain=pets
   Scenario Outline: Update a pet - accepts every allowed value of 'status'
     # source: PUT /pets/{petId}
+    # Assumes a resource with this id exists in the target environment
     * def petId = 1
     * def payload = karate.copy(read('classpath:data/pets.json')['updatePet'])
     * set payload.name = 'Buddy-' + karate.uuid()

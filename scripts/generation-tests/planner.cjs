@@ -39,6 +39,27 @@ const knownFilesFor = (planned, model) => {
     return new Set([...scaf.map(f => f.path.replace(/^cp\//, '')), ...planned.files.map(f => f.path)]);
 };
 
+const mini = (paths, o = {}) => buildModel({
+    openapi: '3.0.0',
+    ...(o.global === false ? {} : { security: [{ bearerAuth: [] }] }),
+    components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' }, apiKeyAuth: { type: 'apiKey', in: 'header', name: 'X-API-Key' } } },
+    paths
+}, 'mini');
+const crudPaths = (base, o) => {
+    const [a, b, c] = o.names || ['id', 'id', 'id'];
+    const p = n => [{ name: n, in: 'path', required: true, schema: { type: 'integer' } }];
+    const item = { type: 'object', required: ['id', 'name'], properties: { id: { type: 'integer' }, name: { type: 'string' } } };
+    const json = { content: { 'application/json': { schema: item } } };
+    const reqBody = { required: true, content: { 'application/json': { schema: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } } } } };
+    const out = {};
+    const add = (path, method, def) => { out[path] = { ...(out[path] || {}), [method]: def }; };
+    add(base, 'post', { operationId: 'mk', tags: ['gadgets'], requestBody: reqBody, responses: { '201': { description: 'ok', ...json } } });
+    add(`${base}/{${a}}`, 'get', { operationId: 'rd', tags: ['gadgets'], parameters: p(a), responses: { '200': { description: 'ok', ...json }, '404': { description: 'nf' } } });
+    add(`${base}/{${b}}`, 'put', { operationId: 'up', tags: ['gadgets'], parameters: p(b), requestBody: reqBody, responses: { '200': { description: 'ok', ...json } } });
+    add(o.deletePath || `${base}/{${c}}`, 'delete', { operationId: 'rm', tags: ['gadgets'], parameters: [...p(c), ...(o.deletePath ? p('other') : [])], ...(o.del ? { security: [o.del] } : {}), responses: { '204': { description: 'gone' } } });
+    return out;
+};
+
 module.exports = [
     {
         name: 'planner: positive scenario takes the status from the spec and matches the schema file',
@@ -487,6 +508,114 @@ module.exports = [
                 JSON.parse(f.content);
             }
             assert.ok(planned.warnings.some(w => /apiKeyAuth/.test(w) && /bearerAuth/.test(w)), 'scheme mismatch warning expected');
+        }
+    },
+    {
+        name: 'fix1: operations without any security are not secured (no auth, no 401)',
+        run() {
+            const planned = plan({}, mini({ '/things': { get: { operationId: 'listThings', responses: { '200': { description: 'ok' } } } } }, { global: false }));
+            assert.ok(!planned.features.some(f => f.relativePath.endsWith('-security.feature')));
+            for (const f of planned.features) assert.deepEqual(f.feature.background.steps.map(x => x.text), ['url baseUrl']);
+        }
+    },
+    {
+        name: 'fix2: wrong-scheme operations are drafts; chain is a draft naming the operation',
+        run() {
+            const planned = plan({}, mini({
+                '/things': { get: { operationId: 'listThings', security: [{ apiKeyAuth: [] }], responses: { '200': { description: 'ok' } } } },
+                ...crudPaths('/gadgets', { del: { apiKeyAuth: [] } })
+            }));
+            const list = bySource(planned, 'GET /things').filter(s => s.category === 'positive');
+            assert.equal(list[0].draftReason, 'Requires apiKeyAuth; common/auth.feature configures bearerAuth');
+            const chain = planned.features.find(f => f.relativePath === 'gadgets/gadgets-crud.feature').feature.scenarios[0];
+            assert.match(chain.draftReason, /DELETE \/gadgets\/\{id\}.*apiKeyAuth/);
+            assert.ok(planned.warnings.some(w => /apiKeyAuth/.test(w)));
+            const okChain = plan({}, mini(crudPaths('/gadgets', {}))).features.find(f => f.relativePath === 'gadgets/gadgets-crud.feature').feature.scenarios[0];
+            assert.equal(okChain.draftReason, undefined);
+        }
+    },
+    {
+        name: 'fix3: exclusive bounds (3.0 boolean and 3.1 numeric forms), integer and number',
+        run() {
+            const { toKarateSchema } = schemaMatch();
+            const df = out('generation/plan/dataFactory');
+            const forms = [
+                { type: 'integer', minimum: 0, exclusiveMinimum: true, maximum: 10, exclusiveMaximum: true },
+                { type: 'integer', exclusiveMinimum: 0, exclusiveMaximum: 10 }
+            ];
+            for (const f of forms) {
+                assert.equal(toKarateSchema(f, { optionalAsDoubleHash: true }), '#number? _ > 0 && _ < 10');
+                assert.equal(df.violation(f).expr, '0');
+                assert.equal(df.valueFor(f, 'x'), 1);
+                const api = { '/c': { post: { operationId: 'mk', requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['n'], properties: { n: f } } } } }, responses: { '201': { description: 'ok' } } } } };
+                const planned = plan({ scenarios: { outlineThreshold: 2 } }, mini(api, { global: false }));
+                const o = scenarios(planned).find(s => s.examples);
+                assert.deepEqual(o.examples.rows, [['1'], ['9']]);
+            }
+            const num = { type: 'number', exclusiveMinimum: 0, maximum: 5 };
+            const api = { '/c': { post: { operationId: 'mk', requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { n: num } } } } }, responses: { '201': { description: 'ok' } } } } };
+            const planned = plan({ scenarios: { outlineThreshold: 1 } }, mini(api, { global: false }));
+            assert.deepEqual(scenarios(planned).find(s => s.examples).examples.rows, [['5']]);
+            assert.ok(df.valueFor(num, 'n') > 0);
+        }
+    },
+    {
+        name: 'fix4: readOnly never sent, writeOnly never matched, patterns generated or drafted',
+        run() {
+            const body = props => ({ '/c': { post: { operationId: 'mk', requestBody: { content: { 'application/json': { schema: { type: 'object', required: Object.keys(props), properties: props } } } }, responses: { '201': { description: 'ok', content: { 'application/json': { schema: { type: 'object', required: ['pw', 'name'], properties: { name: { type: 'string' }, pw: { type: 'string', writeOnly: true } } } } } } } } } });
+            const a = plan({}, mini(body({ id: { type: 'integer', readOnly: true }, name: { type: 'string' }, code: { type: 'string', pattern: '^[A-Z]{3}$' } }), { global: false }));
+            const data = JSON.parse(file(a, 'data/c.json'));
+            assert.deepEqual(Object.keys(data.mk), ['name', 'code']);
+            assert.match(data.mk.code, /^[A-Z]{3}$/);
+            const schema = JSON.parse(file(a, 'schemas/c.json'));
+            assert.deepEqual(Object.keys(schema), ['name']);
+            assert.ok(!bySource(a, 'POST /c').some(s => s.draftReason));
+            const neg = plan({}, mini(body({ id: { type: 'integer', readOnly: true }, name: { type: 'string' } }), { global: false }));
+            assert.ok(!('id' in JSON.parse(file(neg, 'data/c.json')).mk));
+            const d = plan({}, mini(body({ code: { type: 'string', pattern: '^(?=.*[a-z])(?=.*\\d).{8,}$' } }), { global: false }));
+            const s = bySource(d, 'POST /c');
+            assert.equal(s.length, 1);
+            assert.match(s[0].draftReason, /Cannot generate a value matching pattern \^\(\?=.*provide a valid value in data\/c\.json/);
+            assert.ok(d.warnings.some(w => /pattern/.test(w)));
+        }
+    },
+    {
+        name: 'fix5: crud chain maps each operation own id parameter name',
+        run() {
+            const planned = plan({}, mini(crudPaths('/gadgets', { names: ['id', 'pet_id', 'x'] })));
+            const t = text(planned)['gadgets/gadgets-crud.feature'];
+            assert.ok(t);
+            assert.ok(!/def \w+ = 1\b/.test(t), t);
+            assert.match(t, /def petId = id/);
+            assert.match(t, /def x = id/);
+            const multi = plan({}, mini(crudPaths('/gadgets', { names: ['id', 'id', 'id'], deletePath: '/gadgets/{id}/{other}' })));
+            assert.ok(!multi.features.some(f => f.relativePath.endsWith('-crud.feature')));
+        }
+    },
+    {
+        name: 'fix6: #regex is anchored for unanchored patterns, kept for anchored ones',
+        run() {
+            const { toKarateSchema } = schemaMatch();
+            const k = toKarateSchema({ type: 'object', required: ['a', 'b'], properties: { a: { type: 'string', pattern: '^[A-Z]{3}$' }, b: { type: 'string', pattern: 'a\\.dot' } } }, { optionalAsDoubleHash: true });
+            assert.equal(k.a, '#regex ^[A-Z]{3}$');
+            assert.equal(k.b, '#regex .*(?:a\\.dot).*');
+            assert.equal(JSON.stringify(k.b), '"#regex .*(?:a\\\\.dot).*"');
+        }
+    },
+    {
+        name: 'minors: email uniqueness, untyped body, 405 probe ids, drafts honour categories, by-id comments',
+        run() {
+            const api = { '/c/{id}': { put: { operationId: 'up', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['mail', 'contact'], properties: { mail: { type: 'string', format: 'email' }, contact: { type: 'string', format: 'email' } } } } } }, responses: { '200': { description: 'ok' } } } },
+                '/free': { post: { operationId: 'free', requestBody: { content: { 'application/json': {} } }, responses: { '200': { description: 'ok' } } } } };
+            const planned = plan({ scenarios: { exploratory: true } }, mini(api, { global: false }));
+            const up = bySource(planned, 'PUT /c/{id}').find(s => s.category === 'positive');
+            assert.ok(up.steps.some(x => x.text === "set payload.mail = 'test.user-' + karate.uuid() + '@example.com'"));
+            assert.deepEqual(JSON.parse(file(planned, 'data/free.json')).free, {});
+            const probe = scenarios(planned).find(s => s.name.startsWith('PATCH /c/{id}') || s.name.startsWith('DELETE /c/{id}'));
+            assert.ok(probe.steps.some(x => x.text === 'def id = 999999999'));
+            const onlyNeg = plan({ scenarios: { categories: ['negative'] } }, mini({ '/m': { post: { operationId: 'm', requestBody: { content: { 'multipart/form-data': { schema: { type: 'object' } } } }, responses: { '200': { description: 'ok' } } } } }, { global: false }));
+            assert.equal(scenarios(onlyNeg).length, 0);
+            assert.ok(onlyNeg.warnings.some(w => /multipart/i.test(w)));
         }
     },
     {

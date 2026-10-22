@@ -3,7 +3,7 @@
 import type { KarateFeature, KarateScenario, KarateStep, KarateStyle } from '../../types';
 import type { GeneratorConfig, ScenarioCategory } from '../config/GeneratorConfig';
 import type { GenerationModel, JsonSchema, OperationModel, ResponseModel, SecurityScheme } from '../model/TestModel';
-import { jsLiteral, valueFor, violation } from './dataFactory';
+import { jsLiteral, numericBounds, unsatisfiablePattern, validExtreme, valueFor, violation, withoutFlagged } from './dataFactory';
 import { toKarateSchema } from './schemaMatch';
 
 export interface PlannedFeature {
@@ -81,6 +81,15 @@ function varName(name: string, style: KarateStyle): string {
     return /^\d/.test(joined) ? `v${joined[0].toUpperCase()}${joined.slice(1)}` : joined;
 }
 
+/** Id values that cannot belong to a real resource (uuid-shaped zero, 999999999, or a random string). */
+function unknownIds(op: OperationModel): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const p of op.pathParams) {
+        out[p.name] = p.schema.format === 'uuid' ? jsLiteral(SAMPLE_UUID_ZERO) : p.schema.type === 'integer' || p.schema.type === 'number' ? '999999999' : `'does-not-exist-' + karate.uuid()`;
+    }
+    return out;
+}
+
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 function domainOf(op: OperationModel): string {
@@ -94,8 +103,17 @@ const successResponses = (op: OperationModel): ResponseModel[] =>
     op.responses.filter(r => /^2\d\d$/.test(r.status)).sort((a, b) => cmp(a.status, b.status));
 const declared = (op: OperationModel, status: string): ResponseModel | undefined => op.responses.find(r => r.status === status);
 
-const bodyProps = (op: OperationModel): Record<string, JsonSchema> => (isObj(op.body?.schema?.properties) ? (op.body!.schema!.properties as Record<string, JsonSchema>) : {});
-const bodyRequired = (op: OperationModel): string[] => (Array.isArray(op.body?.schema?.required) ? (op.body!.schema!.required as string[]) : []);
+/** Request-side body schema: readOnly properties are never sent. */
+const requestSchema = (op: OperationModel): JsonSchema | undefined => withoutFlagged(op.body?.schema, 'readOnly');
+const bodyProps = (op: OperationModel): Record<string, JsonSchema> => {
+    const s = requestSchema(op);
+    return isObj(s?.properties) ? (s!.properties as Record<string, JsonSchema>) : {};
+};
+const bodyRequired = (op: OperationModel): string[] => {
+    const s = requestSchema(op);
+    return Array.isArray(s?.required) ? (s!.required as string[]) : [];
+};
+const isEmailField = (name: string, p: JsonSchema): boolean => p.format === 'email' || /email$/i.test(name);
 
 class Planner {
     private readonly files = new Map<string, string>();
@@ -134,7 +152,8 @@ class Planner {
     }
 
     private secured(op: OperationModel): boolean {
-        return this.model.schemes.length > 0 && op.security !== 'none';
+        // Per OpenAPI, an operation with no global or operation-level security requires no auth.
+        return this.model.schemes.length > 0 && Array.isArray(op.security) && op.security.length > 0;
     }
 
     private schemeOf(op: OperationModel): SecurityScheme | undefined {
@@ -154,8 +173,18 @@ class Planner {
     }
 
     private push(op: OperationModel, kind: Kind, scenario: KarateScenario, secured = this.secured(op)): void {
-        if (secured && kind !== 'security' && this.model.schemes.length > 0) {this.warnSchemeMismatch(op);}
+        if (secured && kind !== 'security' && this.model.schemes.length > 0) {
+            this.warnSchemeMismatch(op);
+            const reason = this.mismatchReason(op);
+            if (reason && scenario.draftReason === undefined) {scenario.draftReason = reason;}
+        }
         this.items.push({ base: this.baseFor(op, kind), kind, secured: kind === 'security' ? false : secured, domain: domainOf(op), scenario });
+    }
+
+    private mismatchReason(op: OperationModel): string | undefined {
+        const first = this.model.schemes[0]?.name;
+        if (!first || !Array.isArray(op.security) || op.security.length === 0 || op.security.includes(first)) {return undefined;}
+        return `Requires ${op.security.join(', ')}; common/auth.feature configures ${first}`;
     }
 
     private warnSchemeMismatch(op: OperationModel): void {
@@ -239,6 +268,9 @@ class Planner {
         if (reason !== undefined) {return this.planDraft(op, reason);}
         if (truncated(op.body?.schema)) {return this.planDraft(op, 'Request body schema was truncated (too large to expand); provide the request body manually');}
 
+        const bad = this.unsatisfiable(op);
+        if (bad) {return this.planDraft(op, `Cannot generate a value matching pattern ${bad}; provide a valid value in data/${domainOf(op)}.json`);}
+
         const ok = successResponses(op);
         if (ok.length === 0) {
             this.warn(`${op.sourceRef}: no 2xx response declared; positive and boundary scenarios skipped`);
@@ -251,8 +283,20 @@ class Planner {
         if (this.config.scenarios.exploratory) {this.planOperationExploratory(op);}
     }
 
+    /** First required request-body property whose pattern cannot be generated. */
+    private unsatisfiable(op: OperationModel): string | undefined {
+        if (!op.body || truncated(op.body.schema) || isObj(op.body.example)) {return undefined;}
+        const props = bodyProps(op);
+        for (const f of bodyRequired(op)) {
+            const bad = unsatisfiablePattern(props[f]);
+            if (bad) {return bad;}
+        }
+        return undefined;
+    }
+
     private planDraft(op: OperationModel, reason: string): void {
         this.warn(`${op.sourceRef}: ${reason}`);
+        if (!this.enabled('positive')) {return;}
         const ok = successResponses(op)[0];
         const steps = [...this.requestSteps(op, { noBody: true, auth: false }), st('Then', `status ${ok?.status ?? '200'}`)];
         this.push(op, 'main', this.scenario(op, 'positive', this.label(op), steps, { draftReason: reason }));
@@ -261,8 +305,22 @@ class Planner {
     // ---- request construction
 
     private payloadValue(op: OperationModel): unknown {
-        if (isObj(op.body?.example) || Array.isArray(op.body?.example)) {return op.body!.example;}
-        return valueFor(op.body?.schema ?? {}, '');
+        const schema = requestSchema(op);
+        const ex = op.body?.example;
+        if (isObj(ex)) {
+            const props = isObj(op.body?.schema?.properties) ? (op.body!.schema!.properties as Record<string, JsonSchema>) : {};
+            return Object.fromEntries(Object.entries(ex).filter(([k]) => !(isObj(props[k]) && props[k].readOnly === true)));
+        }
+        if (Array.isArray(ex)) {return ex;}
+        if (!isObj(schema) || (schema.type === undefined && !isObj(schema.properties) && !schema.items && schema.example === undefined && schema.default === undefined && !schema.enum)) {return {};}
+        const value = valueFor(schema, '');
+        if (isObj(value) && isObj(schema.properties)) {
+            const required = bodyRequired(op);
+            for (const [k, p] of Object.entries(schema.properties as Record<string, JsonSchema>)) {
+                if (!required.includes(k) && unsatisfiablePattern(p)) {delete (value as Record<string, unknown>)[k];}
+            }
+        }
+        return value;
     }
 
     private payloadSteps(op: OperationModel, pv: string): KarateStep[] {
@@ -279,7 +337,12 @@ class Planner {
         }
         for (const field of this.uniqueFields(op)) {
             const base = String(isObj(value) ? value[field] : field);
-            steps.push(st('*', `set ${pv}.${field} = ${jsLiteral(`${base}-`)} + karate.uuid()`));
+            const props = bodyProps(op);
+            if (isEmailField(field, props[field])) {
+                steps.push(st('*', `set ${pv}.${field} = ${jsLiteral(`${base.split('@')[0]}-`)} + karate.uuid() + '@example.com'`));
+            } else {
+                steps.push(st('*', `set ${pv}.${field} = ${jsLiteral(`${base}-`)} + karate.uuid()`));
+            }
         }
         return steps;
     }
@@ -289,9 +352,12 @@ class Planner {
         const value = this.payloadValue(op);
         return bodyRequired(op).filter(f => {
             const p = props[f];
-            if (!isObj(p) || p.type !== 'string' || p.enum || p.format || p.pattern || !UNIQUE_FIELD.test(f)) {return false;}
+            if (!isObj(p) || p.type !== 'string' || p.enum || p.pattern) {return false;}
+            const email = isEmailField(f, p);
+            if (p.format && !email) {return false;}
+            if (!email && !UNIQUE_FIELD.test(f)) {return false;}
             const base = String(isObj(value) ? value[f] : f);
-            return typeof p.maxLength !== 'number' || base.length + 37 <= p.maxLength;
+            return typeof p.maxLength !== 'number' || base.length + 49 <= p.maxLength;
         });
     }
 
@@ -361,9 +427,10 @@ class Planner {
     private responseSteps(op: OperationModel, res: ResponseModel | undefined, hint: string): { steps: KarateStep[]; comments: string[]; draft?: string } {
         if (!res || !isObj(res.schema)) {return { steps: [], comments: ['no response body schema declared'] };}
         if (truncated(res.schema)) {return { steps: [], comments: [], draft: 'Response schema was truncated (too large to expand); add body assertions' };}
-        const isArray = res.schema.type === 'array';
-        if (isArray && !isObj(res.schema.items)) {return { steps: [st('And', "match response == '#[]'")], comments: [] };}
-        const ks = toKarateSchema(isArray ? (res.schema.items as JsonSchema) : res.schema, { optionalAsDoubleHash: true });
+        const rs = withoutFlagged(res.schema, 'writeOnly') as JsonSchema;
+        const isArray = rs.type === 'array';
+        if (isArray && !isObj(rs.items)) {return { steps: [st('And', "match response == '#[]'")], comments: [] };}
+        const ks = toKarateSchema(isArray ? (rs.items as JsonSchema) : rs, { optionalAsDoubleHash: true });
         const file = this.schemaFile(domainOf(op), ks, hint);
         return { steps: [st('And', `match ${isArray ? 'each ' : ''}response == read('classpath:${file}')`)], comments: [] };
     }
@@ -430,9 +497,7 @@ class Planner {
     private planNotFound(op: OperationModel): void {
         if (op.pathParams.length === 0) {return;}
         const pathExprs: Record<string, string> = {};
-        for (const p of op.pathParams) {
-            pathExprs[p.name] = p.schema.format === 'uuid' ? jsLiteral(SAMPLE_UUID_ZERO) : p.schema.type === 'integer' || p.schema.type === 'number' ? '999999999' : `'does-not-exist-' + karate.uuid()`;
-        }
+        Object.assign(pathExprs, unknownIds(op));
         const resp = this.responseSteps(op, declared(op, '404'), `${op.id}-404`);
         const steps = [...this.requestSteps(op, { pathExprs }), st('Then', 'status 404'), ...(resp.draft ? [] : resp.steps)];
         this.push(op, 'main', this.scenario(op, 'negative', `${this.label(op)} - returns 404 for an unknown id`, steps));
@@ -487,14 +552,16 @@ class Planner {
             const apply = (expr: string): ReqOpts => (t.kind === 'body' ? { mutate: [st('*', `set payload.${t.field} = ${expr}`)] } : { query: { [t.field]: expr } });
             const tail = [st('Then', `status ${ok.status}`), ...(resp.draft ? [] : resp.steps)];
             const typed = cases.typed;
+            const assume: Partial<KarateScenario> = op.pathParams.length > 0 ? { comments: ['Assumes a resource with this id exists in the target environment'] } : {};
             if (cells.length >= this.config.scenarios.outlineThreshold) {
                 const s = this.scenario(op, cases.category, `${this.label(op)} - ${cases.phrase(t.field)}`, [...this.requestSteps(op, apply(column)), ...tail], {
-                    examples: { columns: [typed ? `${column}!` : column], rows: cells.map(v => [v.cell]) }
+                    examples: { columns: [typed ? `${column}!` : column], rows: cells.map(v => [v.cell]) },
+                    ...assume
                 });
                 this.push(op, 'main', s);
             } else {
                 for (const v of cells) {
-                    this.push(op, 'main', this.scenario(op, cases.category, `${this.label(op)} - ${cases.single(t.field, v.desc)}`, [...this.requestSteps(op, apply(typed ? v.cell : jsLiteral(v.cell))), ...tail]));
+                    this.push(op, 'main', this.scenario(op, cases.category, `${this.label(op)} - ${cases.single(t.field, v.desc)}`, [...this.requestSteps(op, apply(typed ? v.cell : jsLiteral(v.cell))), ...tail], assume));
                 }
             }
         }
@@ -510,10 +577,15 @@ class Planner {
                 single: (f, d) => `accepts '${f}' = ${d}`
             };
         }
-        if ((s.type === 'integer' || s.type === 'number') && (typeof s.minimum === 'number' || typeof s.maximum === 'number')) {
+        const bounds = numericBounds(s);
+        if ((s.type === 'integer' || s.type === 'number') && (bounds.min || bounds.max)) {
             const values: Array<{ cell: string; desc: string }> = [];
-            if (typeof s.minimum === 'number') {values.push({ cell: String(s.minimum), desc: `minimum ${s.minimum}` });}
-            if (typeof s.maximum === 'number') {values.push({ cell: String(s.maximum), desc: `maximum ${s.maximum}` });}
+            const integer = s.type === 'integer';
+            const lo = bounds.min ? validExtreme(bounds.min, integer, 1) : undefined;
+            const hi = bounds.max ? validExtreme(bounds.max, integer, -1) : undefined;
+            if (lo !== undefined) {values.push({ cell: String(lo), desc: `minimum ${lo}` });}
+            if (hi !== undefined) {values.push({ cell: String(hi), desc: `maximum ${hi}` });}
+            if (values.length === 0) {return undefined;}
             return { category: 'boundary', typed: true, values, phrase: f => `accepts the minimum and maximum of '${f}'`, single: (f, d) => `accepts '${f}' at its ${d}` };
         }
         if (s.type === 'string' && !s.format && !s.pattern && !s.enum && ((typeof s.minLength === 'number' && s.minLength >= 1) || (typeof s.maxLength === 'number' && s.maxLength >= 1 && s.maxLength <= 1000))) {
@@ -544,6 +616,15 @@ class Planner {
             const del = pick('DELETE');
             if (!read || !update || !del) {continue;}
             const idParam = item.exec(read.path)![1];
+            if ([read, update, del].some(o => (o.path.match(/\{[^}]+\}/g) ?? []).length !== 1)) {
+                this.warn(`${create.sourceRef}: CRUD chain skipped - cannot map the id path parameter of every operation`);
+                continue;
+            }
+            const bad = this.unsatisfiable(create) ?? this.unsatisfiable(update);
+            if (bad) {
+                this.warn(`${create.sourceRef}: CRUD chain skipped - cannot generate a value matching pattern ${bad}`);
+                continue;
+            }
             const res = successResponses(create)[0]?.schema;
             const props = isObj(res?.properties) ? Object.keys(res!.properties) : [];
             const idField = props.includes('id') ? 'id' : props.find(p => /Id$|_id$/i.test(p));
@@ -569,25 +650,30 @@ class Planner {
             const props = successResponses(update)[0]?.schema?.properties;
             return isObj(props) && f in props;
         });
-        const ids = { [chain.idParam]: idVar };
+        const idsFor = (op: OperationModel): Record<string, string> => ({ [/\{([^}]+)\}/.exec(op.path)![1]]: idVar });
 
         const steps: KarateStep[] = [
             ...this.requestSteps(create), st('Then', `status ${okOf(create)}`), ...asserts(create),
             st('*', `def ${idVar} = response.${chain.idField}`),
-            ...this.requestSteps(read, { pathExprs: ids }), st('Then', `status ${okOf(read)}`), ...asserts(read),
+            ...this.requestSteps(read, { pathExprs: idsFor(read) }), st('Then', `status ${okOf(read)}`), ...asserts(read),
             ...(field ? [st('And', `match response.${field} == payload.${field}`)] : []),
-            ...this.requestSteps(update, { pathExprs: ids, payloadVar: 'updatePayload' }), st('Then', `status ${okOf(update)}`), ...asserts(update),
+            ...this.requestSteps(update, { pathExprs: idsFor(update), payloadVar: 'updatePayload' }), st('Then', `status ${okOf(update)}`), ...asserts(update),
             ...(updateField ? [st('And', `match response.${updateField} == updatePayload.${updateField}`)] : []),
-            ...this.requestSteps(del, { pathExprs: ids }), st('Then', `status ${okOf(del)}`)
+            ...this.requestSteps(del, { pathExprs: idsFor(del) }), st('Then', `status ${okOf(del)}`)
         ];
-        if (declared(read, '404')) {steps.push(...this.requestSteps(read, { pathExprs: ids }), st('Then', 'status 404'));}
+        if (declared(read, '404')) {steps.push(...this.requestSteps(read, { pathExprs: idsFor(read) }), st('Then', 'status 404'));}
 
         const resource = domainOf(create);
         const s = this.scenario(create, 'positive', `${titleCase(resource)} lifecycle - create, read, update, delete`, steps, {
             comments: [`Covers: ${[read, update, del].map(o => o.sourceRef).join(', ')}`]
         }, ['@crud', `@lock=${resource}`]);
         const secured = [create, read, update, del].some(o => this.secured(o));
-        [create, read, update, del].forEach(o => this.secured(o) && this.warnSchemeMismatch(o));
+        for (const o of [create, read, update, del]) {
+            if (!this.secured(o)) {continue;}
+            this.warnSchemeMismatch(o);
+            const reason = this.mismatchReason(o);
+            if (reason && s.draftReason === undefined) {s.draftReason = `${o.sourceRef}: ${reason}`;}
+        }
         this.items.push({ base: this.baseFor(create, 'crud'), kind: 'crud', secured, domain: resource, scenario: s });
     }
 
@@ -628,7 +714,7 @@ class Planner {
             const first = ops.find(o => !this.unsupported.has(o.sourceRef));
             if (!method || !first) {continue;}
             const virtual: OperationModel = { ...first, method, body: undefined, queryParams: [], headerParams: [], sourceRef: `${method} ${path}` };
-            this.push(first, 'main', this.exploratory(first, `${method} ${path} is not accepted`, this.requestSteps(virtual, { auth: true }), virtual.sourceRef), this.secured(first));
+            this.push(first, 'main', this.exploratory(first, `${method} ${path} is not accepted`, this.requestSteps(virtual, { auth: true, pathExprs: unknownIds(virtual) }), virtual.sourceRef), this.secured(first));
         }
     }
 }
