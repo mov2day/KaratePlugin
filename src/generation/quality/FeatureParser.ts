@@ -1,5 +1,6 @@
 export interface Tag { name: string; line: number }
-export interface Step { line: number; keyword: string; text: string }
+export interface DocLine { line: number; text: string }
+export interface Step { line: number; keyword: string; text: string; /** Docstring body lines owned by this step (not steps themselves). */ doc: DocLine[] }
 export interface Comment { line: number; text: string }
 export interface ParsedScenario {
     name: string;
@@ -44,6 +45,7 @@ export function parseFeature(text: string): ParsedFeature {
     let current: ParsedScenario | undefined;
     let inBackground = false;
     let inDocString = false;
+    let lastStep: Step | undefined;
 
     const block = (): { steps: Step[]; comments: Comment[] } | undefined =>
         current ?? (inBackground ? parsed.background : undefined);
@@ -53,6 +55,7 @@ export function parseFeature(text: string): ParsedFeature {
         const trimmed = lines[i].trim();
         if (inDocString) {
             if (trimmed.startsWith('"""')) inDocString = false;
+            else lastStep?.doc.push({ line: lineNo, text: trimmed });
             if (current) current.endLine = lineNo;
             continue;
         }
@@ -63,7 +66,10 @@ export function parseFeature(text: string): ParsedFeature {
             continue;
         }
         if (trimmed.startsWith('#')) {
-            pendingComments.push({ line: lineNo, text: trimmed });
+            const owner = block();
+            // after a block exists, a comment belongs to it; only comments before a block's header go to the next block
+            if (owner) owner.comments.push({ line: lineNo, text: trimmed });
+            else pendingComments.push({ line: lineNo, text: trimmed });
             continue;
         }
         if (trimmed.startsWith('@')) {
@@ -79,6 +85,7 @@ export function parseFeature(text: string): ParsedFeature {
         }
         if (/^Background\s*:/.test(trimmed)) {
             current = undefined;
+            lastStep = undefined;
             inBackground = true;
             parsed.background = { startLine: lineNo, steps: [], comments: pendingComments };
             pendingTags = [];
@@ -88,6 +95,7 @@ export function parseFeature(text: string): ParsedFeature {
         const sc = SCENARIO_RE.exec(trimmed);
         if (sc) {
             inBackground = false;
+            lastStep = undefined;
             const featureIgnored = parsed.tags.some(t => t.name === '@ignore');
             current = {
                 name: sc[2].trim(),
@@ -112,7 +120,8 @@ export function parseFeature(text: string): ParsedFeature {
         }
         const st = STEP_RE.exec(trimmed);
         if (st) {
-            const step: Step = { line: lineNo, keyword: st[1], text: st[2].trim() };
+            const step: Step = { line: lineNo, keyword: st[1], text: st[2].trim(), doc: [] };
+            lastStep = step;
             const target = block();
             if (target) {
                 target.comments.push(...pendingComments);

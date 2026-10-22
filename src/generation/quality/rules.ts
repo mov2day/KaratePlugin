@@ -1,5 +1,5 @@
 import type { GeneratorConfig } from '../config/GeneratorConfig';
-import type { ParsedFeature, ParsedScenario, Step, Tag } from './FeatureParser';
+import type { DocLine, ParsedFeature, ParsedScenario, Step, Tag } from './FeatureParser';
 
 export interface Finding {
     ruleId: string;
@@ -29,6 +29,11 @@ const allSteps = (p: ParsedFeature, s: ParsedScenario): Step[] => [...(p.backgro
 const isMethod = (s: Step): boolean => /^method\s+\S/i.test(s.text);
 const refsStatus = (s: Step): boolean => /^(assert|match)\b/.test(s.text) && /\bresponseStatus\b/.test(s.text);
 const isUrlStep = (s: Step): boolean => /^url\s+\S/.test(s.text) || /^configure\s+url\b/.test(s.text);
+
+/** Steps to scan for code-level rules: Background (unless the feature is @ignore) plus non-ignored scenarios. */
+const scanSteps = (p: ParsedFeature): Step[] => [...(isFeatureIgnored(p) ? [] : p.background?.steps ?? []), ...active(p).flatMap(s => s.steps)];
+/** Step text plus its docstring body lines, each with its own line number. */
+const textLines = (s: Step): DocLine[] => [{ line: s.line, text: s.text }, ...s.doc];
 
 /** Replace quoted string contents so code-level patterns do not match inside literals. */
 const stripStrings = (text: string): string => text.replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, "''");
@@ -71,8 +76,7 @@ const cfg001: Rule = {
     check: p => {
         const f = finder(cfg001);
         const out: Finding[] = [];
-        const steps: Step[] = [...(isFeatureIgnored(p) ? [] : p.background?.steps ?? []), ...active(p).flatMap(s => s.steps)];
-        for (const s of steps) {
+        for (const s of scanSteps(p)) {
             if (/^url\s+['"]https?:/i.test(s.text)) out.push(f(s.line, 'Hard-coded URL in feature', 'Use a config variable such as baseUrl'));
         }
         return out;
@@ -100,26 +104,23 @@ const sec001: Rule = {
     check: p => {
         const f = finder(sec001);
         const out: Finding[] = [];
-        for (const sc of active(p)) {
-            for (const s of allSteps(p, sc)) {
-                if (s.line < sc.startLine) continue; // Background steps are reported once below
-                if (secretIn(s)) out.push(f(s.line, 'Literal secret value in step', "Read it from karate.sysenv(...) or a config variable"));
+        for (const s of scanSteps(p)) {
+            if (AUTH_HEADER.test(s.text) || SECRET_HEADER.test(s.text)) {
+                out.push(f(s.line, 'Literal secret value in step', 'Read it from karate.sysenv(...) or a config variable'));
+                continue;
             }
-        }
-        if (!isFeatureIgnored(p)) {
-            for (const s of p.background?.steps ?? []) {
-                if (secretIn(s)) out.push(f(s.line, 'Literal secret value in step', "Read it from karate.sysenv(...) or a config variable"));
+            for (const l of textLines(s)) {
+                if (hasSecretKey(l.text)) out.push(f(l.line, 'Literal secret value in step', 'Read it from karate.sysenv(...) or a config variable'));
             }
         }
         return out;
     }
 };
 
-function secretIn(s: Step): boolean {
-    if (AUTH_HEADER.test(s.text) || SECRET_HEADER.test(s.text)) return true;
+function hasSecretKey(text: string): boolean {
     SECRET_KEY.lastIndex = 0;
     let m: RegExpExecArray | null;
-    while ((m = SECRET_KEY.exec(s.text)) !== null) {
+    while ((m = SECRET_KEY.exec(text)) !== null) {
         if (isSecretValue(m[3])) return true;
     }
     return false;
@@ -165,7 +166,7 @@ const draft001: Rule = {
         if (isFeatureIgnored(p)) return out;
         const blocks = [...(p.background ? [p.background] : []), ...active(p)];
         for (const b of blocks) {
-            for (const s of b.steps) if (/TODO/.test(s.text)) out.push(f(s.line, 'TODO/placeholder step left in a non-@ignore scenario', 'Complete the step or tag the scenario @ignore'));
+            for (const s of b.steps) if (/\bTODO\b/.test(s.text)) out.push(f(s.line, 'TODO/placeholder step left in a non-@ignore scenario', 'Complete the step or tag the scenario @ignore'));
             for (const c of b.comments) if (/\bTODO\b/.test(c.text)) out.push(f(c.line, 'TODO comment left in a non-@ignore scenario', 'Complete the scenario or tag it @ignore'));
         }
         return out.sort((a, b) => a.line - b.line);
@@ -190,8 +191,8 @@ const dup001: Rule = {
 const callRule = (rule: Rule, needle: string, message: string): Rule['check'] => p => {
     const f = finder(rule);
     const out: Finding[] = [];
-    for (const sc of active(p)) {
-        for (const s of sc.steps) if (stripStrings(s.text).includes(needle)) out.push(f(s.line, message));
+    for (const s of scanSteps(p)) {
+        for (const l of textLines(s)) if (stripStrings(l.text).includes(needle)) out.push(f(l.line, message));
     }
     return out;
 };
@@ -204,14 +205,14 @@ const num001: Rule = {
     check: p => {
         const f = finder(num001);
         const out: Finding[] = [];
-        for (const sc of active(p)) {
-            for (const s of sc.steps) {
+        for (const s of scanSteps(p)) {
+            for (const l of textLines(s)) {
                 const re = /(?<![\w.])\d{16,}(?![\w.])/g;
                 let m: RegExpExecArray | null;
-                const code = stripStrings(s.text);
+                const code = stripStrings(l.text);
                 while ((m = re.exec(code)) !== null) {
                     if (BigInt(m[0]) > MAX_SAFE) {
-                        out.push(f(s.line, `Integer ${m[0]} exceeds JavaScript safe range`, 'Use a quoted string'));
+                        out.push(f(l.line, `Integer ${m[0]} exceeds JavaScript safe range`, 'Use a quoted string'));
                         break;
                     }
                 }
@@ -228,8 +229,7 @@ const ref001: Rule = {
         const out: Finding[] = [];
         if (!ctx.knownFiles) return out;
         const known = ctx.knownFiles;
-        const steps = [...(isFeatureIgnored(p) ? [] : p.background?.steps ?? []), ...active(p).flatMap(s => s.steps)];
-        for (const s of steps) {
+        for (const s of scanSteps(p)) {
             const re = /read\(\s*(['"])classpath:([^'"]+)\1/g;
             let m: RegExpExecArray | null;
             while ((m = re.exec(s.text)) !== null) {

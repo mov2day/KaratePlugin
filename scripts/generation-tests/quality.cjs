@@ -98,7 +98,7 @@ tests.push(
         run() {
             const t = join('Feature: x', 'Scenario: s', '  Given url baseUrl', '  When method get', '  Then match responseStatus == 404');
             assert.deepEqual(found(t), []);
-            assert.deepEqual(found(join('Feature: x', 'Scenario: s', "  * configure url = baseUrl".replace('configure url = ', 'configure url '), '  When method get', '  Then status 400')), []);
+            assert.deepEqual(found(join('Feature: x', 'Scenario: s', '  * configure url baseUrl', '  When method get', '  Then status 400')), []);
         }
     },
     {
@@ -141,6 +141,37 @@ tests.push(
             const ids = rules().RULES.map(r => r.id).sort();
             assert.equal(ids.length, 14);
             assert.ok(ids.includes('V2-REF-001') && ids.includes('V2-TAG-001'));
+        }
+    },
+    {
+        name: 'quality: trailing comment belongs to its own scenario, not the next',
+        run() {
+            const t = join(...HEAD, '@ignore', 'Scenario: draft', '  * def x = 1', '  # TODO finish', '', 'Scenario: real', '  * def y = 2');
+            assert.deepEqual(found(t), []);
+            const t2 = join(...HEAD, 'Scenario: real', '  * def y = 2', '  # TODO finish');
+            assert.deepEqual(found(t2), ['V2-DRAFT-001@8']);
+            assert.deepEqual(found(join(...HEAD, 'Scenario: s', '  * def y = 2 # TODOS later')), []);
+            assert.deepEqual(found(join(...HEAD, 'Scenario: s', '  * def TODOS = 2')), []);
+        }
+    },
+    {
+        name: 'quality: Background steps scanned by NUM/API; @ignore feature skips them',
+        run() {
+            const bg = (step) => join('Feature: f', 'Background:', '  * url baseUrl', `  * ${step}`, 'Scenario: s', '  * def a = 1');
+            assert.deepEqual(found(bg('def n = 9007199254740993')), ['V2-NUM-001@4']);
+            assert.deepEqual(found(bg('karate.stop(9000)')), ['V2-API-001@4']);
+            assert.deepEqual(found(bg('def j = karate.toJava(x)')), ['V2-API-002@4']);
+            assert.equal(q().runGate(bg('def j = karate.toJava(x)')).findings[0].severity, 'warning');
+            assert.deepEqual(found('@ignore\n' + bg('karate.stop(9000)')), []);
+        }
+    },
+    {
+        name: 'quality: docstring bodies scanned for secrets/numbers/API but are not steps',
+        run() {
+            const t = join(...HEAD, 'Scenario: s', '  Given request', '  """', '  {', '    "name": "Fido",', '    "password": "hunter2",', '    "ref": "#(token)",', '    "t": "<access_token>",', '    "id": 9007199254740993', '  }', '  """', '  When method post', '  Then status 400');
+            assert.deepEqual(found(t), ['V2-SEC-001@11', 'V2-NUM-001@14']);
+            const t2 = join(...HEAD, 'Scenario: s', '  Given request', '  """', '  * def a = 1', '  # TODO later', '  Given url x', '  """', '  When method post', '  Then status 400');
+            assert.deepEqual(found(t2), []);
         }
     },
     {
