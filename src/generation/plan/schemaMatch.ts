@@ -14,9 +14,9 @@ const isObj = (v: unknown): v is JsonSchema => typeof v === 'object' && v !== nu
 
 /** `#string` -> `##string`; leaves `##x` and `#ignore` alone. Object (nested) schemas cannot be marked, so they collapse to `##object`. */
 function optional(marker: unknown): unknown {
-    if (isObj(marker)) return '##object';
-    if (typeof marker !== 'string') return marker;
-    if (!marker.startsWith('#') || marker.startsWith('##') || marker === IGNORE) return marker;
+    if (isObj(marker)) {return '##object';}
+    if (typeof marker !== 'string') {return marker;}
+    if (!marker.startsWith('#') || marker.startsWith('##') || marker === IGNORE) {return marker;}
     return `#${marker}`;
 }
 
@@ -30,27 +30,27 @@ const jsList = (values: unknown[]): string =>
 
 function scalar(s: JsonSchema, type: string): string {
     if (type === 'string') {
-        if (Array.isArray(s.enum) && s.enum.length > 0) return `#string? ${jsList(s.enum)}.includes(_)`;
-        if (s.format === 'uuid') return '#uuid';
-        if (typeof s.pattern === 'string' && s.pattern !== '') return `#regex ${s.pattern}`;
+        if (Array.isArray(s.enum) && s.enum.length > 0) {return `#string? ${jsList(s.enum)}.includes(_)`;}
+        if (s.format === 'uuid') {return '#uuid';}
+        if (typeof s.pattern === 'string' && s.pattern !== '') {return `#regex ${s.pattern}`;}
         const parts: string[] = [];
-        if (typeof s.minLength === 'number' && s.minLength > 0) parts.push(`_.length >= ${s.minLength}`);
-        if (typeof s.maxLength === 'number') parts.push(`_.length <= ${s.maxLength}`);
+        if (typeof s.minLength === 'number' && s.minLength > 0) {parts.push(`_.length >= ${s.minLength}`);}
+        if (typeof s.maxLength === 'number') {parts.push(`_.length <= ${s.maxLength}`);}
         return parts.length > 0 ? `#string? ${parts.join(' && ')}` : '#string';
     }
     if (type === 'integer' || type === 'number') {
-        if (exceedsSafeInteger(s)) return '#string';
-        if (Array.isArray(s.enum) && s.enum.length > 0) return `#number? ${jsList(s.enum)}.includes(_)`;
+        if (exceedsSafeInteger(s)) {return '#string';}
+        if (Array.isArray(s.enum) && s.enum.length > 0) {return `#number? ${jsList(s.enum)}.includes(_)`;}
         const parts: string[] = [];
-        if (typeof s.minimum === 'number') parts.push(`_ >= ${s.minimum}`);
-        if (typeof s.maximum === 'number') parts.push(`_ <= ${s.maximum}`);
+        if (typeof s.minimum === 'number') {parts.push(`_ >= ${s.minimum}`);}
+        if (typeof s.maximum === 'number') {parts.push(`_ <= ${s.maximum}`);}
         return parts.length > 0 ? `#number? ${parts.join(' && ')}` : '#number';
     }
     return '#boolean';
 }
 
 function convert(s: JsonSchema | undefined, opts: KarateSchemaOptions): unknown {
-    if (!isObj(s)) return IGNORE;
+    if (!isObj(s)) {return IGNORE;}
     let result: unknown;
     const type: string | undefined = typeof s.type === 'string' ? s.type : isObj(s.properties) ? 'object' : s.items ? 'array' : undefined;
     if (s['x-truncated'] === true) {
@@ -66,7 +66,7 @@ function convert(s: JsonSchema | undefined, opts: KarateSchemaOptions): unknown 
             for (const key of keys) {
                 let child = convert(props[key], opts);
                 const nullable = isObj(props[key]) && props[key].nullable === true;
-                if ((!required.includes(key) && opts.optionalAsDoubleHash) || nullable) child = optional(child);
+                if ((!required.includes(key) && opts.optionalAsDoubleHash) || nullable) {child = optional(child);}
                 obj[key] = child;
             }
             result = obj;
