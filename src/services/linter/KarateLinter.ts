@@ -22,8 +22,10 @@ export class KarateLinter {
 
     constructor() {
         this.diagnosticsManager = new DiagnosticsManager();
+        const hardcodedUrl = new HardcodedUrlRule();
+        const hardcodedSecret = new HardcodedSecretRule();
         this.rules = [
-            new HardcodedUrlRule(),
+            hardcodedUrl,
             new ConsistentIndentationRule(),
             new KeywordSpacingRule(),
             new DuplicateScenarioRule(),
@@ -32,9 +34,9 @@ export class KarateLinter {
             new FileNamingRule(),
             new TagPlacementRule(),
             new AuthenticationTestRule(),
-            new HardcodedSecretRule(),
+            hardcodedSecret,
             new DuplicateZephyrTagRule(),
-            new GateFindingsRule(id => this.isRuleEnabled(id))
+            new GateFindingsRule(id => this.isRuleEnabled(id), [hardcodedUrl, hardcodedSecret])
         ];
 
         this.registerListeners();

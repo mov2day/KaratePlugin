@@ -53,6 +53,9 @@ export class GeneratorConfigLoader {
         const filePath = path.isAbsolute(configFile) ? configFile : path.join(workspaceRoot, configFile);
         const file = GeneratorConfigLoader.readJson(filePath, warnings);
 
+        // Settings split: SettingsMapping (above) maps the karateDsl.generation.* settings into the
+        // settings layer; migrateSettings only supplies the legacy `testTemplate` preset, as the
+        // lowest layer, and only when no config file exists (see docs/generation.md).
         let settingsLayer = mapSettingsToConfig(raw);
         if (file === undefined) {
             // No config file: legacy testTemplate becomes the lowest settings layer; explicit settings still win.

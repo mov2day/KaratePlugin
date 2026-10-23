@@ -4,6 +4,11 @@ import { ConfigManager } from '../utils/configManager';
 import { OpenAPIParser } from './openApiParser';
 import { FeatureStructurer, StructuringOptions, StructuredOutput } from './FeatureStructurer';
 
+/**
+ * Legacy deterministic OpenAPI generator. The generation pipeline (src/generation) is the primary path;
+ * this class stays for the MCP tool service, the sync manager and structured baseline tests, so its
+ * scenario builders are still referenced and are intentionally kept.
+ */
 export class KarateGenerator {
     private openApiParser: OpenAPIParser;
     private style: any = {
@@ -382,6 +387,7 @@ export class KarateGenerator {
         // Define base URL variable
         steps.push({
             keyword: '*',
+            // Legacy fallback only: the generation pipeline scaffolds config-driven base URLs and does not use this path.
             text: `def ${varName} = '${baseUrl || 'http://localhost:8080'}'`
         });
 

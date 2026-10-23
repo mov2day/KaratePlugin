@@ -31,3 +31,20 @@ export function applyQuickFix(f: GateLintFinding, lineText: string): string | un
     const re = new RegExp(f.quickFix.find, 'i');
     return re.test(lineText) ? lineText.replace(re, f.quickFix.replacement) : undefined;
 }
+
+/** Gate rule -> legacy linter rule that reports the same concern on the same line. */
+export const EQUIVALENT_LINTER_RULES: Readonly<Record<string, string>> = {
+    'V2-CFG-001': 'K001', // hard-coded URL
+    'V2-SEC-001': 'S002'  // hard-coded secret
+};
+
+/**
+ * Drop gate findings already reported by an equivalent legacy rule on the same line.
+ * `peerLines` maps a legacy rule id to the 1-based lines it reported.
+ */
+export function dedupeGateFindings<T extends Finding>(findings: T[], peerLines: ReadonlyMap<string, ReadonlySet<number>>): T[] {
+    return findings.filter(f => {
+        const peer = EQUIVALENT_LINTER_RULES[f.ruleId];
+        return !(peer && peerLines.get(peer)?.has(f.line));
+    });
+}

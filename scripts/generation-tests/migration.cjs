@@ -6,6 +6,18 @@ const { resolveGeneratorConfig } = require('../../out/generation/config/Generato
 
 module.exports = [
     {
+        name: 'linter: gate findings duplicating K001/S002 on the same line are dropped',
+        run() {
+            const a = adapter();
+            const f = (ruleId, line) => ({ ruleId, severity: 'error', line, message: 'm' });
+            const findings = [f('V2-CFG-001', 3), f('V2-CFG-001', 9), f('V2-SEC-001', 5), f('V2-SEC-001', 6), f('V2-LOCK-001', 3)];
+            const peers = new Map([['K001', new Set([3])], ['S002', new Set([5])]]);
+            const kept = a.dedupeGateFindings(findings, peers).map(x => `${x.ruleId}:${x.line}`);
+            assert.deepEqual(kept, ['V2-CFG-001:9', 'V2-SEC-001:6', 'V2-LOCK-001:3']);
+            assert.equal(a.dedupeGateFindings(findings, new Map()).length, 5);
+        }
+    },
+    {
         name: 'migration: empty legacy settings map to nothing',
         run() { assert.deepEqual(mig().migrateSettings({}), {}); }
     },
