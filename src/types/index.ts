@@ -27,6 +27,8 @@ export interface KarateStep {
     text: string;
     docString?: string;
     table?: string[][];
+    /** Rendered as `# ...` lines directly above the step (for example the source of a request group). */
+    comment?: string;
 }
 
 export interface OpenAPIEndpoint {

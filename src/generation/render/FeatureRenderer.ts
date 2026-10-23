@@ -38,7 +38,8 @@ function tableLines(rows: string[][], style: KarateStyle, depth: number): string
 }
 
 export function renderStep(step: KarateStep, style: KarateStyle, depth: number = STEP_DEPTH): string {
-    const lines = [`${pad(style, depth)}${step.keyword} ${step.text}`];
+    const lines = step.comment ? [comment(style, depth, step.comment)] : [];
+    lines.push(`${pad(style, depth)}${step.keyword} ${step.text}`);
     if (step.docString !== undefined && step.docString !== '') {
         lines.push(`${pad(style, depth)}"""`);
         for (const body of step.docString.split('\n')) {
