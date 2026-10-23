@@ -106,9 +106,10 @@ function kindOf(v: unknown): Kind {
     if (typeof v === 'boolean') {return '#boolean';}
     return isObj(v) ? 'object' : 'other';
 }
-interface SchemaCtx { each: { expr: string; schema: unknown }[] }
+interface SchemaCtx { each: { expr: string; schema: unknown }[]; sawNull?: boolean }
 function schemaOf(v: unknown, depth: number, expr: string, ctx: SchemaCtx): unknown {
-    if (v === null) {return '##ignore';}
+    // A recorded null says nothing about the type: optional and untyped (`##ignore`).
+    if (v === null) {ctx.sawNull = true; return '##ignore';}
     if (Array.isArray(v)) {
         if (v.length === 0 || depth > MAX_DEPTH) {return '#array';}
         let kinds = new Set<Kind>(v.map(kindOf));
@@ -191,7 +192,8 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
     const dropped = { static: 0, preflight: 0, redirect: 0, host: 0, method: 0, duplicate: 0 };
     const notCaptured: string[] = [];
     const calls: Call[] = [];
-    const seen = new Set<string>();
+    const seen = new Map<string, number>(); // identical GET key -> index in `calls` of its last kept occurrence
+    let lastMutation = -1;
     for (const req of entries) {
         let url: URL;
         try { url = new URL(req.url); } catch { continue; }
@@ -209,8 +211,12 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
         if (status >= 300 && status < 400) {dropped.redirect++; continue;}
         if (method === 'GET' || method === 'HEAD') {
             const key = `${method} ${url.href} ${req.body ?? ''}`;
-            if (seen.has(key)) {dropped.duplicate++; continue;}
-            seen.add(key);
+            const prev = seen.get(key);
+            // Collapse only when nothing was written since; a re-read after any write verifies that write and is kept.
+            if (prev !== undefined && lastMutation < prev) {dropped.duplicate++; continue;}
+            seen.set(key, calls.length);
+        } else {
+            lastMutation = calls.length;
         }
         calls.push({ req, url, method, status, origin: url.origin });
     }
@@ -220,7 +226,7 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
     dropNote(dropped.redirect, 'redirect or not-modified response(s) (Karate follows redirects itself)');
     dropNote(dropped.host, 'request(s) to hosts that were not selected');
     dropNote(dropped.method, 'request(s) with an unsupported HTTP method');
-    dropNote(dropped.duplicate, 'repeated identical GET request(s); the first one was kept');
+    dropNote(dropped.duplicate, 'repeated identical GET request(s) with no write in between; the first one was kept');
     if (notCaptured.length > 0) {warnOnce(`Skipped ${notCaptured.length} request(s) without a recorded response (NOT CAPTURED)`);}
 
     const noModel = (): HarBuild => ({
@@ -304,9 +310,10 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
                 c.used = true;
                 return c.name;
             };
-            const candFor = (value: string | number, kindMatters: boolean): Candidate | undefined => {
+            const candFor = (value: string | number, kindMatters: boolean, segName?: string): Candidate | undefined => {
                 const c = byValue.get(String(value));
                 if (!c) {return undefined;}
+                if (typeof c.value === 'number' && String(c.value).length < 2 && !(segName !== undefined && singular(c.resource).toLowerCase() === singular(segName).toLowerCase())) {return undefined;}
                 return kindMatters && typeof c.value !== typeof value ? undefined : c;
             };
             const pre: KarateStep[] = [];
@@ -315,8 +322,8 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
             const labelSegs: string[] = [];
 
             // path
-            const pathExprs = segs.map(seg => {
-                const c = candFor(seg, false);
+            const pathExprs = segs.map((seg, si) => {
+                const c = candFor(seg, false, segs[si - 1]);
                 if (c) {const nm = useCand(c); labelSegs.push(`{${nm}}`); return nm;}
                 if (looksLikeCredentialValue(seg) || containsCredentialValue(seg)) {labelSegs.push('{credential}'); return secretVar('path', true);}
                 labelSegs.push(seg);
@@ -449,6 +456,7 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
             if (parsedResp.ok && (isObj(parsedResp.value) || Array.isArray(parsedResp.value))) {
                 const ctx: SchemaCtx = { each: [] };
                 const schema = schemaOf(parsedResp.value, 0, 'response', ctx);
+                if (ctx.sawNull) {warnOnce("Recorded nulls were rendered as optional '##ignore'; tighten after reviewing the contract");}
                 const matchStep = (target: string, value: unknown): KarateStep => {
                     const one = lit(value);
                     return one.length <= 100 ? st('And', `${target} == ${one}`) : st('And', `${target} ==`, { docString: lit(value, true) });
@@ -459,7 +467,7 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
                 const resource = [...segs].reverse().find(s => /^[A-Za-z][A-Za-z_-]*$/.test(s) && !/^(?:api|v\d+)$/i.test(s)) ?? 'resource';
                 for (const leaf of idLeaves(parsedResp.value)) {
                     const existing = byValue.get(String(leaf.value));
-                    if (existing && existing.callIdx < idx && typeof existing.value === typeof leaf.value) {
+                    if (existing && existing.callIdx < idx && typeof existing.value === typeof leaf.value && !(typeof leaf.value === 'number' && String(leaf.value).length < 2)) {
                         if (asserted < MAX_ASSERTED_IDS) {
                             steps.push(st('And', `match ${leaf.expr} == ${useCand(existing)}`));
                             asserted++;

@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import { CapturedRequest, HarFile, HarEntry, HarFilterOptions, harEntryToCapturedRequest } from './CapturedRequest';
+import { redactUrl } from '../../generation/adapters/secrets';
 import { logger } from '../../utils/logger';
 
 /**
@@ -68,7 +69,7 @@ export class HarImporter {
                 const captured = harEntryToCapturedRequest(entry);
                 requests.push(captured);
             } catch (error) {
-                logger.warn(`Failed to convert HAR entry: ${error}`);
+                logger.warn(`Failed to convert HAR entry: ${redactUrl(String((error as Error)?.message ?? error))}`);
             }
         }
 

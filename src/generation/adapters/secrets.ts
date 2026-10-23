@@ -60,7 +60,9 @@ export function credentialKeys(text: string): string[] {
 }
 
 /** URL with the values of secret-looking query parameters masked; for logs only (never for generated files). */
-export function redactUrl(url: string): string {
+export function redactUrl(raw: string): string {
+    // userinfo (`user:pw@host`) is always removed
+    const url = raw.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i, '$1[REDACTED]@');
     const cut = url.indexOf('?');
     if (cut < 0) {return url;}
     const head = url.slice(0, cut);

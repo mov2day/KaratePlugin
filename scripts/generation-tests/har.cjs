@@ -380,6 +380,50 @@ module.exports = [
         }
     },
     {
+        name: 'har fix: an identical GET is kept after any write and collapsed when nothing was written in between',
+        run() {
+            const gets = b => (featureText(b).match(/method get/g) ?? []).length;
+            assert.equal(gets(build([entry('GET', `${H}/api/orders`, { json: [] }), entry('POST', `${H}/api/orders`, { status: 201, json: { ok: true } }), entry('GET', `${H}/api/orders`, { json: [] })])), 2);
+            assert.equal(gets(build([entry('GET', `${H}/api/orders`, { json: [] }), entry('GET', `${H}/api/orders`, { json: [] })])), 1);
+            assert.equal(gets(build([entry('GET', `${H}/api/orders`, { json: [] }), entry('DELETE', `${H}/api/other/1`, { status: 204 }), entry('GET', `${H}/api/orders`, { json: [] })])), 2);
+        }
+    },
+    {
+        name: 'har fix: small numeric ids are linked only when the resource name matches; longer ids are linked',
+        run() {
+            const t = featureText(build([entry('POST', `${H}/api/orders`, { status: 201, json: { id: 7 } }), entry('GET', `${H}/api/users/7`, { json: { ok: true } })]));
+            assert.ok(!/def \w+ = response\.id/.test(t) && t.includes("'users', '7'"), t);
+            const t2 = featureText(build([entry('POST', `${H}/api/orders`, { status: 201, json: { id: 5512 } }), entry('GET', `${H}/api/users/5512`, { json: { ok: true } })]));
+            assert.match(t2, /path 'api', 'users', orderId/);
+            const t3 = featureText(build([entry('POST', `${H}/api/orders`, { status: 201, json: { id: 7 } }), entry('GET', `${H}/api/orders/7`, { json: { ok: true } })]));
+            assert.match(t3, /path 'api', 'orders', orderId/);
+        }
+    },
+    {
+        name: 'har fix: recorded nulls are rendered optional and warned once',
+        run() {
+            const b = build([entry('GET', `${H}/api/a`, { json: { n: null } }), entry('GET', `${H}/api/b`, { json: { n: null } })]);
+            assert.equal(b.warnings.filter(w => /Recorded nulls/.test(w)).length, 1);
+        }
+    },
+    {
+        name: 'redactUrl: credential query values, fragments and userinfo never survive; session logs only use redacted URLs',
+        run() {
+            const { redactUrl } = out('generation/adapters/secrets');
+            const a = redactUrl('https://x.test/a?api_key=KEYLIT&x=1#frag');
+            assert.ok(!a.includes('KEYLIT') && a.includes('x=1') && a.endsWith('#frag'), a);
+            const b = redactUrl('https://user:pwlit@host.test/p?q=1');
+            assert.ok(!b.includes('pwlit') && !b.includes('user:'), b);
+            const dir = require('path').resolve(__dirname, '..', '..', 'src', 'services', 'session');
+            for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.ts'))) {
+                const lines = fs.readFileSync(require('path').join(dir, f), 'utf8').split('\n');
+                lines.forEach((l, i) => {
+                    if (/(logger\.\w+|this\.log|appendLine)\(/.test(l) && /\.url\b|targetUrl/.test(l) && !/redactUrl\(/.test(l)) assert.fail(`${f}:${i + 1} logs a raw URL: ${l.trim()}`);
+                });
+            }
+        }
+    },
+    {
         name: 'har: no evidenced requests produce no features and a warning',
         run() {
             const b = build([entry('GET', `${H}/a.js`, { type: 'application/javascript', respBody: 'x' })]);
