@@ -838,9 +838,10 @@ export async function activate(context: vscode.ExtensionContext) {
                     progress.report({ increment: 20, message: 'Parsing collection...' });
 
                     const { PostmanImportService } = await import('./services/postmanImportService');
-                    const importService = new PostmanImportService();
+                    const { toIncrementalProgress } = await import('./generation/vscode/runGeneration');
+                    const importService = new PostmanImportService(context);
 
-                    progress.report({ increment: 40, message: 'Converting to Karate...' });
+                    progress.report({ increment: 20, message: 'Converting to Karate...' });
 
                     const result = await importService.importCollection(collectionPath, outputDir, {
                         preserveFolders: true,
@@ -848,9 +849,7 @@ export async function activate(context: vscode.ExtensionContext) {
                         includeAuth: true,
                         useCopilot,
                         environmentFile: environmentPath
-                    }, token);
-
-                    progress.report({ increment: 100 });
+                    }, token, toIncrementalProgress(progress, { from: 40, to: 100 }));
 
                     if (result.success) {
                         const message = `✅ Successfully imported ${result.featuresCreated} feature file(s)!`;

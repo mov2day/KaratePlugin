@@ -1,7 +1,7 @@
 // Minimal `vscode` stub so compiled extension classes can load under plain node.
 const Module = require('module');
 const stub = {
-    workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback }), workspaceFolders: undefined },
+    workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback, inspect: () => undefined }), workspaceFolders: undefined },
     Uri: { file: fsPath => ({ fsPath }) },
     window: { createOutputChannel: () => ({ appendLine() {}, show() {}, dispose() {} }) },
     CancellationError: class CancellationError extends Error {}
