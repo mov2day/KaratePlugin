@@ -1403,7 +1403,7 @@ export async function activate(context: vscode.ExtensionContext) {
         async () => {
             try {
                 const { generateFromGraphQL } = await import('./commands/generateFromGraphQL');
-                await generateFromGraphQL();
+                await generateFromGraphQL(context);
             } catch (error) {
                 logger.error('GraphQL generation failed', error as Error);
                 vscode.window.showErrorMessage(`Failed to generate from GraphQL: ${error}`);
