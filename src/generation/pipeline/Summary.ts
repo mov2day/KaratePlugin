@@ -94,7 +94,8 @@ export function formatSummary(r: PipelineResult, opts: SummaryOptions = {}): Gen
         for (const f of drafts) {details.push(`  ${f.path}`);}
     }
     if (rejected.length) {
-        details.push('AI refinement rejected (deterministic output kept)');
+        const allIds = [...new Set(rejected.flatMap(f => (f.refinement?.findings ?? []).map(x => x.ruleId)))].sort();
+        details.push(`AI refinement rejected: ${allIds.join(', ') || 'no rule ids'} (deterministic output kept)`);
         for (const f of rejected) {
             const ids = [...new Set((f.refinement?.findings ?? []).map(x => x.ruleId))];
             details.push(`  ${f.path}: ${ids.join(', ') || 'no rule ids'}`);

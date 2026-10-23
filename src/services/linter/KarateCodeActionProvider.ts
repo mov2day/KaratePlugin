@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { applyQuickFix, gateFindingsForText } from './gateAdapter';
 
 export class KarateCodeActionProvider implements vscode.CodeActionProvider {
 
@@ -13,6 +14,23 @@ export class KarateCodeActionProvider implements vscode.CodeActionProvider {
                 } else if (diagnostic.code === 'K006') { // Indentation
                     const fix = this.createIndentationFix(document, diagnostic);
                     if (fix) actions.push(fix);
+                }
+            }
+        }
+
+        for (const diagnostic of context.diagnostics) {
+            if (diagnostic.source === 'Karate Gate' && diagnostic.code === 'V2-LOCK-001') {
+                const line = document.lineAt(diagnostic.range.start.line);
+                const finding = gateFindingsForText(document.getText(), document.fileName)
+                    .find(f => f.ruleId === 'V2-LOCK-001' && f.line - 1 === line.lineNumber);
+                const fixed = finding ? applyQuickFix(finding, line.text) : undefined;
+                if (finding?.quickFix && fixed !== undefined) {
+                    const action = new vscode.CodeAction(finding.quickFix.title, vscode.CodeActionKind.QuickFix);
+                    action.edit = new vscode.WorkspaceEdit();
+                    action.edit.replace(document.uri, line.range, fixed);
+                    action.diagnostics = [diagnostic];
+                    action.isPreferred = true;
+                    actions.push(action);
                 }
             }
         }

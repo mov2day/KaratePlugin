@@ -6,6 +6,7 @@ import { resolveGeneratorConfig } from '../config/GeneratorConfig';
 import type { GeneratorConfig } from '../config/GeneratorConfig';
 import { layerStyle, mapSettingsToConfig } from '../config/SettingsMapping';
 import type { LoaderSettings } from '../config/SettingsMapping';
+import { mergeSettingsLayers, migrateSettingsWithWarnings } from './migrateSettings';
 
 export interface LoadedGeneratorConfig {
     config: GeneratorConfig;
@@ -52,7 +53,14 @@ export class GeneratorConfigLoader {
         const filePath = path.isAbsolute(configFile) ? configFile : path.join(workspaceRoot, configFile);
         const file = GeneratorConfigLoader.readJson(filePath, warnings);
 
-        const resolved = resolveGeneratorConfig(file, mapSettingsToConfig(raw));
+        let settingsLayer = mapSettingsToConfig(raw);
+        if (file === undefined) {
+            // No config file: legacy testTemplate becomes the lowest settings layer; explicit settings still win.
+            const legacy = migrateSettingsWithWarnings({ testTemplate: read<string>('testTemplate') });
+            warnings.push(...legacy.warnings);
+            settingsLayer = mergeSettingsLayers(legacy.config, settingsLayer);
+        }
+        const resolved = resolveGeneratorConfig(file, settingsLayer);
         warnings.push(...resolved.warnings);
         const source = file !== undefined ? 'file' : explicit ? 'settings' : 'defaults';
         return { config: resolved.config, warnings, source };

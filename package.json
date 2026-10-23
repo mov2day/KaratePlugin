@@ -326,7 +326,9 @@
         "karateDsl.outputPath": {
           "type": "string",
           "default": "src/test/karate",
-          "description": "Default output path for generated Karate feature files"
+          "description": "Default output path for generated Karate feature files",
+          "markdownDeprecationMessage": "Deprecated. Use `layout.outputRoot` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use layout.outputRoot in .karate-generator.json instead."
         },
         "karateDsl.confluence.baseUrl": {
           "type": "string",
@@ -359,7 +361,9 @@
             "minimal"
           ],
           "default": "standard",
-          "description": "Test generation template style"
+          "description": "Test generation template style",
+          "markdownDeprecationMessage": "Deprecated. Use `scenarios` and `style` in `.karate-generator.json` (`karateDsl.generation.configFile`) instead.",
+          "deprecationMessage": "Deprecated. Use scenarios and style in .karate-generator.json (karateDsl.generation.configFile) instead."
         },
         "karateDsl.useCopilot": {
           "type": "boolean",
@@ -414,12 +418,16 @@
             "Domain grouping — one feature file per API domain (e.g., orders.feature, payments.feature)",
             "Flat — all scenarios in a single feature file (classic behavior)",
             "Method grouping — one feature file per HTTP method (e.g., get.feature, post.feature)"
-          ]
+          ],
+          "markdownDeprecationMessage": "Deprecated. Use `layout.strategy` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use layout.strategy in .karate-generator.json instead."
         },
         "karateDsl.generation.autoTag": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically tag generated scenarios with @positive, @negative, @edge, @boundary, and @domain tags"
+          "description": "Automatically tag generated scenarios with @positive, @negative, @edge, @boundary, and @domain tags",
+          "markdownDeprecationMessage": "Deprecated. Use `tags.auto` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use tags.auto in .karate-generator.json instead."
         },
         "karateDsl.health.disabledRules": {
           "type": "array",
@@ -726,19 +734,25 @@
         "karateDsl.generation.smartTestData": {
           "type": "boolean",
           "default": true,
-          "description": "Use realistic, field-aware test values instead of generic placeholders"
+          "description": "Use realistic, field-aware test values instead of generic placeholders",
+          "markdownDeprecationMessage": "Deprecated. Use `data.smart` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use data.smart in .karate-generator.json instead."
         },
         "karateDsl.generation.scenarioOutlineThreshold": {
           "type": "number",
           "default": 3,
           "minimum": 1,
           "maximum": 10,
-          "description": "Minimum required fields to trigger Scenario Outline auto-generation"
+          "description": "Minimum required fields to trigger Scenario Outline auto-generation",
+          "markdownDeprecationMessage": "Deprecated. Use `scenarios.outlineThreshold` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use scenarios.outlineThreshold in .karate-generator.json instead."
         },
         "karateDsl.generation.sharedStylePath": {
           "type": "string",
           "default": "",
-          "description": "Path to workspace-shared .karate-style.json file (relative or absolute)"
+          "description": "Path to workspace-shared .karate-style.json file (relative or absolute)",
+          "markdownDeprecationMessage": "Deprecated. Use `style` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use style in .karate-generator.json instead."
         },
         "karateDsl.generation.configFile": {
           "type": "string",
