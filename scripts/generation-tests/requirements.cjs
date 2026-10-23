@@ -251,5 +251,45 @@ module.exports = [
         const file = [...fsApi.map.keys()].find(k => k.endsWith('shop-requirements.feature'));
         assert.doesNotMatch(fsApi.map.get(file), /evil\.example/);
         assert.match(fsApi.map.get(file), /@ignore/);
+    } },
+    { name: 'requirements: multi-operation criteria are drafted naming a candidate per verb group', run() {
+        const b = build([{ id: 'P-1', title: 't', criteria: ['create a pet and then delete it', 'Creating a pet returns 201', 'Deleting a pet removes it'] }], petModel());
+        const [multi, create, del] = scenarios(b);
+        assert.ok(/POST \/pets[,)]/.test(multi.draftReason) && /DELETE \/pets\/\{petId\}/.test(multi.draftReason));
+        assert.match(multi.draftReason, /^Criterion spans several operations \(.*\); split it into one criterion per operation or enable AI refinement$/);
+        assert.deepEqual(multi.steps, []);
+        assert.equal(create.draftReason, undefined, create.draftReason);
+        assert.equal(del.draftReason, undefined, del.draftReason);
+        assert.match(text(b), /method delete/);
+        assert.deepEqual(errors(text(b), b), []);
+    } },
+    { name: 'requirements: add/adding carry the weight of create; invalid body with add maps to POST /pets', run() {
+        const b = build([{ id: 'P-1', title: 't', criteria: ['Adding a pet with an invalid body is a bad request'] }], petModel());
+        const s = scenarios(b)[0];
+        assert.ok(/POST \/pets|Status 400|invalid request/.test(`${s.comments.join('|')}|${s.draftReason ?? ''}`), JSON.stringify(s));
+        assert.doesNotMatch(s.draftReason ?? '', /Ambiguous|No operation/);
+    } },
+    { name: 'requirements: non-string and missing input never throws', run() {
+        const b = build([{ id: 42, title: undefined, criteria: [null, undefined, 7, { text: undefined, steps: [1, null] }, 'ok thing'] }, null, { id: 'z' }]);
+        assert.ok(scenarios(b).length >= 4);
+        assert.deepEqual(errors(text(b), b), []);
+    } },
+    { name: 'requirements: shared redaction covers natural-language credentials, with documented false-positive limits', run() {
+        const secrets = require('../../out/generation/adapters/secrets');
+        const must = [
+            ['Set pwd to hunter3', 'hunter3'], ['The password hunter2 is used', 'hunter2'], ['my token is sk-live-123456789', 'sk-live'],
+            ['Use API key sk-abc12345678 to call', 'abc12345678'], ['logs in as admin/hunter2', 'hunter2'], ['credentials admin/hunter2', 'hunter2'],
+            ['connect via user:pass@host.example.com', 'user:pass'], ['https://bob:pw9@host.example.com/x', 'pw9'],
+            ['key ghp_abcdefghijklmnopqrstuv', 'ghp_abcdef'], ['id AKIAABCDEFGHIJKLMNOP', 'AKIAABCD'], ['slack xoxb-1234567890-abcdef', 'xoxb-1234'],
+            ['password: hunter2', 'hunter2'], ['the secret was swordfish99', 'swordfish99']
+        ];
+        for (const [input, leak] of must) {
+            const r = secrets.redactCredentialText(input);
+            assert.ok(!r.text.includes(leak), `${input} -> ${r.text}`);
+            assert.ok(r.hits.length > 0, input);
+        }
+        const keep = ['The token count is shown', 'Secret santa picks a name', 'keyboard input is accepted', 'password reset flow works', 'read/write access is granted', 'a/b testing', 'the token is valid', 'Users need a password'];
+        for (const input of keep) assert.equal(secrets.redactCredentialText(input).text, input);
+        assert.equal(secrets.redactCredentialText('Dr. a@b.com').hits.length, 0);
     } }
 ];

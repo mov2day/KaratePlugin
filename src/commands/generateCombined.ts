@@ -88,7 +88,7 @@ export async function generateCombined(context: vscode.ExtensionContext): Promis
             const useAi = vscode.workspace.getConfiguration('karateDsl').get<boolean>('useCopilot', false);
             const run = await runGenerationForModel({
                 context, workspaceRoot, model, sourceRef: path.basename(specPath), mode: 'combined', useAi,
-                extraFeatures: req.features.length > 0 ? req.features : undefined, classpathFiles: req.files, config: loaded.config, notes: req.warnings,
+                extraFeatures: req.features.length > 0 ? req.features : undefined, classpathFiles: req.files, config: loaded.config, notes: [...req.warnings, ...(req.features.length > 0 ? [`Requirements written to ${req.features.map(f => f.relativePath).join(', ')} (under the generator output root)`] : [])],
                 evidence: requirementEvidence(`Confluence: ${page.title}`, pageContent),
                 progress: toIncrementalProgress(progress, { from: 20, to: 100 })
             });

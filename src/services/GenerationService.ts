@@ -103,11 +103,17 @@ export class GenerationService {
             if (req.features.length === 0) {
                 throw new Error(`No test cases or flows found in the Confluence page. ${req.warnings.join('; ')}`.trim());
             }
+            const notes = [...req.warnings, `Requirements written to ${req.features.map(f => f.relativePath).join(', ')} (under the generator output root)`];
+            if (this._template) {
+                const note = `Template '${options.templateId ?? 'custom'}' is ignored by the Karate v2 generator (use .karate-generator.json style/layout)`;
+                logger.info(note);
+                notes.push(note);
+            }
             const run = await runGenerationForModel({
                 context: this.context, workspaceRoot,
                 model: { source: 'confluence', name: slug(page.title) || 'confluence', schemes: [], operations: [], unsupported: [] },
                 sourceRef: `Confluence page ${page.id}`, mode: 'confluence', useAi: options.useCopilot,
-                scenarios: req.features, classpathFiles: req.files, config: loaded.config, notes: req.warnings,
+                scenarios: req.features, classpathFiles: req.files, config: loaded.config, notes,
                 evidence: requirementEvidence(`Confluence: ${page.title}`, pageContent),
                 learnedStyle: this._learnedStyle,
                 progress: (message, pct) => progressCallback(message, 15 + Math.round(pct * 0.85))
@@ -159,7 +165,7 @@ export class GenerationService {
             const run = await this.runPipelineFor(model, options.openApiPath, 'combined', options, progressCallback, {
                 extraFeatures: req.features.length > 0 ? req.features : undefined,
                 classpathFiles: req.files,
-                notes: req.warnings,
+                notes: [...req.warnings, `Requirements written to ${req.features.map(f => f.relativePath).join(', ')} (under the generator output root)`],
                 evidence: requirementEvidence(`Confluence: ${page.title}`, confluenceContent)
             });
             const createdFiles = run.createdPaths;

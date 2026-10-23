@@ -84,6 +84,9 @@ export class ConfluenceParser {
                 continue;
             }
             const body = match[3];
+            if (/<table/i.test(body)) {
+                continue; // table-based cases are handled by the table parser; never duplicate them
+            }
             const items = Array.from(body.matchAll(/<li[^>]*>(.*?)<\/li>/gis)).map(m => this.stripHtml(m[1])).filter(Boolean);
             const expected = items.filter(i => /^expect(?:ed)?\b/i.test(i));
             const steps = items.filter(i => !/^expect(?:ed)?\b/i.test(i));

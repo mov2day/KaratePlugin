@@ -77,3 +77,50 @@ export function redactUrl(raw: string): string {
     }).join('&');
     return `${head}?${masked}${hash < 0 ? '' : url.slice(hash)}`;
 }
+
+// ---------------------------------------------------------------- free-text redaction (requirements, prose)
+
+const RE_JWT = /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]*/g;
+const RE_BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
+const RE_BASIC = /\bBasic\s+[A-Za-z0-9+/=]{8,}/g;
+const RE_KEY_SHAPES = /\b(?:sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{12,}|xox[abp]-[A-Za-z0-9-]{8,})/g;
+const RE_URL_USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+:[^\s/@]+@/gi;
+const RE_BARE_USERINFO = /(?<![\w/])[^\s/@:]+:[^\s/@]+@(?=[\w-]+\.[\w.-]+)/g;
+const NL_KEY = '(?:password|passwd|pwd|secret|token|credential|api[ _-]?key)s?';
+const RE_KEY_PAIR_TEXT = new RegExp(`([\\w.-]*${CRED_KEY}[\\w.-]*["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|\\{\\{[^}]*\\}\\}|\\[redacted\\]|[^\\s,;&}"']+)`, 'gi');
+const RE_KEY_LINK = new RegExp(`\\b(${NL_KEY})\\s+(?:is|was|to|=|:|are|of)\\s+("[^"]*"|'[^']*'|[^\\s,;"']+)`, 'gi');
+const RE_KEY_BARE = /\b(password|passwd|pwd)\s+([^\s,;"'.]+)/gi;
+const RE_SLASH_PAIR = /\b(logs? in as|login|credentials?|username\/password)\s*(?:is\s+|are\s+|:\s*)?([^\s/]+)\/(\S+)/gi;
+
+/** Words that follow a credential noun in ordinary prose and are not themselves a value. */
+const NOT_A_VALUE = new Set(['a', 'an', 'the', 'is', 'was', 'are', 'to', 'of', 'and', 'or', 'for', 'with', 'in', 'on', 'at', 'not', 'no', 'must', 'should', 'can', 'will', 'may', 'shall',
+    'reset', 'policy', 'field', 'input', 'rules', 'rule', 'change', 'strength', 'length', 'validation', 'expires', 'expiry', 'required', 'hash', 'hashing', 'manager', 'page', 'form', 'link',
+    'email', 'count', 'valid', 'invalid', 'expired', 'missing', 'empty', 'set', 'used', 'present', 'stored', 'rejected', 'accepted', 'sent', 'returned', 'correct', 'incorrect', 'wrong', 'too',
+    'value', 'values', 'prompt', 'recovery', 'complexity', 'mismatch', 'confirmation', 'screen', 'flow', 'type', 'format', 'encrypted', 'masked', 'hidden', 'visible', 'refresh', 'rotation']);
+
+/**
+ * Redacts credential-looking content from free-form text (requirements, criteria, prose). Never returns a value in `hits`.
+ * Covers: JWT, `Bearer`/`Basic` values, well-known key shapes (sk-, ghp_, AKIA, xox*), URL/bare `user:pass@host`
+ * userinfo, `key: value` / `key=value` pairs, `password|pwd|secret|token|credential|api key` + `is|was|to|=|:|are|of` + value,
+ * the bare `password hunter2` / `pwd X` form, and `login|credentials|logs in as admin/secret` pairs.
+ * Trade-off: ordinary prose such as "the token is valid" keeps its value-less words (see NOT_A_VALUE); an unlisted
+ * word right after `password` or after `<noun> is` is redacted (a false positive costs a readable word, a miss leaks a secret).
+ * "read/write access" style slashes are only touched after the explicit login/credentials cues.
+ */
+export function redactCredentialText(text: string): { text: string; hits: string[] } {
+    const hits = new Set<string>();
+    const mark = (kind: string): string => {
+        hits.add(kind);
+        return '[redacted]';
+    };
+    let out = text;
+    out = out.replace(RE_URL_USERINFO, (_m, scheme: string) => { hits.add('userinfo'); return `${scheme}[redacted]@`; });
+    out = out.replace(RE_BARE_USERINFO, () => { hits.add('userinfo'); return '[redacted]@'; });
+    out = out.replace(RE_JWT, () => mark('jwt')).replace(RE_BEARER, () => mark('bearer')).replace(RE_BASIC, () => mark('basic'));
+    out = out.replace(RE_KEY_SHAPES, () => mark('key'));
+    out = out.replace(RE_KEY_PAIR_TEXT, (_m, head: string, value: string) => (/^\{\{|^\[redacted\]$/.test(value) ? `${head}${value}` : `${head}${mark('pair')}`));
+    out = out.replace(RE_KEY_LINK, (m, key: string, value: string) => (value === '[redacted]' || NOT_A_VALUE.has(value.toLowerCase().replace(/^["']|["']$/g, '')) ? m : `${m.slice(0, m.length - value.length)}${mark('link')}`));
+    out = out.replace(RE_KEY_BARE, (m, key: string, value: string) => (value === '[redacted]' || NOT_A_VALUE.has(value.toLowerCase()) ? m : `${key} ${mark('bare')}`));
+    out = out.replace(RE_SLASH_PAIR, (_m, cue: string, user: string) => `${cue} ${user}/${mark('slash')}`);
+    return { text: out, hits: [...hits].sort() };
+}

@@ -139,7 +139,7 @@ export class JiraParser {
             issue.fields.customfield_10001 || // Common custom field IDs
             issue.fields.customfield_10020;
 
-        if (Array.isArray(customField)) {
+        if (Array.isArray(customField) && customField.every(c => typeof c === 'string')) {
             criteria.push(...customField.map(c => String(c).trim()).filter(Boolean));
         } else if (customField) {
             const customText = typeof customField === 'string'

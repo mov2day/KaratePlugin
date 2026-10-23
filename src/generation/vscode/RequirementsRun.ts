@@ -91,7 +91,7 @@ export async function runRequirementsGeneration(i: RequirementsRunInput): Promis
     const model: GenerationModel = i.contract?.model ?? { source: i.mode, name: i.name, schemes: [], operations: [], unsupported: [] };
     const run = await runGenerationForModel({
         context: i.context, workspaceRoot: i.workspaceRoot, model, sourceRef: i.sourceRef, mode: i.mode, useAi: i.useAi,
-        scenarios: build.features, classpathFiles: build.files, config: loaded.config, notes: build.warnings,
+        scenarios: build.features, classpathFiles: build.files, config: loaded.config, notes: [...build.warnings, `Requirements written to ${build.features.map(f => f.relativePath).join(', ')} (under the generator output root)`],
         evidence: requirementEvidence(i.evidenceLabel, i.evidenceText ?? evidenceFromItems(i.items), i.contract),
         progress: i.progress
     });

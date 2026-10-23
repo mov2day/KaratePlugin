@@ -8,6 +8,7 @@ import type { GenerationModel, OperationModel } from '../model/TestModel';
 import { createOperationPlanner } from '../plan/OpenApiPlanner';
 import type { PlannedFeature, PlannedFile } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
+import { redactCredentialText } from './secrets';
 
 export const NO_CONTRACT_REASON = 'No API contract linked; select an OpenAPI spec or enable AI refinement';
 
@@ -46,26 +47,12 @@ export interface RequirementBuild {
 
 // ---------------------------------------------------------------- redaction
 
-const CRED_KEY = '(?:password|passwd|pwd|secret|token|api[_-]?key|authorization|credential|private[_-]?key|client[_-]?secret|access[_-]?key)';
-const JWT = /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]*/g;
-const BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
-const BASIC = /\bBasic\s+[A-Za-z0-9+/=]{8,}/g;
-const KEY_PAIR = new RegExp(`([\\w.-]*${CRED_KEY}[\\w.-]*["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|\\{\\{[^}]*\\}\\}|\\[redacted\\]|[^\\s,;&}"']+)`, 'gi');
-const KEY_IS = /\b(password|passwd|pwd|secret|api[_-]?key)\s+(?:is|was)\s+\S+/gi;
 const HOST = /\bhttps?:\/\/[^\s/'"<>)]+/gi;
 
-/** Credential-looking content becomes `[redacted]`; literal hosts become `[host]`. `redacted` reports credentials only. */
+/** Credential-looking content becomes `[redacted]` (shared secrets helper); literal hosts become `[host]`. `redacted` reports credentials only. */
 export function redactRequirementText(text: string): { text: string; redacted: boolean } {
-    let redacted = false;
-    const mark = (): string => {
-        redacted = true;
-        return '[redacted]';
-    };
-    let out = text.replace(JWT, mark).replace(BEARER, mark).replace(BASIC, mark);
-    out = out.replace(KEY_PAIR, (_m, head: string, value: string) => (/^\{\{|^\[redacted\]$/.test(value) ? `${head}${value}` : `${head}${mark()}`));
-    out = out.replace(KEY_IS, (_m, key: string) => `${key} is ${mark()}`);
-    out = out.replace(HOST, '[host]');
-    return { text: out, redacted };
+    const r = redactCredentialText(String(text ?? ''));
+    return { text: r.text.replace(HOST, '[host]').replace(/\[redacted\]@[\w.-]+/g, '[redacted]@[host]'), redacted: r.hits.length > 0 };
 }
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
@@ -102,12 +89,16 @@ function stem(word: string): string {
 }
 const VERB_STEMS = new Map(Object.entries(VERB_METHODS).map(([v, m]) => [stem(v), m]));
 const rawWords = (s: string): string[] => s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-const verbStems = (text: string): Set<string> => new Set(rawWords(text).map(stem).filter(w => VERB_STEMS.has(w)));
+const GROUP_OF = (w: string): string => (w === stem('upload') ? 'UPLOAD' : VERB_STEMS.get(w)![0]);
+/** HTTP verb groups named in the text (POST, GET, PUT for put/patch, DELETE). `request` is too weak to count (also a noun). */
+const verbGroups = (text: string): Set<string> => new Set(rawWords(text).map(stem).filter(w => w !== 'request' && VERB_STEMS.has(w)).map(w => GROUP_OF(w)));
+const allVerbGroups = (text: string): Set<string> => new Set(rawWords(text).map(stem).filter(w => VERB_STEMS.has(w)).map(w => GROUP_OF(w)));
 
 function nouns(text: string): Set<string> {
     const out = new Set<string>();
+    const invalidBody = /\binvalid\b/i.test(text) && /\b(body|request|input|payload)\b/i.test(text);
     for (const w of rawWords(text)) {
-        if (/^\d+$/.test(w) || STOP.has(w)) {continue;}
+        if (/^\d+$/.test(w) || (STOP.has(w) && !(invalidBody && w === 'invalid'))) {continue;}
         const s = stem(w);
         if (s.length < 2 || VERB_STEMS.has(s) || STOP.has(s)) {continue;}
         out.add(s);
@@ -157,15 +148,31 @@ const endsWithParam = (op: OperationModel): boolean => /\{[^}]*\}$/.test(op.path
 type Match =
     | { kind: 'op'; op: OperationModel }
     | { kind: 'none'; reason: string }
-    | { kind: 'ambiguous'; reason: string };
+    | { kind: 'multi'; reason: string }
+    | { kind: 'ambiguous'; reason: string; first?: OperationModel };
 
 const label = (op: OperationModel): string => `${op.method.toUpperCase()} ${op.path}`;
 
 function matchOperation(ops: OperationModel[], matchText: string, status: string | undefined): Match {
+    const groups = verbGroups(matchText);
+    if (groups.size >= 2) {
+        const picks = [...groups].sort().map(g => bestFor(ops, matchText, status, g)).filter((o): o is OperationModel => o !== undefined);
+        return { kind: 'multi', reason: `Criterion spans several operations (${picks.map(label).join(', ') || [...groups].sort().join(', ')}); split it into one criterion per operation or enable AI refinement` };
+    }
+    return matchSingle(ops, matchText, status);
+}
+
+function bestFor(ops: OperationModel[], matchText: string, status: string | undefined, group: string): OperationModel | undefined {
+    const inGroup = ops.filter(o => (group === 'PUT' ? ['PUT', 'PATCH'] : group === 'UPLOAD' ? ['POST'] : [group]).includes(o.method.toUpperCase()));
+    const m = matchSingle(inGroup, matchText, status, true);
+    return m.kind === 'op' ? m.op : m.kind === 'ambiguous' ? m.first : undefined;
+}
+
+function matchSingle(ops: OperationModel[], matchText: string, status: string | undefined, forceFirst = false): Match & { first?: OperationModel } {
     const explicit = [...matchText.matchAll(EXPLICIT)].map(m => ({ method: m[1], path: normPath(m[2].replace(/[.!?]+$/, '')) }));
     const wantNouns = nouns(matchText);
     const verbs = verbMethods(matchText);
-    const wantVerbs = verbStems(matchText);
+    const wantGroups = allVerbGroups(matchText);
     const words = new Set(rawWords(matchText));
     const scored: Scored[] = [];
     for (const op of ops) {
@@ -178,7 +185,7 @@ function matchOperation(ops: OperationModel[], matchText: string, status: string
         if (overlap === 0 && !hit) {continue;}
         score += overlap;
         if (verbs.has(op.method.toUpperCase())) {score += 1;}
-        if ([...verbStems(`${op.id} ${op.summary ?? ''}`)].some(v => wantVerbs.has(v))) {score += 1;}
+        if ([...allVerbGroups(`${op.id} ${op.summary ?? ''}`)].some(g => wantGroups.has(g))) {score += 1;}
         if (status && op.responses.some(r => r.status === status)) {score += 1;}
         const seg = lastStatic(op);
         if (seg && !endsWithParam(op) && words.has(seg)) {score += 0.5;}
@@ -191,9 +198,9 @@ function matchOperation(ops: OperationModel[], matchText: string, status: string
     }
     scored.sort((a, b) => b.score - a.score);
     const [first, second] = scored;
-    if (second && (first.score - second.score) / first.score <= 0.1) {
+    if (second && !forceFirst && (first.score - second.score) / first.score <= 0.1) {
         const near = scored.filter(s => (first.score - s.score) / first.score <= 0.1).slice(0, 3).map(s => label(s.op));
-        return { kind: 'ambiguous', reason: `Ambiguous match; candidates: ${near.join(', ')}` };
+        return { kind: 'ambiguous', reason: `Ambiguous match; candidates: ${near.join(', ')}`, first: first.op };
     }
     return { kind: 'op', op: first.op };
 }
@@ -218,13 +225,17 @@ export function buildRequirementScenarios(items: RequirementItem[], opts: Requir
     let needsAuth = false;
     const tagFor = (category: ScenarioCategory): string[] => (config.tags.auto ? [config.tags.taxonomy[category].startsWith('@') ? config.tags.taxonomy[category] : `@${config.tags.taxonomy[category]}`] : []);
 
-    for (const item of items) {
+    const str = (x: unknown): string => String(x ?? '');
+    const safeItems: RequirementItem[] = (Array.isArray(items) ? items : []).filter(i => i !== null && typeof i === 'object').map(i => ({
+        id: str(i.id), title: str(i.title), link: i.link === undefined ? undefined : str(i.link), criteria: Array.isArray(i.criteria) ? i.criteria : []
+    }));
+    for (const item of safeItems) {
         const id = redactRequirementText(item.id).text;
         const source = oneLine(redactRequirementText(item.link ?? '').text) || id;
         let redactedAny = redactRequirementText(item.id).redacted || redactRequirementText(item.title).redacted;
         if (item.criteria.length === 0) {warnings.push(`${id}: no acceptance criteria or test cases found`);}
         item.criteria.forEach((raw, index) => {
-            const c: RequirementCriterion = typeof raw === 'string' ? { text: raw } : raw;
+            const c: RequirementCriterion = raw !== null && typeof raw === 'object' ? { text: str(raw.text), steps: Array.isArray(raw.steps) ? raw.steps.map(str) : [], expected: raw.expected === undefined ? undefined : str(raw.expected) } : { text: str(raw) };
             const clean = (t: string): string => {
                 const r = redactRequirementText(t);
                 redactedAny = redactedAny || r.redacted;
@@ -274,7 +285,7 @@ export function buildRequirementScenarios(items: RequirementItem[], opts: Requir
     }
 
     const root = slug(opts.name) || 'requirements';
-    const ids = [...new Set(items.map(i => redactRequirementText(i.id).text))];
+    const ids = [...new Set(safeItems.map(i => redactRequirementText(i.id).text))];
     const background: KarateStep[] = [st('*', `url ${config.config.urlVariable}`)];
     if (model && needsAuth && model.schemes.length > 0) {background.push(st('*', "callonce read('classpath:common/auth.feature')"));}
     const features: PlannedFeature[] = scenarios.length === 0 ? [] : [{
