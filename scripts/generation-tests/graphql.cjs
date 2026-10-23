@@ -21,6 +21,8 @@ enum Genre { FICTION "desc" NONFICTION }
 enum Quirky { "A\\"quoted\\\\value" PLAIN }
 input NewBook { title: String!, author: String!, genre: Genre, published: DateTime! }
 interface Node { id: ID! }
+input Filter { name: String! rec: Filter! }
+type Grid { cells: [[Int!]!]! rows: [[Author!]!] tags: [String!]! }
 union SearchResult = Book | Author
 type Author { id: ID! name: String! }
 type Book implements Node {
@@ -41,6 +43,10 @@ type Query {
   tagged(token: String!, kind: Genre!): Book
   oldThing: String @deprecated(reason: "no")
   priced(amount: Money!): Boolean
+  grid: [[Int!]!]!
+  gridObj: Grid!
+  node(id: ID!): Node
+  filtered(f: Filter!): Boolean
 }
 type Mutation {
   addBook(input: NewBook!): Book!
@@ -123,7 +129,7 @@ type Item { id: ID! n: Int }`);
         run() {
             const t = text(plan());
             assert.match(t, /query Book\(\$id: ID!\) \{\n\s+book\(id: \$id\) \{/);
-            assert.match(t, /And def variables = \{ id: 'sample-id' \}|And def variables = \{ id: '[^']+' \}/);
+            assert.match(t, /And def variables = \{ id: '[^']+' \}/);
             assert.match(t, /And request \{ query: '#\(query\)', variables: '#\(variables\)' \}/);
             assert.match(t, /And text query =\n\s+"""/);
             assert.match(t, /Given path 'graphql'/);
@@ -179,6 +185,7 @@ type Item { id: ID! n: Int }`);
             assert.deepEqual(neg, [
                 'Query book - missing required variable id', 'Query search - missing required variable text',
                 'Query tagged - missing required variable token', 'Query priced - missing required variable amount',
+                'Query node - missing required variable id', 'Query filtered - missing required variable f',
                 'Mutation addBook - missing required variable input', 'Mutation deleteBook - missing required variable id'
             ]);
             const t = byName(p, 'Query tagged - missing required variable token');
@@ -206,7 +213,6 @@ type Item { id: ID! n: Int }`);
             assert.match(t, /match response\.data\.addBook ==\s*(?:"""\s*)?\{/);
             const books = byName(p, 'Query books - success').steps.find(x => x.text === 'text query =').docString;
             assert.match(books, /author \{\n\s+id\n\s+name\n\s+\}/);
-            assert.ok(!/secret|price/.test(books.replace(/price/g, 'price')) || /price/.test(books));
             assert.ok(!/\bsecret\b/.test(books), 'fields with required arguments are not selected');
             for (const s of scenarios(p).filter(x => x.category === 'positive')) {
                 assert.ok(s.steps.some(x => x.text === 'status 200'));
@@ -226,6 +232,50 @@ type Item { id: ID! n: Int }`);
             assert.match(t, /@ignore [^\n]*\n\s+Scenario: Query priced - success/);
             assert.ok(!byName(p, 'Query book - success').draftReason);
             assert.ok(!byName(p, 'Mutation addBook - success').draftReason, 'DateTime has a known sample');
+        }
+    },
+    {
+        name: 'graphql: nested list types assert only the list marker; single-level lists keep the element marker',
+        run() {
+            const p = plan();
+            const t = text(p);
+            assert.match(t, /match response\.data\.grid == '#\[\]'/);
+            assert.ok(!/response\.data\.grid == '#\[\] #number'/.test(t));
+            const gridObj = byName(p, 'Query gridObj - success').steps.find(x => /match response\.data\.gridObj/.test(x.text));
+            const m = (gridObj.docString ?? gridObj.text);
+            assert.match(m, /cells: '#\[\]'/);
+            assert.match(m, /rows: '##\[\]'/);
+            assert.match(m, /tags: '#\[\] #string'/);
+            assert.match(text(p), /match response\.data\.books == '#\[\] #object'/);
+        }
+    },
+    {
+        name: 'graphql: an interface return selects its declared fields (a union selects __typename)',
+        run() {
+            const p = plan();
+            const s = byName(p, 'Query node - success');
+            assert.match(s.steps.find(x => x.text === 'text query =').docString, /node\(id: \$id\) \{\n\s+id\n\s+\}/);
+            assert.ok(s.steps.some(x => x.text === "match response.data.node == '#present'"));
+        }
+    },
+    {
+        name: 'graphql: a recursive required input is drafted with a dedicated warning, not a custom-type one',
+        run() {
+            const p = plan();
+            const s = byName(p, 'Query filtered - success');
+            assert.match(s.draftReason, /Recursive required input Filter\.rec/);
+            assert.ok(p.warnings.some(w => /recursive required input Filter\.rec; supply a value manually/.test(w)));
+            assert.ok(!p.warnings.some(w => /custom type Filter/.test(w)));
+        }
+    },
+    {
+        name: 'graphql: endpoint redaction removes host, credentials, query values and key-like path segments',
+        run() {
+            const url = 'https://user:pw@api.example.com/graphql/abcd1234efgh5678ijkl9012?token=t1';
+            const msg = `getaddrinfo ENOTFOUND api.example.com for ${url} (user pw t1 abcd1234efgh5678ijkl9012)`;
+            const r = adapter().redactEndpoint(msg, url);
+            for (const bad of ['api.example.com', 'pw', 't1', 'abcd1234efgh5678ijkl9012', 'user:']) assert.ok(!r.includes(bad), `${bad} in ${r}`);
+            assert.equal(adapter().redactEndpoint('plain', undefined), 'plain');
         }
     },
     {

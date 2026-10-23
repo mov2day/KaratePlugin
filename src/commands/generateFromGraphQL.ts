@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { GraphQLParser } from '../services/graphql/GraphQLParser';
-import { buildGraphQLPlan, splitEndpointUrl } from '../generation/adapters/graphql';
+import { buildGraphQLPlan, redactEndpoint, splitEndpointUrl } from '../generation/adapters/graphql';
 import { reportSummary } from '../generation/vscode/reportSummary';
 import { runGenerationForModel, toIncrementalProgress } from '../generation/vscode/runGeneration';
 import { GeneratorConfigLoader } from '../generation/vscode/GeneratorConfigLoader';
@@ -93,23 +93,10 @@ export async function generateFromGraphQL(context: vscode.ExtensionContext): Pro
             void reportSummary(run.summary, `GraphQL: ${sourceRef}`, run.createdPaths[0]);
         });
     } catch (error) {
-        const message = redact(String((error as Error)?.message ?? error), secretUrl);
+        const message = redactEndpoint(String((error as Error)?.message ?? error), secretUrl);
         logger.error('GraphQL generation failed', new Error(message));
         vscode.window.showErrorMessage(`Failed to generate from GraphQL: ${message}`);
     }
-}
-
-/** Removes the user's URL (it may carry a token) from text that is logged or shown. */
-function redact(text: string, url: string | undefined): string {
-    if (!url) {return text;}
-    let out = text.split(url).join('[endpoint]');
-    try {
-        const u = new URL(url);
-        for (const part of [u.search.replace(/^\?/, ''), u.password, u.username]) {
-            if (part) {out = out.split(part).join('[redacted]');}
-        }
-    } catch { /* keep text */ }
-    return out;
 }
 
 const TYPE_REF = 'kind name ofType { kind name ofType { kind name ofType { kind name ofType { kind name ofType { kind name } } } } }';

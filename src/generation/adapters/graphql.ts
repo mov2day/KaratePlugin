@@ -161,7 +161,7 @@ const CUSTOM_SCALARS: Record<string, JsonSchema> = {
     JSON: { type: 'object' }, JSONObject: { type: 'object' }
 };
 
-interface Gen { unknown: string[] }
+interface Gen { unknown: string[]; recursive: string[] }
 
 /** JSON-schema view of a GraphQL input type, so the shared data factory can produce the value. */
 function inputSchema(ref: TypeRef, types: Record<string, GraphQLTypeDef>, gen: Gen, seen: string[]): JsonSchema {
@@ -181,6 +181,11 @@ function inputSchema(ref: TypeRef, types: Record<string, GraphQLTypeDef>, gen: G
         const props: Obj = {};
         for (const f of def.fields) {
             const r = parseTypeRef(f.type);
+            const nm = namedType(f.type);
+            if (r.nonNull && types[nm]?.kind === 'input' && [...seen, name].includes(nm)) {
+                gen.recursive.push(`${name}.${f.name}`);
+                continue;
+            }
             if (r.nonNull) {props[f.name] = inputSchema(r, types, gen, [...seen, name]);}
         }
         return { type: 'object', properties: props };
@@ -239,12 +244,12 @@ export function buildGraphQLPlan(schema: GraphQLSchema, opts: GraphQLPlanOptions
             const n = inner.name ?? 'Unknown';
             if (isScalarish(n)) {
                 lines.push(f.name);
-                match[f.name] = ref.list ? `${ref.nonNull ? '#' : '##'}[]${inner.nonNull ? ` ${marker(n, true)}` : ''}` : marker(n, ref.nonNull);
+                match[f.name] = ref.list ? `${ref.nonNull ? '#' : '##'}[]${inner.nonNull && !ref.list.list ? ` ${marker(n, true)}` : ''}` : marker(n, ref.nonNull);
             } else if (depth < 1 && (types[n]?.kind === 'object' || types[n]?.kind === 'interface')) {
                 const sub = selection(n, depth + 1);
                 lines.push(`${f.name} {`, ...sub.lines.map(l => `  ${l}`), '}');
                 const p = ref.nonNull ? '#' : '##';
-                match[f.name] = ref.list ? `${p}[] #object` : `${p}object`;
+                match[f.name] = ref.list ? (ref.list.list ? `${p}[]` : `${p}[] #object`) : `${p}object`;
             }
         }
         if (lines.length === 0) {return typename;}
@@ -291,9 +296,13 @@ export function buildGraphQLPlan(schema: GraphQLSchema, opts: GraphQLPlanOptions
             }
             const mustSend = a.required && !have;
             if (!have && mustSend) {
-                const gen: Gen = { unknown: [] };
+                const gen: Gen = { unknown: [], recursive: [] };
                 value = valueFor(inputSchema(parseTypeRef(a.type), types, gen, []), a.name);
                 have = true;
+                for (const r of [...new Set(gen.recursive)]) {
+                    warnOnce(`${field.type} ${field.name}(${a.name}): recursive required input ${r}; supply a value manually`);
+                    reasons.push(`Recursive required input ${r}; supply a value manually`);
+                }
                 if (gen.unknown.length > 0) {
                     const t = [...new Set(gen.unknown)].join(', ');
                     warnOnce(`${field.type} ${field.name}(${a.name}): no sample value for custom type ${t}; an empty object was used`);
@@ -372,9 +381,9 @@ export function buildGraphQLPlan(schema: GraphQLSchema, opts: GraphQLPlanOptions
                     steps.push(st('And', `match ${target} == ${q(marker(n, ref.nonNull))}`));
                 } else if (ref.list) {
                     const itemMarker = sel ? '#object' : marker(n, true);
-                    const arr = inner.nonNull ? `[] ${itemMarker}` : '[]';
+                    const arr = inner.nonNull && !ref.list.list ? `[] ${itemMarker}` : '[]';
                     steps.push(st('And', `match ${target} == ${q(`${ref.nonNull ? '#' : '##'}${arr}`)}`));
-                    if (sel && inner.nonNull && ref.nonNull) {steps.push(matchStep(`each ${target}`, sel.match));}
+                    if (sel && inner.nonNull && ref.nonNull && !ref.list.list) {steps.push(matchStep(`each ${target}`, sel.match));}
                 } else if (ref.nonNull && sel) {
                     steps.push(matchStep(target, sel.match));
                 } else {
@@ -460,4 +469,22 @@ export function buildGraphQLPlan(schema: GraphQLSchema, opts: GraphQLPlanOptions
 
     const model: GenerationModel = { source: 'graphql', name, baseUrl, schemes: [], operations, unsupported };
     return { model, features, files: [], warnings, unsupported };
+}
+
+/**
+ * Removes an endpoint URL's secrets from text that is shown or logged: the whole URL, credentials, query values,
+ * the host, and path segments that look like embedded keys (20+ characters of [A-Za-z0-9_-] mixing letters and digits).
+ */
+export function redactEndpoint(text: string, url: string | undefined): string {
+    if (!url) {return text;}
+    let out = text.split(url).join('[endpoint]');
+    try {
+        const u = new URL(url);
+        const parts = [u.password, u.username, ...[...u.searchParams.values()], u.search.replace(/^\?/, ''), u.host, u.hostname];
+        for (const seg of u.pathname.split('/')) {
+            if (/^[A-Za-z0-9_-]{20,}$/.test(seg) && /\d/.test(seg) && /[A-Za-z]/.test(seg)) {parts.push(seg);}
+        }
+        for (const part of parts.filter(x => x).sort((a, b) => b.length - a.length)) {out = out.split(part).join('[redacted]');}
+    } catch { /* keep text */ }
+    return out;
 }
