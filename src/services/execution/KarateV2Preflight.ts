@@ -3,7 +3,9 @@ const V2_CONSTRUCT = /\bkarate\.(?:sysprop|sysenv)\s*\(|@lock\s*=|\bconfigure\s+
 const MAX_INPUT = 1024 * 1024;
 
 export function usesKarateV2Constructs(text: string): boolean {
-    return V2_CONSTRUCT.test(text.slice(0, MAX_INPUT));
+    const bounded = text.slice(0, MAX_INPUT);
+    const uncommented = bounded.replace(/^\s*#.*$/gm, '').replace(/^\s*\/\/.*$/gm, '');
+    return V2_CONSTRUCT.test(uncommented);
 }
 
 export function karateV2Preflight(version: string, bundled: boolean, texts: Iterable<string>): string | undefined {

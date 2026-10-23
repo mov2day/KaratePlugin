@@ -18,6 +18,21 @@ module.exports = [
         }
     },
     {
+        name: 'scenario-snippets: a no-auth tag or path fragment does not suppress main scenarios',
+        run() {
+            const m = model();
+            const op = m.operations.find(op => op.security === 'none') || m.operations[0];
+            op.tags = [...op.tags, 'no-auth'];
+            const text = out('generation/plan/ScenarioSnippets').renderScenariosForOperations(m, [op.sourceRef], cfg());
+            assert.ok(text.includes('Scenario'), text);
+            const scenarios = out('generation/plan/ScenarioSnippets').scenariosForAuthenticatedMerge([
+                { relativePath: 'no-auth-but-main.feature', featureKind: 'main', feature: { scenarios: [{ name: 'kept' }] } },
+                { relativePath: 'normal.feature', featureKind: 'security', feature: { scenarios: [{ name: 'dropped' }] } }
+            ]);
+            assert.deepEqual(scenarios.map(s => s.name), ['kept']);
+        }
+    },
+    {
         name: 'scenario-snippets: renders scenarios for one operation without Feature or Background header',
         run() {
             const m = model();

@@ -84,7 +84,7 @@ export class CopilotService {
     static async completePlainText(prompt: string, contextType: CopilotFullContext['type'] | 'general' = 'general', evidence: Evidence[] = []): Promise<string> {
         try {
             const skillContext = await AgentSkillsService.buildSkillContextForPrompt(contextType);
-            const built = buildPrompt({ task: this.taskForContext(contextType), mode: this.modeForContext(contextType), skills: skillContext, evidence, request: InputSanitizer.sanitizeUserInstruction(prompt), feature: '' });
+            const built = buildPrompt({ task: this.taskForContext(contextType), mode: this.modeForContext(contextType), skills: skillContext, evidence, request: InputSanitizer.sanitizeUserInstruction(prompt), output: 'text' });
             return cleanOutput(await AIProviderRegistry.getInstance().complete(built.user, { maxTokens: 4096, temperature: 0.2, systemPrompt: built.system, task: this.taskForContext(contextType) }));
         } catch (error) {
             logger.error('Plain-text AI completion failed', error as Error);

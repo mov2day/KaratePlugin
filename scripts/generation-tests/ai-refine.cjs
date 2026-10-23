@@ -31,6 +31,12 @@ const sections = user => {
 };
 
 module.exports = [
+    { name: 'ai prompt: plain-text output omits the feature contract and empty feature block', run() {
+        const p = builder().buildPrompt({ task: 'analyze-coverage', mode: 'openapi', skills: '', evidence: [], request: 'Return JSON', output: 'text' });
+        assert.ok(!p.system.includes('Return only the complete Karate feature'), p.system);
+        assert.ok(!p.user.includes('CURRENT KARATE FEATURE'), p.user);
+        assert.match(p.system, /requested JSON, list, or plain text/i);
+    } },
     {
         name: 'ai-refine: an ignored multipart draft cannot be made runnable',
         async run() {

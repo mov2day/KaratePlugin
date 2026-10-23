@@ -51,6 +51,17 @@ const scoutModel = () => ({ source: 'scout', name: 'x', schemes: [], operations:
 
 module.exports = [
     {
+        name: 'pipeline: auth helper without Configures header warns but does not draft secured operations',
+        async run() {
+            const apiKeyModel = { source: 'openapi', name: 'keys', baseUrl: 'https://example.test', schemes: [{ name: 'apiKeyAuth', kind: 'apiKey', in: 'header', paramName: 'X-API-Key' }], unsupported: [], operations: [{ id: 'listKeys', method: 'GET', path: '/keys', tags: [], sourceRef: 'GET /keys', security: ['apiKeyAuth'], securityGroups: [['apiKeyAuth']], responses: [{ status: 200, schema: { type: 'object' } }], pathParams: [], queryParams: [], headerParams: [] }] };
+            const i = base({ model: apiKeyModel, fsApi: memFs({ 'src/test/java/common/auth.feature': '@ignore\nFeature: user auth\n' }) });
+            const r = await run(i);
+            const features = [...i.fsApi.map.entries()].filter(([p]) => p.endsWith('.feature')).map(([, text]) => text).join('\n');
+            assert.ok(r.warnings.includes("common/auth.feature has no '# Configures:' header; cannot verify auth coverage"), r.warnings.join('\n'));
+            assert.ok(!features.includes('Requires auth scheme(s) not configured'), features);
+        }
+    },
+    {
         name: 'pipeline: existing bearer-only auth helper drafts apiKey operations and warns',
         async run() {
             const apiKeyModel = { source: 'openapi', name: 'keys', baseUrl: 'https://example.test', schemes: [{ name: 'apiKeyAuth', kind: 'apiKey', in: 'header', paramName: 'X-API-Key' }], unsupported: [], operations: [{ id: 'listKeys', method: 'GET', path: '/keys', tags: [], sourceRef: 'GET /keys', security: ['apiKeyAuth'], securityGroups: [['apiKeyAuth']], responses: [{ status: 200, schema: { type: 'object' } }], pathParams: [], queryParams: [], headerParams: [] }] };

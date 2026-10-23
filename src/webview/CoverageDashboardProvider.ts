@@ -7,7 +7,7 @@ import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore
 import { QualityWorkflowService } from '../services/workspace/QualityWorkflowService';
 import * as fs from 'fs';
 import { runGate } from '../generation/quality/QualityGate';
-import { generatedSiblingPath } from '../generation/write/OutputWriter';
+import { HEADER_RE, OutputWriter, sha256, splitHeader } from '../generation/write/OutputWriter';
 
 /** Same error-budget rule as AI refinement: preserve pre-existing user findings, reject only new ones. */
 const hasNewGateErrors = (before: string, after: string): boolean => {
@@ -21,6 +21,25 @@ const hasNewGateErrors = (before: string, after: string): boolean => {
         if (left) {budget.set(k, left - 1);} else {return true;}
     }
     return false;
+};
+
+const hasConsistentGeneratedHeader = (content: string): boolean => {
+    const parsed = splitHeader(content);
+    return HEADER_RE.test(content) && parsed.headerHash === sha256(parsed.body);
+};
+
+const writeAppendedScenarios = (targetFile: string, original: string, merged: string, source: string): string => {
+    const dir = path.dirname(targetFile);
+    const fsApi = {
+        exists: (p: string) => fs.existsSync(path.join(dir, p)), read: (p: string) => fs.readFileSync(path.join(dir, p), 'utf8'),
+        list: (p: string) => fs.readdirSync(path.join(dir, p)), write: (p: string, text: string) => fs.writeFileSync(path.join(dir, p), text, 'utf8')
+    };
+    const hashes = new Map<string, string>();
+    const report = OutputWriter.write([{
+        path: path.basename(targetFile), content: splitHeader(merged).body, owner: 'generated', source,
+        forceSideBySide: !hasConsistentGeneratedHeader(original)
+    }], fsApi, { get: p => hashes.get(p), set: (p, h) => hashes.set(p, h) }, { generatorVersion: 'coverage-dashboard', workspaceRoot: dir });
+    return path.join(dir, report.sideBySide[0]?.generatedPath ?? path.basename(targetFile));
 };
 
 /**
@@ -370,18 +389,16 @@ export class CoverageDashboardProvider {
                             const appendContent = '\n' + newScenarios.join('\n\n');
                             const merged = content + appendContent;
                             if (hasNewGateErrors(content, merged)) {
-                                let sibling = generatedSiblingPath(targetFile);
-                                while (fs.existsSync(sibling)) sibling = generatedSiblingPath(sibling);
-                                fs.writeFileSync(sibling, merged, 'utf8');
+                                const sibling = writeAppendedScenarios(targetFile, content, merged, `${endpoint.method} ${endpoint.path}`);
                                 vscode.window.showWarningMessage(`AI scenarios failed the quality gate; wrote ${path.basename(sibling)} for review.`);
                                 return;
                             }
-                            fs.writeFileSync(targetFile, merged);
+                            const written = writeAppendedScenarios(targetFile, content, merged, `${endpoint.method} ${endpoint.path}`);
 
-                            const doc = await vscode.workspace.openTextDocument(targetFile);
+                            const doc = await vscode.workspace.openTextDocument(written);
                             await vscode.window.showTextDocument(doc);
 
-                            vscode.window.showInformationMessage(`AI appended ${newScenarios.length} scenarios to ${path.basename(targetFile)}`);
+                            vscode.window.showInformationMessage(`AI appended ${newScenarios.length} scenarios to ${path.basename(written)}`);
                         } else {
                             vscode.window.showWarningMessage('AI did not return valid scenarios');
                         }

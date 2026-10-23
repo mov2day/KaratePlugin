@@ -167,6 +167,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
     const existingAuth = full(joinPath(cpRoot, 'common/auth.feature'));
     if ((i.mode === 'openapi' || i.mode === 'combined') && fsApi.exists(existingAuth)) {
         const header = /^#\s*Configures:\s*([^;\r\n]*)/mi.exec(fsApi.read(existingAuth));
+        if (!header) {warnings.push("common/auth.feature has no '# Configures:' header; cannot verify auth coverage");}
         const configured = new Set((header?.[1] ?? '').split(',').map(x => x.trim()).filter(x => x && x !== 'none'));
         const unsupported = (op: typeof model.operations[number]): string[] => {
             if (op.security === 'none') {return [];}
@@ -175,7 +176,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
             const satisfiable = groups.some(group => group.every(name => configured.has(name)));
             return satisfiable ? [] : [...new Set(groups.flat().filter(name => !configured.has(name)))];
         };
-        const missingBySource = new Map(model.operations.map(op => [op.sourceRef, unsupported(op)]));
+        const missingBySource = new Map(model.operations.map(op => [op.sourceRef, header ? unsupported(op) : []]));
         const missing = [...new Set([...missingBySource.values()].flat())];
         if (missing.length) {
             warnings.push(`Existing common/auth.feature does not configure: ${missing.join(', ')}; affected operations are @ignore drafts`);

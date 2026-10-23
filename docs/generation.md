@@ -116,6 +116,7 @@ Notes:
 - Secrets are never written. Credentials are read with `karate.sysenv(...)` or system properties.
 - An existing `karate-config*.js` is adopted: it is never overwritten and generated features reference its variable names.
 - Operations whose security scheme the generated `common/auth.feature` does not configure become `@ignore` drafts with a stated reason.
+- If you author `common/auth.feature` yourself, include a `# Configures: schemeName, otherScheme` header using the OpenAPI security-scheme names. Without it, generation leaves secured operations runnable and warns that it cannot verify auth coverage.
 - Scenarios that cannot be generated safely (for example an unsatisfiable `pattern`) become `@ignore` drafts rather than runnable guesses.
 
 ## Regeneration rules

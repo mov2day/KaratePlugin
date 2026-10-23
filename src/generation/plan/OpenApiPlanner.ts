@@ -13,6 +13,8 @@ export interface PlannedFeature {
     /** Relative to `config.layout.outputRoot`. */
     relativePath: string;
     feature: KarateFeature;
+    /** Planner grouping used by consumers that must exclude security probes. */
+    featureKind?: Kind;
 }
 
 export interface PlannedFile {
@@ -244,6 +246,7 @@ class Planner {
             const suffix = first.kind === 'crud' ? ' - CRUD lifecycle' : first.kind === 'security' ? ' - Security' : path.endsWith('-public') ? ' - Public' : '';
             features.push({
                 relativePath: `${path}.feature`,
+                featureKind: first.kind,
                 feature: {
                     name: `${label} API${suffix}`,
                     description: `Generated from ${this.model.name} (${this.model.source})`,
