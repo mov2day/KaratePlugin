@@ -89,10 +89,20 @@ Scenario: Get pet by ID - Invalid ID
   Then status 400
 ```
 
+## Quality checks on AI output
+
+Copilot (and every other configured provider) only refines output; the deterministic result is the baseline.
+
+- Skills from the `skills/` pack, chosen by `skills/manifest.json` for the generation mode and task, ground every AI path, including Jira, GraphQL, and Postman conversion.
+- The answer is cleaned (code fences, trailing prose) and checked: non-feature text, unterminated docstrings, and invented paths are rejected.
+- The quality gate (`V2-*` rules) runs on the result. If it fails, one repair round is made (`ai.maxRetries` is fixed at 1); if that also fails, the deterministic output is kept and the run summary shows the rejection.
+- AI refinement can be turned off for generation with `ai.refine: false` in `.karate-generator.json`. See [generation.md](generation.md).
+- Jira generation follows the `karateDsl.useCopilot` setting like the other modes.
+
 ## Fallback Behavior
 
 If Copilot is unavailable or enhancement fails:
-- Original tests are used
+- Original (deterministic) tests are used
 - Warning message is shown
 - No error occurs
 

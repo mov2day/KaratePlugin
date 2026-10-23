@@ -109,6 +109,8 @@ src/
 └── test/
     └── suite/            # VS Code-hosted Mocha tests
 
+src/generation/           # Generation pipeline (adapters, planner, renderer, scaffolder, gate); pure modules must not import vscode
+skills/                   # AI skill pack and manifest.json (shipped in the package)
 scripts/                  # Build, verification, contract, and focused test scripts
 media/                    # Bundled webview/runtime assets
 resources/                # Extension resources and icons
@@ -193,6 +195,14 @@ Execution behavior can be validated with:
 ```bash
 npm run test:execution
 ```
+
+Generation behavior (pipeline, planner, renderer, writer, quality gate, skills, config) can be validated with:
+
+```bash
+npm run test:generation
+```
+
+Pure modules under `src/generation/` must not import `vscode`; the suite scans the compiled output for that. Glue that needs VS Code goes in `src/generation/vscode/`. Quality-gate rules live in `src/generation/quality/rules.ts`; every rule id must be cited by a skill in `skills/manifest.json`. See [docs/generation.md](docs/generation.md) for how to add a skill. Generated Karate output targets Karate 2.x, so verify any Karate behavior you rely on against the v2 documentation, not v1.
 
 AI model-routing behavior can be validated with:
 

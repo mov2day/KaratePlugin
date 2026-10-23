@@ -2,13 +2,24 @@
 
 Generate, run, manage, and improve Karate API tests without leaving VS Code.
 
-[![Version](https://img.shields.io/badge/version-2.0.3-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-2.1.0-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-2c9b69.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-5c6370.svg)](LICENSE)
 
 ![Karate Test Management 2.0 workspace](images/karate-test-management-2.png)
 
 Karate Test Management brings test creation, execution, coverage, quality, and maintenance into one professional workspace. Use the compact Activity Bar view for quick actions, then open the expanded workspace when you need the full test library, run history, quality queue, or import tools.
+
+## Version 2.1.0 highlights
+
+- **Higher-quality generated Karate 2.x tests** — every generation mode shares one pipeline and one project layout: a `karate-config.js` with environment switching, auth in `common/auth.feature`, request data in `data/`, response schemas in `schemas/`. Operations that cannot be generated safely become `@ignore` drafts instead of runnable guesses. [Generation guide](docs/generation.md).
+- **Configuration file** — `.karate-generator.json` controls layout, style, tag names, scenario categories, and the quality gate; VS Code settings remain as lower-priority defaults.
+- **Quality gate** — each generated file is checked against `V2-*` rules before it is written, the same rules show as editor diagnostics, and a Karate v2 dry-run is added when a v2 CLI is available.
+- **Regeneration keeps your edits** — unchanged generated files are updated; edited ones get a `.generated.feature` sibling; config, data, and schema files are never overwritten.
+- **Skill pack** — AI prompts for every AI path are grounded by the `skills/` pack selected through `skills/manifest.json`.
+- **Exploratory scenarios are opt-in** — enable them with `scenarios.exploratory` or `karateDsl.generation.exploratory`.
+
+Targets Karate 2.x, which needs Java 21 or later to run. See the [changelog](CHANGELOG.md) for breaking-behavior notes.
 
 ## Version 2.0.3 highlights
 
@@ -27,7 +38,7 @@ Karate Test Management brings test creation, execution, coverage, quality, and m
 - **One AI choice per workflow** — the Create & Import checkbox is carried through the complete run, so Postman and HAR imports no longer ask the same AI question again after file selection.
 - **Visible progress for every long-running action** — generation, imports, execution, analysis, repair, Bug Hunter, and exports acknowledge the click immediately, show ongoing activity, and prevent accidental duplicate starts.
 
-All existing command IDs and settings remain available in 2.0.
+All existing command IDs remain available. Several generation settings are deprecated in favor of `.karate-generator.json`; they still work.
 
 ## What you can do
 
@@ -125,7 +136,7 @@ Invalid transitions are blocked so findings cannot skip required review stages.
 
 ### Create & Import
 
-Generate deterministic Karate tests and optionally enhance them through a configured AI provider. Shared style files and reusable templates help teams produce consistent suites.
+Generate deterministic Karate 2.x tests and optionally refine them through a configured AI provider. Output follows one project layout and is checked by a quality gate before it is written; configure it in `.karate-generator.json` (see [docs/generation.md](docs/generation.md)).
 
 When generation or import starts, the selected action changes to a busy state and the workspace displays a compact progress strip. Workflows with measurable stages also report their current percentage.
 
@@ -153,7 +164,7 @@ Automatic discovery works for most projects. Use these settings only when your r
 | `karateDsl.execution.karateVersion` | Download and cache a selected standalone Karate version |
 | `karateDsl.execution.historyLimit` | Number of v2 run-history entries retained per workspace folder |
 
-Karate 2.x standalone execution requires Java 21 or later. Leaving `jarPath` and `karateVersion` blank keeps the bundled Karate `1.5.0.RC3` JAR for compatibility.
+Karate 2.x standalone execution requires Java 21 or later. Leaving `jarPath` and `karateVersion` blank keeps the bundled Karate `1.5.0.RC3` JAR for compatibility. The generation quality gate's dry-run uses only a Karate v2 CLI (`karate` on `PATH`, or a v2 jar set in `jarPath`) and is skipped when none is found; the bundled jar is never used for it.
 
 ## AI providers
 
