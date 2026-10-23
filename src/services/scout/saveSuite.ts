@@ -27,7 +27,7 @@ export function saveScoutSuite<T extends ScoutSuiteLike>(suite: T, folder: strin
         owner: USER_OWNED.has(name) ? 'user' : 'generated',
         source: name === 'journey.feature' ? `scout:${journeyName}` : undefined
     }));
-    const report = OutputWriter.write(files, fsApi, history, { generatorVersion });
+    const report = OutputWriter.write(files, fsApi, history, { generatorVersion, workspaceRoot: folder });
     const details: string[] = [`Quality gate: ${errors} errors / ${warnings} warnings`];
     for (const f of findings) { details.push(`  ${f.finding.severity.toUpperCase()} ${f.file}:${f.finding.line} ${f.finding.ruleId} ${f.finding.message}`); }
     for (const d of demoted) { details.push(`  Demoted to draft: ${d}`); }

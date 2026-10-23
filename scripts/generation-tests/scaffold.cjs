@@ -27,6 +27,16 @@ const BODY = 'Feature: A\n\nScenario: s\n  * def a = 1\n';
 
 module.exports = [
     {
+        name: 'writer: rejects absolute and traversal paths before any write',
+        run() {
+            const fsApi = memFs();
+            for (const bad of ['/tmp/x.feature', '../../x.feature', 'src/test/../../x.feature']) {
+                assert.throws(() => writer().OutputWriter.write([{ path: bad, content: BODY, owner: 'generated' }], fsApi, memHistory(), OPTS), /outside the workspace/);
+            }
+            assert.equal(fsApi.map.size, 0);
+        }
+    },
+    {
         name: 'scaffold: fresh project yields base config, dev and staging configs, utils',
         run() {
             const m = byPath(plan());
@@ -35,7 +45,7 @@ module.exports = [
             assert.ok(m['src/test/java/karate-config-staging.js']);
             assert.ok(m['src/test/java/common/utils.feature']);
             assert.equal(m['src/test/java/common/auth.feature'], undefined);
-            assert.match(m['src/test/java/karate-config.js'].content, /karate\.sysprop\('baseUrl', 'http:\/\/localhost:8080'\)/);
+            assert.match(m['src/test/java/karate-config.js'].content, /karate\.sysprop\('baseUrl', ''\)/);
             assert.match(m['src/test/java/karate-config.js'].content, /karate\.env \|\| 'dev'/);
             assert.match(m['src/test/java/karate-config.js'].content, /karate\.configure\('connectTimeout', 5000\)/);
         }
@@ -211,8 +221,8 @@ module.exports = [
         run() {
             const m = byPath(plan({}, { config: { mode: 'env-json', urlVariable: 'baseUrl', envs: ['dev', 'staging'] } }));
             const j = JSON.parse(m['src/test/java/config/dev.json'].content);
-            assert.equal(j.baseUrl, 'http://localhost:8080');
-            assert.equal(JSON.parse(m['src/test/java/config/staging.json'].content).baseUrl, 'http://localhost:8080');
+            assert.equal(j.baseUrl, '');
+            assert.equal(JSON.parse(m['src/test/java/config/staging.json'].content).baseUrl, '');
             assert.equal(j.connectTimeout, 5000);
             assert.equal(j.readTimeout, 30000);
             assert.ok(m['src/test/java/config/staging.json']);

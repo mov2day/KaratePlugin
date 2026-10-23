@@ -69,7 +69,7 @@ module.exports = [
         name: 'scout shared: writer protects user-owned scaffolds and journey edits',
         run() {
             const fsApi = memFs(); const hist = history(); const dir = '/w/scout-fixture';
-            const v = { generatorVersion: '2.0.3' };
+            const v = { generatorVersion: '2.0.3', workspaceRoot: dir };
             const suite = generateScoutSuite(confirmedJourney());
             const first = OutputWriter.write(toWrite(suite, dir), fsApi, hist, v);
             assert.equal(first.created.length, 6);

@@ -47,6 +47,27 @@ async function probe(cmd: string, args: string[]): Promise<string | undefined> {
 
 const cache = new CliCache();
 
+export interface DryRunStagedFile { path: string; content: string; }
+export interface StageFs { mkdir(path: string): void; write(path: string, content: string): void; }
+
+/** Stage generated features beneath `outDir`; paths must be children of `workspaceRoot`. */
+export function stageDryRunFiles(outDir: string, files: DryRunStagedFile[], workspaceRoot: string, fsApi: StageFs = {
+    mkdir: p => fs.mkdirSync(p, { recursive: true }), write: (p, c) => fs.writeFileSync(p, c, 'utf8')
+}): string[] {
+    const root = path.resolve(workspaceRoot);
+    return files.filter(f => f.path.endsWith('.feature')).map(file => {
+        const absolute = path.resolve(file.path);
+        const relative = path.relative(root, absolute);
+        if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+            throw new Error(`Dry-run path is outside the workspace: ${file.path}`);
+        }
+        const target = path.join(outDir, relative);
+        fsApi.mkdir(path.dirname(target));
+        fsApi.write(target, file.content);
+        return target;
+    });
+}
+
 /** Finds an already-installed Karate v2 CLI. Never downloads. Hits cached 5 minutes, misses 30 seconds. */
 export async function resolveKarateV2Cli(_context: vscode.ExtensionContext, workspaceRoot = ''): Promise<Cli | undefined> {
     let jarPath = '';
@@ -59,7 +80,7 @@ export async function resolveKarateV2Cli(_context: vscode.ExtensionContext, work
 /** The `dryRun` input for `runPipeline`; undefined when the config turns the gate stage off. */
 export function makeDryRun(
     context: vscode.ExtensionContext, workspaceRoot: string, config: GeneratorConfig
-): ((files: string[]) => Promise<DryRunOutcome>) | undefined {
+): ((files: DryRunStagedFile[]) => Promise<DryRunOutcome>) | undefined {
     if (dryRunDecision(config.gate.dryRun, true) === 'disabled') {return undefined;}
     return async files => {
         let cli: Cli | undefined;
@@ -75,10 +96,13 @@ export function makeDryRun(
             return await withTempDir(
                 () => fs.mkdtempSync(path.join(os.tmpdir(), 'karate-dryrun-')),
                 d => fs.rmSync(d, { recursive: true, force: true }),
-                outDir => dryRun({
-                    cli, root: workspaceRoot, files: files.filter(f => f.endsWith('.feature')), outDir,
+                outDir => {
+                    const staged = stageDryRunFiles(outDir, files, workspaceRoot);
+                    return dryRun({
+                    cli, root: workspaceRoot, files: staged, outDir,
                     exec: (cmd, args, o) => execCapture(cmd, args, o), timeoutMs: RUN_TIMEOUT_MS
-                })
+                    });
+                }
             );
         } catch (error) {
             return { status: 'skipped', message: error instanceof Error ? error.message : String(error), findings: [] };

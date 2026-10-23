@@ -210,13 +210,22 @@ module.exports = [
             let got;
             const r = await run(base({ dryRun: async files => { got = files; return { status: 'passed', message: 'ok', findings: [] }; } }));
             assert.equal(r.dryRun.status, 'passed');
-            assert.ok(got.length === 4 && got.every(p => p.endsWith('.feature')));
+            assert.ok(got.length === 4 && got.every(f => f.path.endsWith('.feature') && typeof f.content === 'string'));
             const bad = await run(base({ dryRun: async () => { throw new Error('boom'); } }));
             assert.equal(bad.dryRun.status, 'skipped');
             assert.match(bad.dryRun.message, /boom/);
             const off = await run(base({ config: config({ gate: { dryRun: 'off' } }), dryRun: async () => { throw new Error('must not run'); } }));
             assert.equal(off.dryRun, undefined);
             assert.equal((await run(base())).dryRun, undefined);
+        }
+    },
+    {
+        name: 'pipeline: outputRoot traversal is rejected before the writer',
+        async run() {
+            const i = base({ config: config({ layout: { outputRoot: '../../x' } }) });
+            const r = await run(i);
+            assert.equal(featureFiles(i.fsApi).length, 0);
+            assert.ok(r.warnings.some(w => /Output root.*escapes/.test(w)));
         }
     },
     {

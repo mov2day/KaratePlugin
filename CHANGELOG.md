@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`.karate-generator.json`.** A new workspace config file (`karateDsl.generation.configFile`) overrides VS Code settings. `karateDsl.generation.structuringStrategy`, `autoTag`, `smartTestData`, `scenarioOutlineThreshold`, `sharedStylePath`, and `karateDsl.outputPath` are deprecated but still read.
 - **`@lock=<name>` replaces `@parallel=false`.** `@parallel=false` is not supported in Karate v2; rule `V2-LOCK-001` flags it and offers a quick fix.
 - **Regeneration rules changed.** Generated feature files carry a header with a content hash. Unchanged files are overwritten, edited files get a `<name>.generated.feature` sibling, and user-owned config, data, and schema files are never overwritten.
+- **Safer generated output.** Output-path traversal and absolute output paths are rejected. A user-edited generated sibling is preserved by choosing a unique `<name>.generated.generated.feature` path. Karate v2 dry runs stage content in a temporary directory before protected writes; parse failures produce draft siblings rather than replacing existing features.
+- **Legacy generation safety.** MCP OpenAPI generation now uses the shared pipeline and protected writer. Legacy spec sync gates its compatibility output and writes a sibling for review instead of replacing a scenario in place; the legacy generator no longer supplies a localhost fallback.
 - **Old `.github/skills` replaced by `skills/`.** The AI skill pack now lives in `skills/` with `skills/manifest.json` and ships in the extension package. Skills in a workspace `.github/skills` folder are still loaded as extra, lower-priority guidance.
 - **`ResourceLifecycleAnalyzer` removed.** Recorded sessions no longer produce per-resource lifecycle scenarios, response-time assertions, or commented negative ideas. Session and HAR output now goes to `<slug>/<slug>.feature` (no timestamp) and respects the no-clobber rules; session logs mask credentials.
 - **Jira generation follows `karateDsl.useCopilot`.** Output goes to `<name>/<name>-requirements.feature`; the `template` option is ignored with a note.
@@ -31,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Gate findings that duplicate the hard-coded URL (`K001`) or hard-coded secret (`S002`) diagnostics on the same line are hidden.
+- `V2-GHERKIN-002` rejects steps after an `Examples:` table, as required by Karate v2 parsing.
 - Duplicate generation settings now point to their `.karate-generator.json` replacement in the Settings UI.
 
 ### Known limitations

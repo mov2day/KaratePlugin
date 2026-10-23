@@ -18,7 +18,6 @@ export interface ScaffoldContext {
     model: GenerationModel;
 }
 
-const DEFAULT_URL = 'http://localhost:8080';
 const q = (s: string): string => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 const joinPath = (root: string, p: string): string => `${root.replace(/\/+$/, '')}/${p}`;
 const envVarName = (env: string): string => env.toUpperCase().replace(/[^A-Z0-9]/g, '_');
@@ -135,7 +134,8 @@ export function planScaffold(ctx: ScaffoldContext): ScaffoldFile[] {
     const { project, config, model } = ctx;
     const root = project.classpathRoot;
     const urlVar = config.config.urlVariable;
-    const baseUrl = model.baseUrl || DEFAULT_URL;
+    // Never invent a runnable endpoint. A source may supply a declared server; otherwise users must configure baseUrl.
+    const baseUrl = model.baseUrl || '';
     const envJsonMode = config.config.mode === 'env-json';
     const files: ScaffoldFile[] = [];
     const add = (p: string, content: string, reason: string): void => {

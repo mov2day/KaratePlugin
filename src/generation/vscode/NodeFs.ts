@@ -12,3 +12,26 @@ export const nodeFs: WritableFs = {
         fs.writeFileSync(p, content, 'utf8');
     }
 };
+
+/** A Node fs adapter that rejects reads/writes escaping a known workspace root. */
+export function workspaceNodeFs(workspaceRoot: string): WritableFs {
+    const root = path.resolve(workspaceRoot);
+    const confined = (p: string): string => {
+        const resolved = path.resolve(p);
+        const relative = path.relative(root, resolved);
+        if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+            throw new Error(`Refusing filesystem access outside workspace root: ${p}`);
+        }
+        return resolved;
+    };
+    return {
+        exists: p => fs.existsSync(confined(p)),
+        read: p => fs.readFileSync(confined(p), 'utf8'),
+        list: p => fs.readdirSync(confined(p)),
+        write: (p, content) => {
+            const safe = confined(p);
+            fs.mkdirSync(path.dirname(safe), { recursive: true });
+            fs.writeFileSync(safe, content, 'utf8');
+        }
+    };
+}

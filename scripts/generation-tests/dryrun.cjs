@@ -6,6 +6,20 @@ const fake = (code, out, calls = []) => async (cmd, args, o) => { calls.push({ c
 
 module.exports = [
     {
+        name: 'dryrun staging: writes only safe feature paths under the temp directory',
+        run() {
+            const writes = [];
+            const stage = require('../../out/generation/vscode/DryRunRunner').stageDryRunFiles;
+            const staged = stage('/tmp/stage', [
+                { path: '/workspace/src/test/karate/a.feature', content: 'Feature: a\n' },
+                { path: '/workspace/src/test/karate/b.feature', content: 'Feature: b\n' }
+            ], '/workspace', { mkdir: p => writes.push(['mkdir', p]), write: (p, c) => writes.push(['write', p, c]) });
+            assert.deepEqual(staged, ['/tmp/stage/src/test/karate/a.feature', '/tmp/stage/src/test/karate/b.feature']);
+            assert.deepEqual(writes.filter(w => w[0] === 'write').map(w => w[1]), staged);
+            assert.throws(() => stage('/tmp/stage', [{ path: '../../x.feature', content: 'x' }], '/workspace', { mkdir() {}, write() {} }), /outside the workspace/);
+        }
+    },
+    {
         name: 'dryrun: success runs `run -D -o <outDir> <files>` with cwd root and passes',
         async run() {
             const calls = [];

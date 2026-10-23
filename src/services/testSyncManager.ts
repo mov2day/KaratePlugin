@@ -8,6 +8,21 @@ import { AffectedTest } from './testImpactAnalyzer';
 import { KarateGenerator } from './karateGenerator';
 import { OpenAPIParser } from './openApiParser';
 import { logger } from '../utils/logger';
+import { runGate } from '../generation/quality/QualityGate';
+import { generatedSiblingPath } from '../generation/write/OutputWriter';
+
+/**
+ * Legacy sync has no GenerationConfig/ExtensionContext, so it cannot safely invoke the full pipeline.
+ * It still gates output and always writes it beside the target: sync must never replace a user scenario.
+ */
+export function writeLegacySyncSibling(filePath: string, content: string): string | undefined {
+    const gate = runGate(content);
+    if (!gate.ok) {return undefined;}
+    let sibling = generatedSiblingPath(filePath);
+    while (fs.existsSync(sibling)) {sibling = generatedSiblingPath(sibling);}
+    fs.writeFileSync(sibling, content, 'utf8');
+    return sibling;
+}
 
 /**
  * Plan for updating tests based on spec changes
@@ -136,18 +151,15 @@ export class TestSyncManager {
                 // Generate new test content for this endpoint
                 const specFileName = path.basename(specPath, path.extname(specPath));
                 const feature = this.karateGenerator.generateFromOpenAPI([endpoint], specFileName);
-                const newScenarioContent = this.extractScenarioContent(
+                const sibling = writeLegacySyncSibling(
+                    affected.testPath,
                     this.karateGenerator.featureToString(feature)
                 );
-
-                // Replace old scenario in file
-                await this.replaceScenarioInFile(
-                    affected.testPath,
-                    affected.scenarioName,
-                    newScenarioContent
-                );
-
-                logger.info(`TestSyncManager: Successfully regenerated ${affected.scenarioName}`);
+                if (!sibling) {
+                    logger.warn(`TestSyncManager: Skipped ${affected.scenarioName}; legacy output failed the quality gate`);
+                    return;
+                }
+                logger.info(`TestSyncManager: Regenerated ${affected.scenarioName} beside the edited feature: ${sibling}`);
             }
         } catch (error) {
             logger.error(`TestSyncManager: Error regenerating test ${affected.scenarioName}`, error as Error);

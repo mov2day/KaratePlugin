@@ -2,7 +2,7 @@
 
 Every generation mode (OpenAPI, Confluence, OpenAPI + Confluence, Postman, HAR/session, GraphQL, Jira, directory batch, Scout) goes through one pipeline: source adapter, normalized model, scenario planner, renderer, project scaffolder, optional AI refinement, quality gate, writer.
 
-Legacy sync and MCP preview callers retain their compatibility APIs, but no longer invent a `localhost` URL. The normal generation commands use the shared pipeline and protected writer; legacy scenario-only replacement is treated as a draft/review workflow until it can carry the full project context safely.
+MCP generation uses the same pipeline and protected writer as the editor commands. Legacy spec sync cannot safely supply the pipeline's project/config context, so it gates legacy output and writes a unique `.generated.feature` sibling; it never replaces a user scenario in place. No generation path invents a `localhost` URL.
 
 Generated suites target **Karate 2.x** (skills are verified against 2.1.4). Running Karate 2.x standalone needs **Java 21 or later**.
 
@@ -136,6 +136,8 @@ On regeneration:
 | Generated feature, edited by you | Left alone; the new output is written to `<name>.generated.feature` beside it |
 
 "Unchanged" is decided from the header hash or from hashes the extension keeps in workspace state (key `karateDsl.generatedHashes`). Delete the `.generated.feature` file after merging what you want.
+
+If that sibling was also edited, the writer keeps adding `.generated` before `.feature` (for example, `name.generated.generated.feature`) until it finds an unused or known-generated file. Output roots and feature paths must be workspace-relative; absolute paths and `..` traversal are rejected. Before protected writes, a configured Karate v2 dry run stages generated feature content in a temporary directory and removes it afterwards. A parse failure keeps an existing feature and emits a draft sibling.
 
 ## Quality gate
 

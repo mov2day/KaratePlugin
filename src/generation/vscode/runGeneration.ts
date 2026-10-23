@@ -19,7 +19,7 @@ import type { GenerationSummary } from '../pipeline/Summary';
 import type { PlanOptions, PlannedFeature } from '../plan/OpenApiPlanner';
 import { GeneratorConfigLoader } from './GeneratorConfigLoader';
 import { makeDryRun } from './DryRunRunner';
-import { nodeFs } from './NodeFs';
+import { nodeFs, workspaceNodeFs } from './NodeFs';
 import { WorkspaceHashStore } from './WorkspaceHashStore';
 
 export interface RunGenerationInput {
@@ -106,7 +106,8 @@ export async function runGenerationForModel(i: RunGenerationInput): Promise<RunG
     if (i.configure) {config = i.configure(config);}
     if (i.outputRoot) {config = { ...config, layout: { ...config.layout, outputRoot: i.outputRoot } };}
 
-    const project = discoverProject(i.workspaceRoot, nodeFs);
+    const fsApi = workspaceNodeFs(i.workspaceRoot);
+    const project = discoverProject(i.workspaceRoot, fsApi);
     const extraFiles = [
         ...(i.extraFiles ?? []),
         ...(i.classpathFiles ?? []).map(f => ({ ...f, path: `${project.classpathRoot.replace(/\\/g, '/').replace(/\/+$/, '')}/${f.path}` }))
@@ -119,7 +120,7 @@ export async function runGenerationForModel(i: RunGenerationInput): Promise<RunG
     let result: PipelineResult;
     try {
         result = await runPipeline({
-            model: i.model, scenarios: i.scenarios, extraFeatures: i.extraFeatures, planOptions: i.planOptions, config, project, fsApi: nodeFs, history, skills, ai,
+            model: i.model, scenarios: i.scenarios, extraFeatures: i.extraFeatures, planOptions: i.planOptions, config, project, fsApi, history, skills, ai,
             evidence: i.evidence, request: i.customInstruction?.trim() || undefined,
             generatorVersion: version, sourceRef: i.sourceRef, mode: i.mode, progress: i.progress,
             extraFiles, root: i.workspaceRoot,

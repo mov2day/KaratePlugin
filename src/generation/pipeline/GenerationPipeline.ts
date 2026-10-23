@@ -56,8 +56,8 @@ export interface PipelineInput {
     extraFiles?: { path: string; content: string; owner: 'user' | 'generated' }[];
     /** Optional path prefix (e.g. the workspace root) applied to every written/read path. */
     root?: string;
-    /** Injectable dry run (Task 17); called with staged feature paths before protected writes. Failures never escape. */
-    dryRun?: (files: string[]) => Promise<DryRunResult>;
+    /** Injectable dry run (Task 17); receives staged feature content before protected writes. Failures never escape. */
+    dryRun?: (files: { path: string; content: string }[]) => Promise<DryRunResult>;
 }
 
 export interface PipelineFeatureResult {
@@ -308,7 +308,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
     if (config.gate.dryRun !== 'off' && i.dryRun && featureFiles.length > 0) {
         progress('Dry-running generated features', 78);
         try {
-            dryRun = await i.dryRun(featureFiles.map(f => f.path));
+            dryRun = await i.dryRun(featureFiles.map(f => ({ path: f.path, content: f.content })));
             for (const f of dryRun.findings ?? []) {warnings.push(`Dry run: ${f.ruleId} line ${f.line}: ${f.message}`);}
             if (dryRun.status === 'failed') {
                 dryRunFailed = true;
@@ -329,7 +329,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
     ];
     let written: WriteReport = { created: [], updated: [], skippedExisting: [], sideBySide: [] };
     try {
-        written = OutputWriter.write(files, fsApi, history, { generatorVersion: i.generatorVersion });
+        written = OutputWriter.write(files, fsApi, history, { generatorVersion: i.generatorVersion, workspaceRoot: i.root });
     } catch (e) {
         if (e instanceof WriteError) {
             written = e.partial;
