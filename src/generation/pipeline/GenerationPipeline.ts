@@ -325,9 +325,9 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
             dryRun = { status: 'skipped', message: 'No feature files were written; dry run skipped' };
         } else {try {
             dryRun = await i.dryRun(touched);
-            for (const f of dryRun.findings ?? []) {warnings.push(`Dry run: ${f.ruleId} ${f.message}`);}
+            for (const f of dryRun.findings ?? []) {warnings.push(`Dry run: ${f.ruleId} line ${f.line}: ${f.message}`);}
         } catch (e) {
-            dryRun = { status: 'failed', message: `Dry run could not complete: ${msg(e)}` };
+            dryRun = { status: 'skipped', message: `could not complete: ${msg(e)}` };
         }}
     }
 

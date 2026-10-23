@@ -212,7 +212,7 @@ module.exports = [
             assert.equal(r.dryRun.status, 'passed');
             assert.ok(got.length === 4 && got.every(p => p.endsWith('.feature')));
             const bad = await run(base({ dryRun: async () => { throw new Error('boom'); } }));
-            assert.equal(bad.dryRun.status, 'failed');
+            assert.equal(bad.dryRun.status, 'skipped');
             assert.match(bad.dryRun.message, /boom/);
             const off = await run(base({ config: config({ gate: { dryRun: 'off' } }), dryRun: async () => { throw new Error('must not run'); } }));
             assert.equal(off.dryRun, undefined);

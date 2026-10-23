@@ -104,7 +104,6 @@ export function formatSummary(r: PipelineResult, opts: SummaryOptions = {}): Gen
         details.push(r.dryRun.status === 'skipped' ? `Dry run: skipped (${r.dryRun.message})` : `Dry run: ${r.dryRun.status}`);
         if (r.dryRun.status === 'failed') {
             details.push(`  ${r.dryRun.message}`);
-            for (const f of r.dryRun.findings ?? []) {details.push(`  ${f.ruleId} line ${f.line}: ${f.message}`);}
         }
     }
     if (r.warnings.length) {
@@ -113,6 +112,6 @@ export function formatSummary(r: PipelineResult, opts: SummaryOptions = {}): Gen
     }
 
     const unexpectedDrafts = r.features.some(f => f.draft && !(opts.expectedDraftFeature?.(f.path) ?? false));
-    const level = r.gate.errors > 0 || rejected.length > 0 || w.sideBySide.length > 0 || unexpectedDrafts ? 'warning' : 'info';
+    const level = r.gate.errors > 0 || rejected.length > 0 || w.sideBySide.length > 0 || unexpectedDrafts || r.dryRun?.status === 'failed' ? 'warning' : 'info';
     return { headline, details, level };
 }

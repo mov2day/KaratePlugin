@@ -88,9 +88,13 @@ module.exports = [
         run() {
             const p = mod().parseDryRunOutput;
             const a = p('feature.feature:12 - unexpected token\nsyntax error: bad thing at line 7\nline 9: expected Scenario');
-            assert.deepEqual(a.map(x => x.line), [12, 7, 9]);
+            assert.deepEqual(a.map(x => x.line), [12], 'unlocated lines ignored when a located one exists');
             assert.equal(a[0].file, 'feature.feature');
-            assert.equal(a[1].file, undefined);
+            const fb = p('syntax error: bad thing at line 7\nline 9: expected Scenario');
+            assert.deepEqual(fb.map(x => x.line), [7]);
+            assert.equal(fb[0].file, undefined);
+            assert.equal(p('x.feature:3 - syntax error\nx.feature:3 - syntax error').length, 1, 'deduped');
+            assert.equal(p(Array.from({ length: 50 }, (_, n) => `x.feature:${n + 1} - syntax error`).join('\n')).length, 20, 'capped');
             const b = p('SyntaxError: Unexpected identifier \'x\' (did you double a quote?)\n    at src/test/a.feature:5');
             assert.equal(b.length, 1);
             assert.equal(b[0].line, 5);
@@ -116,6 +120,7 @@ module.exports = [
             const k = mod().isKarateV2;
             assert.equal(k('Karate 2.1.4'), true);
             assert.equal(k('karate v2.0.0-RC1'), true);
+            assert.equal(k('Karate version: 2.1.4'), true);
             assert.equal(k('1.5.0'), false);
             assert.equal(k('Karate 1.5.0.RC3'), false);
             assert.equal(k(''), false);
@@ -146,11 +151,37 @@ module.exports = [
             const base = { written: { created: ['a.feature'], updated: [], skippedExisting: [], sideBySide: [] }, features: [{ path: 'a.feature', findings: [], draft: false }], draftScenarios: 0, warnings: [], gate: { errors: 0, warnings: 0 } };
             const f = S.formatSummary({ ...base, dryRun: { status: 'failed', message: '1 parse error', findings: [{ ruleId: 'V2-PARSE-001', severity: 'error', line: 12, message: 'a.feature: unexpected token' }] } });
             assert.ok(f.details.some(d => d.startsWith('Dry run: failed')));
-            assert.ok(f.details.some(d => d.includes('V2-PARSE-001') && d.includes('12')));
+            assert.equal(f.level, 'warning');
+            assert.ok(!f.details.some(d => d.includes('V2-PARSE-001')), 'findings are listed via pipeline warnings only');
             const s = S.formatSummary({ ...base, dryRun: { status: 'skipped', message: 'Karate v2 CLI not found; static quality gate only' } });
             assert.ok(s.details.some(d => d === 'Dry run: skipped (Karate v2 CLI not found; static quality gate only)'));
             const p = S.formatSummary({ ...base, dryRun: { status: 'passed', message: 'ok' } });
             assert.ok(p.details.some(d => d.startsWith('Dry run: passed')));
+        }
+    },
+    {
+        name: 'dryrun: noisy non-zero output is skipped, not failed',
+        async run() {
+            for (const line of [
+                '0 failed, 3 passed (a.feature:7)',
+                'No errors found in a.feature:1',
+                'WARN deprecated syntax in a.feature:12',
+                '[info] parsed a.feature:4 invalid scenarios: 0',
+                'ERROR failed to write report to /tmp/o line 5'
+            ]) {
+                const r = await mod().dryRun({ cli: CLI, root: '/ws', files: ['a.feature'], outDir: '/o', exec: fake(1, line) });
+                assert.equal(r.status, 'skipped', line);
+            }
+        }
+    },
+    {
+        name: 'dryrun: parse errors past the 2000 char cap are still found; stored output is capped',
+        async run() {
+            const out = 'noise\n'.repeat(1000) + 'a.feature:9 - unexpected token';
+            const r = await mod().dryRun({ cli: CLI, root: '/ws', files: ['a.feature'], outDir: '/o', exec: fake(1, out) });
+            assert.equal(r.status, 'failed');
+            assert.equal(r.findings[0].line, 9);
+            assert.ok(r.output.length <= 2000);
         }
     }
 ];
