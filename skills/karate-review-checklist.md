@@ -25,5 +25,5 @@ Before returning a feature, check it against every rule below. A failed rule is 
 - Structure: Feature, optional Background, then Scenarios; step keywords consistent; unique, descriptive names.
 - Karate-JSON: no bare identifiers inside `{ }` or `[ ]` literals; use `'#(x)'` or `({ ... })`.
 - Isolation: unique generated data (`karate.uuid()`, `karate.faker.*`), `karate.copy` before changing loaded data, independent scenarios.
-- Reuse: helpers are `@ignore` features read via `classpath:`; `callonce` for setup; no deep call chains.
+- Reuse: helpers are `@ignore` features read via `classpath:`; config helpers (auth, headers) use `call`; `callonce` only caches data via `def x = callonce read(...)`; no deep call chains.
 - Assertions: schemas with markers, `##` for optional fields, a comment above each key assertion.

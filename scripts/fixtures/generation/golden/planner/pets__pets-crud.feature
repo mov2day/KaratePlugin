@@ -3,7 +3,7 @@ Feature: Pets API - CRUD lifecycle
 
   Background:
     * url baseUrl
-    * callonce read('classpath:common/auth.feature')
+    * call read('classpath:common/auth.feature')
 
   @positive @op=createPet @domain=pets @crud @lock=pets
   Scenario: Pets lifecycle - create, read, update, delete

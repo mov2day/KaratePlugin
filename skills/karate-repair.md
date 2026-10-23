@@ -16,7 +16,7 @@ Repair only the failing scenario. Keep unrelated scenarios, tags, names and orde
 | `#string` vs number (or reverse) | schema drift or quoting | align the marker with the evidence |
 | key `#notpresent` / `#present` | optional field | use `##type` for optional |
 | `{ id: id }` is a string | relaxed JSON on `{` | `'#(id)'` or `({ id: id })` |
-| works alone, fails in a suite | shared data, Background reset, ordering | unique data, `callonce`, `@lock=<name>` |
+| works alone, fails in a suite | shared data, Background reset, ordering | unique data, `def x = callonce read(...)` for data, `@lock=<name>` |
 | url missing in a called feature | `url` resets in calls | `configure url = baseUrl` |
 | 401/403 | missing or expired auth | `configure auth` with sysenv credentials |
 | timing | async result | `retry until <js expression>`, not sleeps |
@@ -30,7 +30,7 @@ Repair only the failing scenario. Keep unrelated scenarios, tags, names and orde
 - If the evidence cannot decide, keep the assertion and tag the scenario `@ignore` with a `# NEEDS:` comment.
 
 ## Flakiness
-Look for shared mutable data, reliance on scenario order, non-unique generated values, a Background that is assumed to persist, and unbounded waits. Fix with unique data (`karate.uuid()`), independent scenarios, `callonce` for expensive setup and `@lock=<name>` only for genuinely shared state.
+Look for shared mutable data, reliance on scenario order, non-unique generated values, a Background that is assumed to persist, and unbounded waits. Fix with unique data (`karate.uuid()`), independent scenarios, `def x = callonce read(...)` to cache expensive data (config helpers use `call`) and `@lock=<name>` only for genuinely shared state.
 
 ## Rules
 - V2-ASSERT-001: a repaired scenario still asserts its status.

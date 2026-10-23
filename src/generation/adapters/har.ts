@@ -533,7 +533,7 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
 
     // ---- feature
     const bg: KarateStep[] = [st('*', `url ${urlVar}`)];
-    if (schemes.length > 0) {bg.push(st('*', "callonce read('classpath:common/auth.feature')"));}
+    if (schemes.length > 0) {bg.push(st('*', "call read('classpath:common/auth.feature')"));}
     for (const [v, env] of secretDefs) {bg.push(st('*', `def ${v} = karate.sysenv(${q(env)}, '')`));}
     const flat = config.layout.strategy !== 'domain';
     const features: PlannedFeature[] = [{

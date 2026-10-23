@@ -308,7 +308,7 @@ export function buildRequirementScenarios(items: RequirementItem[], opts: Requir
     const root = slug(opts.name) || 'requirements';
     const ids = [...new Set(safeItems.map(i => redactRequirementText(i.id).text))];
     const background: KarateStep[] = [st('*', `url ${config.config.urlVariable}`)];
-    if (model && needsAuth && model.schemes.length > 0) {background.push(st('*', "callonce read('classpath:common/auth.feature')"));}
+    if (model && needsAuth && model.schemes.length > 0) {background.push(st('*', "call read('classpath:common/auth.feature')"));}
     const features: PlannedFeature[] = scenarios.length === 0 ? [] : [{
         relativePath: `${root}/${root}-requirements.feature`,
         feature: {

@@ -586,7 +586,7 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
             scenarios.push({ scenario, secured, secretsUsed, varsUsed });
         }
 
-        // assemble the feature(s): authenticated and unauthenticated scenarios never share a callonce Background
+        // assemble the feature(s): authenticated and unauthenticated scenarios never share a Background
         const basePath = flat || key === '' ? collSlug : groupEntries[0].folders.map(f => slug(f) || 'folder').join('/');
         const hasAuth = schemes.length > 0;
         const buckets: { suffix: string; list: typeof scenarios; auth: boolean }[] = [];
@@ -600,7 +600,7 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
         for (const b of buckets) {
             if (b.list.length === 0) {continue;}
             const bg: KarateStep[] = [st('*', `url ${urlVar}`)];
-            if (b.auth) {bg.push(st('*', "callonce read('classpath:common/auth.feature')"));}
+            if (b.auth) {bg.push(st('*', "call read('classpath:common/auth.feature')"));}
             if (b.list.some(s => s.varsUsed.size > 0)) {bg.push(st('*', `def vars = read('classpath:data/${collSlug}-variables.json')`));}
             const used: string[] = [];
             for (const s of b.list) {for (const v of s.secretsUsed) {if (!used.includes(v)) {used.push(v);}}}

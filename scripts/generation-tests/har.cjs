@@ -122,13 +122,13 @@ module.exports = [
         }
     },
     {
-        name: 'har: a Bearer Authorization header becomes a model scheme and the callonce auth helper; secrets use karate.sysenv',
+        name: 'har: a Bearer Authorization header becomes a model scheme and the call auth helper; secrets use karate.sysenv',
         run() {
             const b = build();
             assert.deepEqual(b.model.schemes.map(s => s.kind), ['bearer']);
             const t = featureText(b);
             assert.match(t, /\* url baseUrl\n/);
-            assert.match(t, /\* callonce read\('classpath:common\/auth\.feature'\)/);
+            assert.match(t, /\* call read\('classpath:common\/auth\.feature'\)/);
             assert.match(t, /\* def xApiKey = karate\.sysenv\('X_API_KEY', ''\)/);
             assert.match(t, /\* def token = karate\.sysenv\('TOKEN', ''\)/);
             assert.match(t, /\* def password = karate\.sysenv\('PASSWORD', ''\)/);

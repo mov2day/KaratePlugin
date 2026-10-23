@@ -107,16 +107,16 @@ module.exports = [
         }
     },
     {
-        name: 'planner: auth callonce only where secured operations live; public ops have none',
+        name: 'planner: auth call only where secured operations live; public ops have none',
         run() {
             const planned = plan();
             const byPath = Object.fromEntries(planned.features.map(f => [f.relativePath, f.feature]));
             const bg = p => byPath[p].background.steps.map(s => s.text);
-            assert.deepEqual(bg('pets/pets.feature'), ['url baseUrl', "callonce read('classpath:common/auth.feature')"]);
+            assert.deepEqual(bg('pets/pets.feature'), ['url baseUrl', "call read('classpath:common/auth.feature')"]);
             assert.deepEqual(bg('system/system.feature'), ['url baseUrl']);
             assert.deepEqual(bg('pets/pets-security.feature'), ['url baseUrl']);
             assert.ok(byPath['pets/pets-crud.feature']);
-            assert.ok(bg('pets/pets-crud.feature').includes("callonce read('classpath:common/auth.feature')"));
+            assert.ok(bg('pets/pets-crud.feature').includes("call read('classpath:common/auth.feature')"));
         }
     },
     {

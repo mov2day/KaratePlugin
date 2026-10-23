@@ -3,7 +3,7 @@ Feature: Pets API
 
   Background:
     * url baseUrl
-    * callonce read('classpath:common/auth.feature')
+    * call read('classpath:common/auth.feature')
 
   @positive @op=listPets @domain=pets
   Scenario: List all pets - returns 200

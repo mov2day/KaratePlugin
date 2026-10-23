@@ -226,7 +226,7 @@
         ]
       },
       "priority": 40,
-      "budgetChars": 3000,
+      "budgetChars": 3500,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-CFG-001",
@@ -255,7 +255,7 @@
         ]
       },
       "priority": 45,
-      "budgetChars": 3000,
+      "budgetChars": 3500,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-LOCK-001",

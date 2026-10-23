@@ -89,11 +89,11 @@ module.exports = [
         }
     },
     {
-        name: 'postman: bearer auth maps to a model scheme, callonce auth helper, and no literal token',
+        name: 'postman: bearer auth maps to a model scheme, call auth helper, and no literal token',
         async run() {
             const b = build();
             assert.deepEqual(b.model.schemes.map(s => s.kind), ['bearer']);
-            for (const f of render(b)) assert.match(f.text, /\* callonce read\('classpath:common\/auth\.feature'\)/);
+            for (const f of render(b)) assert.match(f.text, /\* call read\('classpath:common\/auth\.feature'\)/);
             assert.ok(!allText(b).includes('test-token'));
             const { fsApi } = await runFull(b);
             const auth = fsApi.read('src/test/java/common/auth.feature');
@@ -244,9 +244,9 @@ module.exports = [
             assert.equal(op('Open').security, 'none');
             assert.deepEqual(op('Secured').security, ['bearer']);
             const text = Object.fromEntries(render(b).map(f => [f.path, f.text]));
-            assert.match(text['mixed/mixed.feature'], /callonce read\('classpath:common\/auth\.feature'\)/);
+            assert.match(text['mixed/mixed.feature'], /call read\('classpath:common\/auth\.feature'\)/);
             assert.ok(!text['mixed/mixed.feature'].includes('Scenario: Open'));
-            assert.ok(!text['mixed/mixed-public.feature'].includes('callonce'));
+            assert.ok(!text['mixed/mixed-public.feature'].includes('call read'));
             assert.match(text['mixed/mixed-public.feature'], /Scenario: Open/);
         }
     },

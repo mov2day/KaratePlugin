@@ -239,7 +239,7 @@ class Planner {
             const first = items[0];
             const needsAuth = this.model.schemes.length > 0 && first.kind !== 'security' && items.some(i => i.secured);
             const steps = [st('*', `url ${this.config.config.urlVariable}`)];
-            if (needsAuth) {steps.push(st('*', "callonce read('classpath:common/auth.feature')"));}
+            if (needsAuth) {steps.push(st('*', "call read('classpath:common/auth.feature')"));}
             const label = this.config.layout.strategy === 'flat' ? titleCase(this.model.name) : titleCase(first.domain);
             const suffix = first.kind === 'crud' ? ' - CRUD lifecycle' : first.kind === 'security' ? ' - Security' : path.endsWith('-public') ? ' - Public' : '';
             features.push({

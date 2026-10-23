@@ -18,7 +18,7 @@ export const TASK_FOCUS: Record<AITask, string> = {
     'analyze-coverage': 'Compare only the supplied specification and explicit Karate feature scope. Report evidence and gaps without inventing coverage.',
     'generate-missing-test': 'Generate a focused test for the identified coverage gap using only supplied contract evidence.',
     'analyze-flakiness': 'Focus on deterministic setup, asynchronous behavior, shared state, isolation, retries, and parallel safety.',
-    'suggest-reusability': 'Focus on shallow, useful reuse with Background, call, callonce, callSingle, explicit helper inputs, and @ignore helpers.'
+    'suggest-reusability': 'Focus on shallow, useful reuse with Background, call (config helpers), callonce (cached data only), callSingle, explicit helper inputs, and @ignore helpers.'
 };
 
 /** Role, task focus and the general rules shared by every model call (also used by KaratePromptComposer). */

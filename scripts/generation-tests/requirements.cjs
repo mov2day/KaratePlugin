@@ -205,7 +205,7 @@ module.exports = [
         assert.equal(text(a), text(b));
         assert.deepEqual(a.files, b.files);
         assert.ok(a.files.every(f => f.path.startsWith('data/requirements/')), a.files.map(f => f.path).join(','));
-        assert.match(text(a), /callonce read\('classpath:common\/auth.feature'\)/);
+        assert.match(text(a), /call read\('classpath:common\/auth.feature'\)/);
         assert.deepEqual(errors(text(a), a), []);
         assert.ok(scenarios(a).length === 4);
     } },

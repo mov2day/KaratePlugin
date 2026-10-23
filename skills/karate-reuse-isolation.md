@@ -27,7 +27,8 @@ Scenario:
 - An array argument calls the feature once per element.
 
 ## One-time setup
-- `callonce` runs once per feature file; the result is cached.
+- `callonce` caches DATA: use it only as `def x = callonce read(...)` for a pure data feature; the result is computed once per feature file.
+- Config helpers (`configure auth`, `configure headers`, `header`, cookies) use plain `* call read('classpath:common/auth.feature')` in the Background; their effects are per-scenario state, so `callonce` must not be relied on to re-apply them.
 - `karate.callSingle('classpath:auth/token.feature')` runs once for the whole suite; it should return plain JSON only.
 ```gherkin
 Background:
@@ -36,7 +37,7 @@ Background:
 ```
 
 ## Scope and url
-- The Background re-runs before every Scenario; its variables reset each time. Use `callonce` for setup that must persist.
+- The Background re-runs before every Scenario; its variables reset each time. Cache data with `def x = callonce read(...)`; re-apply configure/header helpers with `call`.
 - `url` resets in called features; `configure url = baseUrl` persists across calls.
 - Read shared data with `read('classpath:...')`, never `../../` paths.
 - Clone shared objects with `karate.copy` before changing them.

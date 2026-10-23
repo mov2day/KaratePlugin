@@ -48,7 +48,7 @@ module.exports = [
                 const text = snip.renderScenariosForOperations(m, [op.sourceRef], c);
                 if (!text) continue;
                 assert.ok(!/classpath:data\//.test(text) && !/classpath:schemas\//.test(text), `${op.sourceRef}: file reference in snippet\n${text}`);
-                const feature = `Feature: Wrap\n\n  Background:\n    * url baseUrl\n    * callonce read('classpath:common/auth.feature')\n\n${text}\n`;
+                const feature = `Feature: Wrap\n\n  Background:\n    * url baseUrl\n    * call read('classpath:common/auth.feature')\n\n${text}\n`;
                 const g = gate.runGate(feature, { knownFiles: new Set(['common/auth.feature', 'common/utils.feature']), config: c });
                 assert.deepEqual(g.findings.filter(f => f.severity === 'error'), [], `${op.sourceRef}\n${feature}`);
             }

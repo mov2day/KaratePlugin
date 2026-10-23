@@ -6,7 +6,7 @@ Follow the project's existing config; never overwrite it. Keep config light.
 
 ## Config files
 - `karate-config.js` is required and runs before every scenario; `karate-config-<env>.js` loads after it when `karate.env` is set (`-e staging` or `-Dkarate.env=staging`).
-- Keep config light: return variables, no big file reads. Suite-wide one-time token setup may use `karate.callSingle`; otherwise use `callonce` in the Background. Generated scaffolding uses `callonce` plus declarative `configure auth` in `common/auth.feature`.
+- Keep config light: return variables, no big file reads. Suite-wide one-time token setup may use `karate.callSingle`; otherwise load config helpers in the Background with `call`, and cache data with `def x = callonce read(...)`. Generated scaffolding loads `common/auth.feature` with `* call read('classpath:common/auth.feature')`; it holds declarative `configure auth`.
 ```javascript
 function fn() {
   var env = karate.env || 'dev';

@@ -48,7 +48,7 @@ Background:
 ```
 
 ## CRUD chains
-Create, read, update, delete the same resource in ONE scenario (data from step N feeds step N+1), or use a helper `callonce`. Capture the id with `* def id = response.id`, delete what you created, and use unique names so parallel runs do not collide. Lock shared resources with `@lock=<name>`.
+Create, read, update, delete the same resource in ONE scenario (data from step N feeds step N+1), or use a data helper cached with `def x = callonce read(...)`. Capture the id with `* def id = response.id`, delete what you created, and use unique names so parallel runs do not collide. Lock shared resources with `@lock=<name>`.
 
 ## Unsupported content
 Constructs without a Karate mapping (webhooks, callbacks): skip, noting it in a `#` comment above an `@ignore` scenario.
