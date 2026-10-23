@@ -123,12 +123,6 @@ module.exports = [
         assert.equal(JSON.stringify(stage().applyLayout(input, l)), JSON.stringify(stage().applyLayout(mixed(), l)));
         assert.equal(JSON.stringify(input), before);
     } },
-    { name: 'layout: unimplemented splitBy values warn and leave files unsplit', run() {
-        assert.equal(stage().layoutWarnings({ splitBy: 'tag', maxScenariosPerFile: 0, sections: false }).length, 1);
-        assert.equal(stage().layoutWarnings(config().layout).length, 0);
-        const input = mixed();
-        assert.equal(stage().applyLayout(input, config({ splitBy: 'path' }).layout), input);
-    } },
     { name: 'layout: planner path default output is unchanged and split keeps every scenario', run() {
         const base = planned({});
         const same = stage().applyLayout(base.features, config().layout);
@@ -158,8 +152,9 @@ module.exports = [
             'src/test/karate/pets/pets-negative.feature', 'src/test/karate/pets/pets.feature'
         ]);
         assert.ok(split.fsApi.map.get('src/test/karate/pets/pets-negative.feature').includes('# ---- negative ----'));
+        // scenarios with only category tags form a single tag group, so nothing is split and nothing warns
         const tag = await runAdapter({ splitBy: 'tag' });
         assert.deepEqual(tag.files, plain.files);
-        assert.ok(tag.result.warnings.some(w => /splitBy "tag"/.test(w)), tag.result.warnings.join('|'));
+        assert.ok(!tag.result.warnings.some(w => /splitBy/.test(w)), tag.result.warnings.join('|'));
     } }
 ];

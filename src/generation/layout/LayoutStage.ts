@@ -7,16 +7,8 @@ import { slug } from '../plan/slug';
 
 export type LayoutOptions = Pick<GeneratorConfig['layout'], 'splitBy' | 'maxScenariosPerFile' | 'sections'>;
 
-/** Split modes that are accepted by the config but not implemented yet; they behave like 'none'. */
-const UNIMPLEMENTED: readonly LayoutSplit[] = ['tag', 'path'];
-
-export function layoutWarnings(layout: LayoutOptions): string[] {
-    return UNIMPLEMENTED.includes(layout.splitBy)
-        ? [`layout.splitBy "${layout.splitBy}" is not implemented yet; files are not split`]
-        : [];
-}
-
-const categoryOf = (s: KarateScenario): string => s.category ?? 'positive';
+// `exploratory` is a tag category only (KarateScenario.category has no such value), so scenarios that carry just the tag are read as exploratory.
+const categoryOf = (s: KarateScenario): string => s.category ?? (s.tags?.includes('@exploratory') ? 'exploratory' : 'positive');
 /** Files that must keep their planner grouping: crud lifecycles, security probes and the unsecured `-public` split. */
 const isFixedGroup = (f: PlannedFeature): boolean =>
     (f.featureKind !== undefined && f.featureKind !== 'main') || f.relativePath.replace(/\.feature$/, '').endsWith('-public');
@@ -24,30 +16,47 @@ const isFixedGroup = (f: PlannedFeature): boolean =>
 const stem = (p: string): string => p.replace(/\.feature$/, '');
 const titleCase = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
-function splitByCategory(features: PlannedFeature[]): PlannedFeature[] {
+/** Tags that never name a group: the default category taxonomy and draft markers. Key=value tags (`@op=`, `@domain=`) are skipped too. */
+const NON_GROUP_TAGS = new Set(['@positive', '@negative', '@edge', '@boundary', '@security', '@exploratory', '@ignore', '@draft']);
+const tagGroupOf = (s: KarateScenario): string => {
+    const t = (s.tags ?? []).find(x => !NON_GROUP_TAGS.has(x) && !x.includes('='));
+    return t ? slug(t.replace(/^@/, '')) || 'untagged' : 'untagged';
+};
+const keyOf: Record<Exclude<LayoutSplit, 'none'>, (s: KarateScenario) => string> = {
+    category: categoryOf,
+    tag: tagGroupOf,
+    path: s => slug(s.domain ?? '') || 'general'
+};
+
+/** Splits each regroupable file by `keyOf`. The first group keeps the original file name so links stay stable. */
+function splitBy(features: PlannedFeature[], mode: Exclude<LayoutSplit, 'none'>): PlannedFeature[] {
+    const key = keyOf[mode];
     const taken = new Set(features.map(f => f.relativePath));
     const out: PlannedFeature[] = [];
     for (const f of features) {
         if (isFixedGroup(f)) {out.push(f); continue;}
         const groups = new Map<string, KarateScenario[]>();
-        for (const s of f.feature.scenarios) {groups.set(categoryOf(s), [...(groups.get(categoryOf(s)) ?? []), s]);}
+        for (const s of f.feature.scenarios) {groups.set(key(s), [...(groups.get(key(s)) ?? []), s]);}
         if (groups.size <= 1) {out.push(f); continue;}
-        // Positive keeps the original name so links stay stable; if there is none, the first category does.
-        const order = [...groups.keys()].sort((a, b) => (a === 'positive' ? -1 : b === 'positive' ? 1 : a < b ? -1 : a > b ? 1 : 0));
-        order.forEach((category, idx) => {
-            const scenarios = groups.get(category) as KarateScenario[];
+        // Categories put positive first and sort the rest; tag and path groups keep first-seen order.
+        const order = mode === 'category'
+            ? [...groups.keys()].sort((a, b) => (a === 'positive' ? -1 : b === 'positive' ? 1 : a < b ? -1 : a > b ? 1 : 0))
+            : [...groups.keys()];
+        order.forEach((group, idx) => {
+            const scenarios = groups.get(group) as KarateScenario[];
+            const meta = mode === 'category' ? { category: group } : {};
             if (idx === 0) {
-                out.push({ ...f, category, feature: { ...f.feature, scenarios } });
+                out.push({ ...f, ...meta, feature: { ...f.feature, scenarios } });
                 return;
             }
-            let path = `${stem(f.relativePath)}-${slug(category)}.feature`;
-            for (let n = 2; taken.has(path); n++) {path = `${stem(f.relativePath)}-${slug(category)}-${n}.feature`;}
+            let path = `${stem(f.relativePath)}-${slug(group)}.feature`;
+            for (let n = 2; taken.has(path); n++) {path = `${stem(f.relativePath)}-${slug(group)}-${n}.feature`;}
             taken.add(path);
             out.push({
                 ...f,
+                ...meta,
                 relativePath: path,
-                category,
-                feature: { ...f.feature, name: `${f.feature.name} - ${titleCase(category)}`, scenarios }
+                feature: { ...f.feature, name: `${f.feature.name} - ${titleCase(group)}`, scenarios }
             });
         });
     }
@@ -90,11 +99,11 @@ function addSections(features: PlannedFeature[]): PlannedFeature[] {
 }
 
 export function applyLayout(features: PlannedFeature[], layout: LayoutOptions): PlannedFeature[] {
-    const split = layout.splitBy === 'category';
+    const split = layout.splitBy !== 'none';
     const max = layout.maxScenariosPerFile > 0 ? Math.floor(layout.maxScenariosPerFile) : 0;
     if (!split && max === 0 && !layout.sections) {return features;}
     let out = features;
-    if (split) {out = splitByCategory(out);}
+    if (layout.splitBy !== 'none') {out = splitBy(out, layout.splitBy);}
     out = chunk(out, max);
     if (layout.sections) {out = addSections(out);}
     return out;

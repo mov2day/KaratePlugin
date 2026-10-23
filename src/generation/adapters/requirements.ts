@@ -309,15 +309,28 @@ export function buildRequirementScenarios(items: RequirementItem[], opts: Requir
     const ids = [...new Set(safeItems.map(i => redactRequirementText(i.id).text))];
     const background: KarateStep[] = [st('*', `url ${config.config.urlVariable}`)];
     if (model && needsAuth && model.schemes.length > 0) {background.push(st('*', "call read('classpath:common/auth.feature')"));}
-    const features: PlannedFeature[] = scenarios.length === 0 ? [] : [{
-        relativePath: `${root}/${root}-requirements.feature`,
+    const featureOf = (relativePath: string, title: string, list: KarateScenario[]): PlannedFeature => ({
+        relativePath,
         feature: {
-            name: `${oneLine(redactRequirementText(opts.name).text) || 'Requirements'} - requirements`,
+            name: title,
             description: `Requirements ${ids.join(', ')}`,
             background: { steps: background },
-            scenarios
+            scenarios: list
         }
-    }];
+    });
+    const title = `${oneLine(redactRequirementText(opts.name).text) || 'Requirements'} - requirements`;
+    // Requirements that span several API domains get one file per domain; drafts without an operation stay in the base file.
+    const domains = [...new Set(scenarios.map(s => s.domain).filter((d): d is string => !!d))];
+    const features: PlannedFeature[] = [];
+    if (scenarios.length > 0 && domains.length < 2) {
+        features.push(featureOf(`${root}/${root}-requirements.feature`, title, scenarios));
+    } else if (scenarios.length > 0) {
+        const unlinked = scenarios.filter(s => !s.domain);
+        if (unlinked.length > 0) {features.push(featureOf(`${root}/${root}-requirements.feature`, title, unlinked));}
+        for (const d of domains.sort(cmp)) {
+            features.push(featureOf(`${root}/${root}-${d}-requirements.feature`, `${title} - ${d}`, scenarios.filter(s => s.domain === d)));
+        }
+    }
     if (planner) {for (const w of planner.warnings()) {if (!warnings.includes(w)) {warnings.push(w);}}}
     return { features, files: planner ? planner.files() : [], warnings, unmatched };
 }

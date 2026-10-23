@@ -574,7 +574,7 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
             if (lostAssertion) {reasons.push('a Postman test assertion could not be converted');}
 
             const first = chain[0].entry;
-            const category: ScenarioCategory = statuses.some(s => Number(s) >= 400) ? 'negative' : 'positive';
+            const category: ScenarioCategory = statuses.some(s => s === '401' || s === '403') ? 'security' : statuses.some(s => Number(s) >= 400) ? 'negative' : 'positive';
             const tags = config.tags.auto ? [normTag(config.tags.taxonomy[category])] : [];
             let name = flat && first.folders.length > 0 ? `${first.folders.join(' > ')} > ${first.name}` : first.name;
             const base = name;

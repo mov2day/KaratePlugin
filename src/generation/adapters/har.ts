@@ -40,6 +40,8 @@ const MAX_DEPTH = 4;
 const MAX_PROPS = 40;
 const MAX_ASSERTED_IDS = 5;
 const MAX_STEPS_WARN = 60;
+/** Sessions with at most this many requests stay one scenario. */
+const MAX_SINGLE_SCENARIO = 8;
 
 const st = (keyword: KarateStep['keyword'], text: string, extra: Partial<KarateStep> = {}): KarateStep => ({ keyword, text, ...extra });
 const q = (s: string): string => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, '\\n')}'`;
@@ -156,6 +158,45 @@ function idLeaves(root: unknown): IdLeaf[] {
     };
     walk(root, 'response', '', 0);
     return out;
+}
+
+/** Resource a request works on: the first named path segment, ignoring `api` and version prefixes. */
+function resourceOfCall(c: { url: URL }): string {
+    const seg = c.url.pathname.split('/').filter(Boolean).map(decode).find(x => /^[A-Za-z][A-Za-z_-]*$/.test(x) && !/^(?:api|v\d+)$/i.test(x));
+    return (seg ? slug(seg) : '') || 'root';
+}
+
+/**
+ * Splits a recorded session into contiguous runs, one per resource. A request that reuses an id returned by an earlier
+ * response pulls every request between producer and consumer into the same run, so id chains stay in one scenario.
+ */
+function splitFlows<T extends { url: URL; method: string; req: CapturedRequest }>(calls: T[]): T[][] {
+    const cut = calls.map((c, i) => i > 0 && resourceOfCall(c) !== resourceOfCall(calls[i - 1]));
+    const producers = new Map<string, number>();
+    const usable = (v: string | number): boolean => !(typeof v === 'number' && String(v).length < 2);
+    const leaves = (v: unknown, out: (string | number)[], depth = 0): void => {
+        if (depth > MAX_DEPTH + 1 || out.length > 200) {return;}
+        if (Array.isArray(v)) {v.slice(0, 20).forEach(x => leaves(x, out, depth + 1));}
+        else if (isObj(v)) {Object.values(v).slice(0, MAX_PROPS).forEach(x => leaves(x, out, depth + 1));}
+        else if (typeof v === 'string' || typeof v === 'number') {out.push(v);}
+    };
+    calls.forEach((c, j) => {
+        const used: (string | number)[] = [...c.url.pathname.split('/').filter(Boolean).map(decode), ...[...c.url.searchParams.values()]];
+        const body = typeof c.req.body === 'string' ? parseJson(c.req.body) : { ok: false as const };
+        if (body.ok) {leaves(body.value, used);}
+        for (const v of used) {
+            const i = producers.get(String(v));
+            if (i !== undefined && i < j && usable(v)) {for (let k = i + 1; k <= j; k++) {cut[k] = false;}}
+        }
+        const respText = c.req.response?.body;
+        const resp = c.method !== 'HEAD' && typeof respText === 'string' && respText.trim() !== '' ? parseJson(respText) : { ok: false as const };
+        if (resp.ok) {for (const leaf of idLeaves(resp.value)) {if (!producers.has(String(leaf.value))) {producers.set(String(leaf.value), j);}}}
+    });
+    const runs: T[][] = [];
+    calls.forEach((c, i) => {
+        if (cut[i] || runs.length === 0) {runs.push([c]);} else {runs[runs.length - 1].push(c);}
+    });
+    return runs;
 }
 
 interface Call {
@@ -531,7 +572,21 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
         };
     };
 
-    const scenarios: KarateScenario[] = [buildScenario(mainCalls, name, true)];
+    // A longer session is split into one scenario per resource run; short ones stay a single scenario.
+    const runs = mainCalls.length > MAX_SINGLE_SCENARIO ? splitFlows(mainCalls) : [mainCalls];
+    const scenarios: KarateScenario[] = [];
+    if (runs.length <= 1) {
+        scenarios.push(buildScenario(mainCalls, name, true));
+    } else {
+        const named = new Map<string, number>();
+        runs.forEach((run, idx) => {
+            const resource = resourceOfCall(run[0]);
+            const count = (named.get(resource) ?? 0) + 1;
+            named.set(resource, count);
+            const flow = buildScenario(run, `${name}: ${resource} flow${count > 1 ? ` ${count}` : ''}`, idx === 0);
+            scenarios.push({ ...flow, domain: resource });
+        });
+    }
     if (otherCalls.length > 0) {
         for (const c of otherCalls) {
             unsupported.push({ sourceRef: `${c.method} ${c.url.pathname}`, reason: 'request targets a different origin than the base URL (origin not written to the feature)' });

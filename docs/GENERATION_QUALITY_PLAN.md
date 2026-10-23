@@ -92,3 +92,19 @@ Left for later:
 - oauth2 authorizationCode/implicit stay unsupported (they need a browser login); use `API_TOKEN` with a bearer scheme.
 - The password flow in `auth.feature` requests the token with explicit `form field` steps; the Karate v2 `configure auth` oauth2 keys (including `scope`) are unverified, like the rest of `configure auth` persistence.
 - Only one of bearer/basic/oauth2/openIdConnect can be active (they share `Authorization`); apiKey header, query and cookie schemes combine with it.
+
+## Phase 2 notes
+
+Done:
+
+- HAR: sessions with more than 8 requests are split into one scenario per resource run (first named path segment after `api`/version prefixes). A request that reuses an id captured earlier pulls everything between producer and consumer into the same scenario, so id chains stay together. Scenarios are named `<name>: <resource> flow` and carry `domain`. Short sessions and the drafted cross-origin scenario are unchanged.
+- Postman: scenario category now includes `security` (a 401/403 status assertion); previously those were `negative`. Category and domain were already set in flat mode, so `layout.splitBy` works on flat output.
+- GraphQL: no adapter change needed beyond the layout stage reading the `@exploratory` tag as the exploratory category (`KarateScenario.category` has no such value). Positive/negative already carried categories; `-queries`/`-mutations` files are kept.
+- Requirements: when matched criteria span two or more operation domains, one file per domain (`<root>-<domain>-requirements.feature`); unmatched drafts stay in `<root>-requirements.feature`. One domain or none keeps the single file.
+- LayoutStage: `splitBy: 'tag'` (first scenario tag that is not a category/draft tag or a `key=value` tag, else `untagged`) and `'path'` (scenario `domain`, else `general`) are implemented. The first group keeps the original file name. `layoutWarnings` and its pipeline call are removed.
+
+Deferred:
+
+- Scout stays on its own path: one `journey.feature`. Section markers or category naming were not added; baseline and variant scenarios carry no category today, so it needs more than a renderer flag.
+- The `tag` split uses a fixed category taxonomy, not the configured one.
+- HAR split does not consider the `layout.strategy` or run per-resource files itself; use `splitBy: 'path'` for that.
