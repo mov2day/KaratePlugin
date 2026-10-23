@@ -8,7 +8,9 @@ import {
     HarFilterOptions,
     generateSessionId
 } from './CapturedRequest';
+import { redactUrl, credentialKeys, containsCredentialValue } from '../../generation/adapters/secrets';
 import { logger } from '../../utils/logger';
+import * as path from 'path';
 
 /**
  * Main orchestrator for session recording
@@ -76,7 +78,8 @@ export class SessionRecorderService extends EventEmitter {
             startTime: Date.now(),
             requests: [],
             proxyPort: port,
-            status: 'recording'
+            status: 'recording',
+            origin: 'proxy'
         };
 
         // Update UI
@@ -231,7 +234,9 @@ export class SessionRecorderService extends EventEmitter {
             startTime: requests.length > 0 ? requests[0].timestamp : Date.now(),
             endTime: requests.length > 0 ? requests[requests.length - 1].timestamp : Date.now(),
             requests,
-            status: 'stopped'
+            status: 'stopped',
+            origin: 'har',
+            label: path.basename(harPath, path.extname(harPath))
         };
 
         this.showOutputChannel();
@@ -301,14 +306,19 @@ export class SessionRecorderService extends EventEmitter {
             ? `${request.response.duration}ms`
             : '---';
 
-        this.log(`${method} ${request.url}`);
+        this.log(`${method} ${redactUrl(request.url)}`);
         this.log(`  → Status: ${status} | Duration: ${duration}`);
 
         if (request.body) {
-            const bodyPreview = request.body.length > 100
-                ? request.body.substring(0, 100) + '...'
-                : request.body;
-            this.log(`  → Body: ${bodyPreview}`);
+            // Credentials in a request body must not be echoed to the output channel.
+            if (credentialKeys(request.body).length > 0 || containsCredentialValue(request.body)) {
+                this.log('  → Body: [omitted: contains credential-like fields]');
+            } else {
+                const bodyPreview = request.body.length > 100
+                    ? request.body.substring(0, 100) + '...'
+                    : request.body;
+                this.log(`  → Body: ${bodyPreview}`);
+            }
         }
     }
 

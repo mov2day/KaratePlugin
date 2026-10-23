@@ -1246,11 +1246,11 @@ export async function activate(context: vscode.ExtensionContext) {
         async (options?: GenerationCommandOptions) => {
             try {
                 const { SessionRecorderService } = await import('./services/session/SessionRecorderService');
-                const { ResourceLifecycleAnalyzer } = await import('./services/synthesis/ResourceLifecycleAnalyzer');
-                const { CopilotService } = await import('./services/copilotService');
-                const { FileUtils } = await import('./utils/fileUtils');
+                const { SessionSynthesisService } = await import('./services/session/SessionSynthesisService');
+                const { toIncrementalProgress } = await import('./generation/vscode/runGeneration');
 
                 const recorder = SessionRecorderService.getInstance();
+                const session = recorder.getCurrentSession();
                 const requests = recorder.getSessionRequests();
 
                 if (requests.length === 0) {
@@ -1263,8 +1263,8 @@ export async function activate(context: vscode.ExtensionContext) {
                 const useCopilot = isGenerationCommandOptions(options)
                     ? { label: options.useCopilot ? 'AI enhancement' : 'Basic generation', value: options.useCopilot }
                     : await vscode.window.showQuickPick([
-                        { label: '$(sparkle) Enhance with AI (Copilot)', value: true, description: 'Add validations, assertions, and comprehensive tests' },
-                        { label: '$(file-code) Basic Generation', value: false, description: 'Generate simple request/response tests' }
+                        { label: '$(sparkle) Enhance with AI (Copilot)', value: true, description: 'Refine assertions with the skill pack; credentials are removed first' },
+                        { label: '$(file-code) Basic Generation', value: false, description: 'Deterministic request/response scenario' }
                     ], {
                         placeHolder: `Generate Karate tests from ${requests.length} requests`
                     });
@@ -1273,85 +1273,36 @@ export async function activate(context: vscode.ExtensionContext) {
                     return;
                 }
 
+                const imported = session?.origin === 'har';
+                const stamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+                const name = imported && session?.label ? session.label : `recorded-session-${stamp}`;
+
                 await vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
                     title: 'Synthesizing Karate tests...',
                     cancellable: true
                 }, async (progress, token) => {
-                    progress.report({ increment: 20, message: 'Analyzing resource lifecycles...' });
+                    progress.report({ increment: 10, message: 'Selecting API requests...' });
+                    const service = new SessionSynthesisService(context);
+                    const result = await service.synthesize(requests, {
+                        name, mode: imported ? 'har' : 'session', useCopilot: useCopilot.value, sourceRef: imported ? `${name}.har` : name
+                    }, token, toIncrementalProgress(progress, { from: 20, to: 100 }));
 
-                    // Analyze for chained scenarios
-                    const lifecycles = ResourceLifecycleAnalyzer.analyze(requests);
-
-                    progress.report({ increment: 40, message: 'Generating base Karate DSL...' });
-
-                    // Generate base Karate feature
-                    let karateContent = ResourceLifecycleAnalyzer.generateKarate(requests, lifecycles);
-
-                    // Enhance with Copilot if selected
-                    if (useCopilot.value) {
-                        progress.report({ increment: 60, message: 'Enhancing with AI validations...' });
-
-                        // Build request summary for Copilot context
-                        const requestSummary = requests.map(r => {
-                            const respPreview = r.response?.body?.substring(0, 500) || '';
-                            return `${r.method} ${r.path}\nStatus: ${r.response?.status}\nRequest Body: ${r.body?.substring(0, 200) || 'none'}\nResponse: ${respPreview}`;
-                        }).join('\n---\n');
-
-                        const enhancementPrompt = `
-The following is a Karate feature file generated from recorded HTTP requests.
-
-CAPTURED REQUESTS SUMMARY:
-${requestSummary}
-
-REQUIREMENTS - Add comprehensive enhancements:
-1. **Status Code Validations**: Verify correct status codes
-2. **Response Schema Validation**: Match response structure using Karate's 'match' syntax
-3. **Field Type Checks**: Add #string, #number, #boolean, #array, #object checks
-4. **Required Field Validation**: Use #present for mandatory fields
-5. **Business Logic**: Add assertions for relationships between requests (e.g., created ID used in subsequent GET)
-6. **Error Scenarios**: Add commented suggestions for negative tests
-7. **Performance Assertions**: Add reasonable responseTime checks
-
-OUTPUT: Return the COMPLETE enhanced Karate feature file.
-Do NOT add markdown code blocks. Pure Karate DSL only.`;
-
-                        try {
-                            karateContent = await CopilotService.enhanceKarateTest(
-                                karateContent,
-                                'Session recording synthesis',
-                                {
-                                    type: 'postman', // Closest match for request/response data
-                                    postmanCollection: requestSummary
-                                }
-                            );
-                            logger.info('Successfully enhanced session with Copilot');
-                        } catch (copilotError) {
-                            logger.warn('Copilot enhancement failed, using basic generation', copilotError as Error);
-                            vscode.window.showWarningMessage('AI enhancement failed. Using basic generation.');
-                        }
+                    if (!result.success) {
+                        vscode.window.showWarningMessage(`No feature was generated from the session: ${result.warnings.slice(-1)[0] ?? 'unknown reason'}`);
+                        return;
                     }
-
-                    progress.report({ increment: 80, message: 'Saving feature file...' });
-
-                    // Save to file
-                    const outputPath = FileUtils.resolveOutputPath();
-                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-                    const outputFile = path.join(outputPath, `recorded-session-${timestamp}.feature`);
-                    FileUtils.writeFile(outputFile, karateContent);
-
-                    progress.report({ increment: 100 });
-
-                    // Open the generated file
-                    const doc = await vscode.workspace.openTextDocument(outputFile);
-                    await vscode.window.showTextDocument(doc);
-
-                    const enhancedLabel = useCopilot.value ? ' (AI Enhanced)' : '';
+                    if (result.createdFiles.length > 0) {
+                        const doc = await vscode.workspace.openTextDocument(result.createdFiles[0]);
+                        await vscode.window.showTextDocument(doc);
+                    }
+                    const enhancedLabel = useCopilot.value ? ' (AI requested)' : '';
                     vscode.window.showInformationMessage(
-                        `✅ Generated Karate feature from ${requests.length} requests (${lifecycles.length} resource lifecycles)${enhancedLabel}`
+                        `✅ Generated ${result.featuresCreated} Karate feature(s) from ${requests.length} captured requests${enhancedLabel}. ${imported ? 'HAR imports' : 'Recorded sessions'} are inferred API sequences; review them before relying on them.`
                     );
                 });
             } catch (error) {
+                if (error instanceof vscode.CancellationError) {return;}
                 logger.error('Failed to synthesize session', error as Error);
                 vscode.window.showErrorMessage(`Failed to synthesize session: ${error}`);
             }

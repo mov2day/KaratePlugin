@@ -505,7 +505,7 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
         for (const c of otherCalls) {
             unsupported.push({ sourceRef: `${c.method} ${c.url.pathname}`, reason: 'request targets a different origin than the base URL (origin not written to the feature)' });
         }
-        warnOnce(`${otherCalls.length} request(s) target a different origin than the base URL; they are in a drafted scenario without the host. Configure that origin in karate-config`);
+        warnOnce(`${otherCalls.length} request(s) target a different origin than the base URL; they are in a drafted scenario without the host. Configure that origin in karate-config, or re-import with the domain filter to keep only your API host`);
         scenarios.push(buildScenario(otherCalls, `${name} (other origins)`, false, 'requests target a different origin than the base URL; set that origin in karate-config before enabling'));
     }
     if (secretDefs.size > 0) {
@@ -539,4 +539,40 @@ function walkInline(value: unknown, subs: { acc: string; expr: string }[]): unkn
         return e !== undefined ? `#(${e})` : v;
     };
     return go(value, '');
+}
+
+const REDACTED = '[REDACTED]';
+/** Request/response bodies for AI evidence with credential values removed; headers are never included. */
+function redactedBody(text: string | undefined, limit: number): string {
+    if (typeof text !== 'string' || text.trim() === '') {return '';}
+    const parsed = parseJson(text);
+    if (parsed.ok) {
+        const go = (v: unknown, key: string): unknown => {
+            if (Array.isArray(v)) {return v.slice(0, 5).map(x => go(x, key));}
+            if (isObj(v)) {return Object.fromEntries(Object.entries(v).slice(0, MAX_PROPS).map(([k, x]) => [k, go(x, k)]));}
+            if (isBig(v)) {return v.slice(BIG.length);}
+            if ((typeof v === 'string' || typeof v === 'number') && (isSecretKey(key) || (typeof v === 'string' && (looksLikeCredentialValue(v) || containsCredentialValue(v))))) {return REDACTED;}
+            return v;
+        };
+        return JSON.stringify(go(parsed.value, '')).slice(0, limit);
+    }
+    return credentialKeys(text).length > 0 || containsCredentialValue(text) ? '[REDACTED BODY]' : text.slice(0, limit);
+}
+
+/** A compact, credential-free description of the capture for the optional AI refiner. */
+export function redactedCaptureText(entries: CapturedRequest[], maxEntries = 40): string {
+    const lines: string[] = [];
+    for (const e of entries.slice(0, maxEntries)) {
+        let path = e.path;
+        try { const u = new URL(e.url); path = u.pathname + (u.search ? `?${redactQuery(u.searchParams)}` : ''); } catch { /* keep the recorded path */ }
+        lines.push(`${String(e.method).toUpperCase()} ${path} -> ${e.response?.status ?? 'no response'}`);
+        const rq = redactedBody(e.body, 300);
+        if (rq) {lines.push(`  request: ${rq}`);}
+        const rs = redactedBody(e.response?.body, 500);
+        if (rs) {lines.push(`  response: ${rs}`);}
+    }
+    return lines.join('\n');
+}
+function redactQuery(params: URLSearchParams): string {
+    return [...params.entries()].map(([k, v]) => `${k}=${isSecretKey(k) || looksLikeCredentialValue(v) ? REDACTED : v}`).join('&');
 }
