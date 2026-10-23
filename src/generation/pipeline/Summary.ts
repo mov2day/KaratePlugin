@@ -100,7 +100,13 @@ export function formatSummary(r: PipelineResult, opts: SummaryOptions = {}): Gen
             details.push(`  ${f.path}: ${ids.join(', ') || 'no rule ids'}`);
         }
     }
-    if (r.dryRun) {details.push(`Dry run ${r.dryRun.status}: ${r.dryRun.message}`);}
+    if (r.dryRun) {
+        details.push(r.dryRun.status === 'skipped' ? `Dry run: skipped (${r.dryRun.message})` : `Dry run: ${r.dryRun.status}`);
+        if (r.dryRun.status === 'failed') {
+            details.push(`  ${r.dryRun.message}`);
+            for (const f of r.dryRun.findings ?? []) {details.push(`  ${f.ruleId} line ${f.line}: ${f.message}`);}
+        }
+    }
     if (r.warnings.length) {
         details.push('Warnings');
         for (const x of r.warnings) {details.push(`  ${x}`);}
