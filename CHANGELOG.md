@@ -19,26 +19,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Safer generated output.** Output-path traversal and absolute output paths are rejected. A user-edited generated sibling is preserved by choosing a unique `<name>.generated.generated.feature` path. Karate v2 dry runs stage content in a temporary directory before protected writes; parse failures produce draft siblings rather than replacing existing features.
 - **Legacy generation safety.** MCP OpenAPI generation now uses the shared pipeline and protected writer. Legacy spec sync gates its compatibility output and writes a sibling for review instead of replacing a scenario in place; the legacy generator no longer supplies a localhost fallback.
 - **Old `.github/skills` replaced by `skills/`.** The AI skill pack now lives in `skills/` with `skills/manifest.json` and ships in the extension package. Skills in a workspace `.github/skills` folder are still loaded as extra, lower-priority guidance.
-- **`ResourceLifecycleAnalyzer` removed.** Recorded sessions no longer produce per-resource lifecycle scenarios, response-time assertions, or commented negative ideas. Session and HAR output now goes to `<slug>/<slug>.feature` (no timestamp) and respects the no-clobber rules; session logs mask credentials.
+- **`ResourceLifecycleAnalyzer` removed.** Recorded sessions no longer produce per-resource lifecycle scenarios, response-time assertions, or commented negative ideas. Session and HAR output use `<slug>/<slug>.feature` (no timestamp) with the `domain` layout; `flat` and `method` layouts emit `<slug>.feature`. Output respects the no-clobber rules, and session logs mask credentials.
 - **Templates are ignored for OpenAPI/Combined generation.** User-chosen test templates are no longer honoured for OpenAPI or Combined generation (and Jira output continues to ignore `template`); the contract-driven pipeline selects scenarios.
 - **MCP generation writes files.** `generate_tests` writes protected scaffold, data, and feature files and returns absolute paths. `include_background` is ignored because the v2 pipeline always emits a safe Background.
 - **Reusability engine retired.** The caller-less regex-driven reusability engine is internal only and is not exposed as a command. Reuse now comes from the scaffolded `common/` helpers and from `callonce` only for pure-data blocks.
-- **Removed dead code.** `ScenarioOutlineBuilder`, the unused `copilotService.ts.bak`, and the unused `{{source}}` placeholder in the detailed template were removed.
 
 ### Added
-- One generation pipeline for OpenAPI, Confluence, Postman, HAR/session, GraphQL, Jira, directory batch, and Scout, with deterministic, contract-driven scenarios (status codes from declared responses, schema matching, required/enum/boundary negatives, CRUD chaining, 401/403 only where security applies).
-- A quality gate with `V2-*` rules, shared by generation and the editor linter (source `Karate Gate`), plus an optional Karate v2 dry-run when a v2 CLI is found. Rules can be disabled through `karate.linter.enabledRules`.
-- AI refinement with output cleaning, rejection of invalid answers, one repair round, and a run summary that shows what was rejected.
-- `.karate-generator.json` loader with validation warnings and legacy-settings migration.
+- **Pipeline and output by mode.** OpenAPI and combined OpenAPI + Confluence now use the adapter → normalized model → planner → renderer → scaffolder → optional AI refiner → quality gate → protected writer → optional staged dry-run pipeline. They produce layout-strategy feature files, a safe Background, contract-derived status/schema assertions, request `data/` and response `schemas/` where planned, and category-tagged positive, negative, edge, boundary, and security scenarios. Required/enum/boundary negatives, CRUD chaining, and 401/403 scenarios are planned only where the supplied contract supports them; `@exploratory` is opt-in.
+- **Requirements modes.** Confluence and Jira acceptance criteria are mapped to contract operations when possible; otherwise their output is an honest, traceable `@ignore` draft instead of a runnable guessed request. Combined mode appends those requirement drafts to its contract features.
+- **Import modes.** Postman conversion preserves supplied requests, variables, authentication, scripts, assertions, and order as native Karate scenarios. HAR/session conversion preserves captured flow and writes `<slug>/<slug>.feature` (no timestamp); captured/session logging redacts credentials. GraphQL builds a model from the supplied schema and produces features that use supplied operations/variables and assert data and errors. Directory batch gives each specification a namespace to prevent output collisions.
+- **Scout, MCP, and maintenance paths.** Scout suite save now gates and demotes failing scenarios before the protected writer saves its suite. MCP `generate_tests` routes OpenAPI through the shared pipeline, writes the protected scaffold/data/features, returns generated files, and always emits the safe Background (`include_background` is obsolete). Legacy spec sync gates compatibility output and always creates a review sibling rather than replacing a scenario in place. Coverage-dashboard append rejects changes that introduce new gate errors and uses protected sibling output when the target lacks a consistent generated header. AI enhancement and repair use the shared prompt/refinement contracts; rejected refinement retains deterministic output.
+- **Project scaffold.** New projects can include `karate-config.js`, `karate-config-<env>.js` or `config/<env>.json`, `common/auth.feature`, `common/utils.feature`, `data/*.json`, and `schemas/*.json`. Existing `karate-config*.js` files are adopted, never overwritten. Secrets are read only through `karate.sysenv(...)` or system properties. An authored `common/auth.feature` can declare supported security schemes with `# Configures: schemeName, otherScheme`; absent coverage causes affected secured operations to become drafts, while a missing header warns that coverage cannot be verified.
+- **Configuration and migration.** Added validated `.karate-generator.json` project configuration. Precedence is built-in defaults, then VS Code settings, then this workspace file; invalid files/keys warn and fall back rather than block generation. It supports `karateVersion`, `layout`, `config`, `style`, `tags`, `scenarios`, `data`, `ai`, and `gate` fields documented in `docs/generation.md`. Legacy settings remain a lower-priority layer; `testTemplate` is only migrated when no config file exists: `standard` keeps defaults, `detailed` enables exploratory scenarios, and `minimal` selects positive/negative categories.
+- **Settings added.** Added `karateDsl.generation.configFile` (the project config path), `karateDsl.generation.configMode` (`standard` or `env-json` scaffold mode), and `karateDsl.generation.exploratory` (opt-in exploratory scenarios). The project configuration is the preferred place for their corresponding choices.
+- **Quality gate and linter.** Added the shared `Karate Gate` linter integration and optional staged Karate v2 dry run. Rules can be disabled with `karate.linter.enabledRules`; duplicate same-line `K001`/`S002` diagnostics are suppressed. `V2-LOCK-001` flags `@parallel=false` and offers the `@lock=<name>` quick fix. Dry run uses a v2 CLI found on `PATH` or a configured v2 JAR with Java 21+; no CLI, disabled dry run, environmental failures, or unrecognized non-zero output are explicitly **skipped**, not passes.
+
+| Rule | Meaning |
+|---|---|
+| `V2-GHERKIN-001` | Step is outside a Background or Scenario. |
+| `V2-GHERKIN-002` | Step appears after an `Examples:` table. |
+| `V2-LOCK-001` | `@parallel=false` is unsupported in Karate v2; use `@lock=<name>`. |
+| `V2-CFG-001` | Feature hard-codes an HTTP URL. |
+| `V2-CFG-002` | Request has no URL set in Background or scenario. |
+| `V2-SEC-001` | Step contains a literal credential or secret. |
+| `V2-ASSERT-001` | Request scenario does not assert status. |
+| `V2-ASSERT-002` | Successful 2xx scenario lacks a body assertion. |
+| `V2-DRAFT-001` | Runnable scenario still contains `TODO`. |
+| `V2-DUP-001` | Scenario name is duplicated. |
+| `V2-API-001` | `karate.stop(` would hang CI. |
+| `V2-API-002` | `karate.toJava(` is discouraged in v2. |
+| `V2-NUM-001` | Integer literal exceeds JavaScript safe range. |
+| `V2-REF-001` | `read('classpath:...')` target is unknown. |
+| `V2-TAG-001` | Category tag differs from configured taxonomy. |
+| `V2-REUSE-001` | `callonce` is used for auth/header/setup instead of `call`. |
+| `V2-PARSE-001` | Staged v2 dry run reported a parse error. |
+| `V2-AI-001` | AI returned empty output. |
+| `V2-AI-002` | AI dropped an input scenario. |
+| `V2-AI-003` | AI invented contract paths or references. |
+| `V2-AI-004` | AI output is not the requested Karate shape. |
+| `V2-AI-005` | AI output has an unterminated docstring. |
+| `V2-AI-006` | AI made an input `@ignore` Feature or Scenario runnable. |
+
+- **AI skill pack and output contracts.** Bundled Karate v2 guidance now lives in `skills/`, selected through `skills/manifest.json`; workspace `.github/skills` remains extra, lower-priority guidance. `PromptBuilder` centralizes task focus and the pure-Karate output contract, sanitizes evidence boundaries, and also supplies a plain-text completion path for non-feature requests. Feature refinement cleans fences/prose, rejects invalid, invented, dropped, shape-invalid, docstring-invalid, or undrafted output, then allows one repair round and reports rejections.
+- **Safety and robustness.** Source adapters share secret redaction; raw bodies with credential-like fields are omitted, body scanning is capped at 100k where it cannot be safely scanned, and credential/JWT detection uses bounded regular expressions. Protected writes reject absolute paths, `..` traversal, and unsafe symlink targets. Generated headers carry a SHA-256 body hash; edited files gain `.generated.feature` siblings, including the unique `.generated.generated.feature` chain. Dry-run failures are evaluated before protected writes and become draft siblings.
 - Documentation: [docs/generation.md](docs/generation.md).
 
 ### Changed
-- Gate findings that duplicate the hard-coded URL (`K001`) or hard-coded secret (`S002`) diagnostics on the same line are hidden.
-- `V2-GHERKIN-002` rejects steps after an `Examples:` table, as required by Karate v2 parsing.
-- Duplicate generation settings now point to their `.karate-generator.json` replacement in the Settings UI.
+- The supported generation commands now route through the shared pipeline: **Generate Tests from OpenAPI**, **Generate Combined Tests**, **Generate Tests from Confluence**, **Import Postman Collection**, **Import HAR File**, **Stop Recording & Synthesize**, **Generate Tests from GraphQL**, **Generate Tests from Directory**, **Generate Tests from Jira**, and Scout suite save. MCP generation is also pipeline-backed; legacy spec sync remains compatibility-only and side-by-side.
+- `V2-GHERKIN-002` now rejects steps after `Examples:` to match Karate v2 parsing. The Settings UI points deprecated generation settings to their `.karate-generator.json` replacements: `structuringStrategy` → `layout.strategy`, `autoTag` → `tags.auto`, `smartTestData` → `data.smart`, `scenarioOutlineThreshold` → `scenarios.outlineThreshold`, `sharedStylePath` → `style`, and `karateDsl.outputPath` → `layout.outputRoot`.
+
+### Fixed
+- Plain-text AI completions now use the explicit text output contract rather than a feature-only contract. Prompt construction preserves the requested output shape while treating evidence as data.
+- Spec-diff matching is hash-aware; coverage-dashboard append and generated output use the protected writer rather than overwriting edited content.
+- Auth coverage checking honors the `# Configures:` contract, and feature parsing/preflight is comment-aware. Bounded scanners and redaction avoid unbounded credential matching and unsafe large-body processing.
+
+### Security
+- Generation and captured-session paths redact credential-like content; generated scaffold never persists secrets. Workspace-confined, symlink-safe protected writes reject unsafe paths before writing.
+
+### Removed
+- `ResourceLifecycleAnalyzer`, per-resource recorded-session lifecycle scenarios, response-time assertions, commented negative ideas, `ScenarioOutlineBuilder`, the unused `copilotService.ts.bak`, and the unused detailed-template `{{source}}` placeholder were removed.
+- No contributed VS Code setting IDs were removed; legacy generation settings remain available for migration.
+
+### Deprecated
+- `karateDsl.generation.structuringStrategy`, `karateDsl.generation.autoTag`, `karateDsl.generation.smartTestData`, `karateDsl.generation.scenarioOutlineThreshold`, `karateDsl.generation.sharedStylePath`, and `karateDsl.outputPath` remain read but are deprecated in favor of the project-config replacements listed above.
 
 ### Known limitations
 - No Karate v2 CLI was available for this release, so generated output was not executed against Karate v2 (not executed: no v2 CLI available). `configure` persistence through `call`, the `##ignore` marker, and the dry-run output format are unverified. See the known-limitations section of docs/generation.md.
+
+### Upgrade notes
+- [ ] Run generated suites with Karate 2.x and Java 21+; configure `karateDsl.execution.jarPath` or `karateDsl.execution.karateVersion`.
+- [ ] Add `.karate-generator.json` to make project layout, config mode, categories, data, AI, and gate choices explicit.
+- [ ] Expect `.generated.feature` review siblings when a generated feature has been edited; repeated edited siblings extend the `.generated` chain.
+- [ ] Migrate `@parallel=false` to `@lock=<name>`.
+- [ ] Review `common/auth.feature` and add its `# Configures:` header if you maintain auth yourself.
 
 ## [2.0.3] - 2026-09-13
 

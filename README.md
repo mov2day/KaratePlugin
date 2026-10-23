@@ -12,14 +12,77 @@ Karate Test Management brings test creation, execution, coverage, quality, and m
 
 ## Version 2.0.4 highlights
 
-- **Higher-quality generated Karate 2.x tests** — every generation mode shares one pipeline and one project layout: a `karate-config.js` with environment switching, auth in `common/auth.feature`, request data in `data/`, response schemas in `schemas/`. Operations that cannot be generated safely become `@ignore` drafts instead of runnable guesses. [Generation guide](docs/generation.md).
-- **Configuration file** — `.karate-generator.json` controls layout, style, tag names, scenario categories, and the quality gate; VS Code settings remain as lower-priority defaults.
-- **Quality gate** — each generated file is checked against `V2-*` rules before it is written, the same rules show as editor diagnostics, and a Karate v2 dry-run is added when a v2 CLI is available.
-- **Regeneration keeps your edits** — unchanged generated files are updated; edited ones get a `.generated.feature` sibling; config, data, and schema files are never overwritten.
-- **Skill pack** — AI prompts for every AI path are grounded by the `skills/` pack selected through `skills/manifest.json`.
-- **Exploratory scenarios are opt-in** — enable them with `scenarios.exploratory` or `karateDsl.generation.exploratory`.
+2.0.4 moves OpenAPI, requirements, imports, Scout, and MCP generation onto the same Karate 2.x-focused path. It creates a reviewable project layout, uses contract evidence for runnable scenarios, makes uncertain work explicit `@ignore` drafts, and preserves edited output during regeneration. The detailed behavior, configuration reference, and limitations are in the [generation guide](docs/generation.md).
 
-Targets Karate 2.x, which needs Java 21 or later to run. See the [changelog](CHANGELOG.md) for breaking-behavior notes.
+### Generation quality at a glance
+
+- **OpenAPI and combined OpenAPI + Confluence** create contract-derived features with positive, negative, edge, boundary, and security categories (plus opt-in exploratory scenarios), declared-status assertions, schemas/data where planned, and CRUD chaining when enabled. Combined generation appends traceable requirements drafts where the requirements cannot be mapped honestly to a contract operation.
+- **Confluence and Jira** turn acceptance criteria into traceable Karate scenarios when they can be mapped to a contract; otherwise they produce `@ignore` drafts rather than invent an API request.
+- **Postman, HAR/session, and GraphQL** preserve the supplied request flow or schema evidence in Karate features. HAR/session output is `<slug>/<slug>.feature` with the `domain` layout; `flat` and `method` layouts emit `<slug>.feature`. GraphQL scenarios use the supplied operations, variables, schema, and data/errors assertions.
+- **Directory batch** namespaces each specification’s output to avoid collisions. **Scout** saves its journey suite through the gate and protected writer. **MCP `generate_tests`** uses the same scaffold and writer, returns the generated files, and always emits the safe Background.
+- **Spec-diff/sync, coverage-dashboard append, and AI enhance/repair** are protected too: legacy sync gates its compatibility output and writes a review sibling; coverage append rejects new gate errors and uses a sibling when the target is not a consistent generated file; AI keeps deterministic output when refinement is rejected.
+
+Every pipeline-backed mode follows: adapter → normalized model → planner → renderer → scaffolder → optional AI refiner → quality gate → protected writer → optional staged Karate v2 dry run.
+
+### Sample generated project (default `domain` layout)
+
+```text
+src/test/java/
+  karate-config.js
+  karate-config-dev.js
+  karate-config-staging.js
+  common/
+    auth.feature                 # only when the spec declares security schemes
+    utils.feature
+  data/
+    pets.json
+  schemas/
+    pets.json
+src/test/karate/
+  pets/
+    pets.feature
+    pets-security.feature
+```
+
+Existing `karate-config*.js` files are adopted, not overwritten. `common/auth.feature` and `common/utils.feature`, plus data and schema files, are user-owned after creation. Credentials are read through `karate.sysenv(...)` or system properties; they are not generated into files.
+
+### Project configuration
+
+Workspace `.karate-generator.json` values override VS Code settings, which override built-in defaults. This is a valid compact configuration using only supported schema fields:
+
+```json
+{
+  "layout": { "outputRoot": "src/test/karate", "strategy": "domain", "classpathRoot": "src/test/java" },
+  "config": { "mode": "standard", "urlVariable": "baseUrl", "envs": ["dev", "staging"] },
+  "tags": { "auto": true },
+  "scenarios": { "categories": ["positive", "negative", "security"], "exploratory": false, "crud": true },
+  "data": { "smart": true, "externalize": true },
+  "ai": { "refine": true, "maxRetries": 1, "chunk": "feature" },
+  "gate": { "dryRun": "auto", "failOn": "error" }
+}
+```
+
+Legacy generation settings are still read when the config file does not override them. In particular, `testTemplate: detailed` maps to opt-in exploratory scenarios, while `minimal` maps to positive and negative categories only.
+
+### Quality gate and rule IDs
+
+Before output is written, the gate checks Karate v2 structure, URLs/configuration, secrets, assertions, drafts, duplicate names, unsafe APIs/numbers, classpath references, tag taxonomy, and auth-helper reuse. The same findings appear in the editor as **Karate Gate** diagnostics. `V2-LOCK-001` also offers the `@parallel=false` → `@lock=<name>` quick fix. A Karate v2 dry run is staged when a v2 CLI is found; otherwise it is reported as skipped, not passed.
+
+See [the full rule table and dry-run semantics](docs/generation.md#quality-gate), including `V2-AI-*` refinement checks.
+
+### Regeneration and your edits
+
+Generated features contain a body hash in their header. An unchanged generated file is updated; an edited file is kept and new output is written beside it as `<name>.generated.feature`. If that sibling is also edited, the writer continues the chain (`.generated.generated.feature`). Absolute paths, `..` traversal, and unsafe symlink writes are rejected. A failed dry run never replaces the existing feature; it produces a draft sibling for review.
+
+If you maintain `common/auth.feature`, declare the supported OpenAPI security-scheme names in `# Configures: schemeName, otherScheme`. The generator uses that contract to draft secured operations it cannot verify.
+
+### Upgrading to 2.0.4
+
+- Use Karate 2.x with Java 21 or later. Set `karateDsl.execution.jarPath` or `karateDsl.execution.karateVersion`; the bundled 1.5.0.RC3 jar cannot run generated v2 suites.
+- Add `.karate-generator.json` for project-level layout, configuration, scenario, AI, and gate choices.
+- Expect edited generated features to receive `.generated.feature` review siblings.
+- Replace `@parallel=false` with `@lock=<name>` (the migration/quick fix can help).
+- Treat the current real-v2-run limitations in [the generation guide](docs/generation.md#known-limitations-and-manual-acceptance) as open verification work.
 
 ## Version 2.0.3 highlights
 

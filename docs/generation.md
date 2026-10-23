@@ -162,6 +162,12 @@ Every generated file passes the gate before it is written. The same rules run in
 | `V2-REF-001` | error | `read('classpath:...')` does not resolve to a known file |
 | `V2-TAG-001` | warning | Category tag differs from the configured taxonomy |
 | `V2-REUSE-001` | warning | `callonce` of an auth/header/setup helper (use `call`) |
+| `V2-PARSE-001` | error | Staged v2 dry run reported a parse error |
+| `V2-AI-001` | error | AI returned empty output |
+| `V2-AI-002` | error | AI dropped an input scenario |
+| `V2-AI-003` | error | AI invented contract paths or references |
+| `V2-AI-004` | error | AI output is not the requested Karate shape |
+| `V2-AI-005` | error | AI output has an unterminated docstring |
 | `V2-AI-006` | error | AI refinement made an input `@ignore` Feature or Scenario runnable |
 
 AI-refined output is also checked for non-feature content, unterminated docstrings, and invented paths before the gate. A rejected refinement keeps the deterministic output and the run summary says why. When a Karate v2 CLI is found (`karate` on `PATH` reporting v2, or `karateDsl.execution.jarPath` pointing at a v2 jar with Java 21+), the gate also runs a dry-run. The bundled Karate 1.5.0.RC3 jar is never used for this and nothing is downloaded automatically.
