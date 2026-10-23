@@ -9,7 +9,6 @@ import { OpenAPIParser } from './openApiParser';
 import { KarateGenerator } from './karateGenerator';
 import { ConfluenceClient } from './confluenceClient';
 import { ConfluenceParser } from './confluenceParser';
-import { ReusabilityEngine } from './ReusabilityEngine';
 import { SpecHashManager, SpecMetadata } from './specHashManager';
 import { GenerationOptions, KarateStyle, KarateTemplate } from '../types';
 import { SharedStyleService } from './SharedStyleService';
@@ -273,62 +272,6 @@ export class GenerationService {
 
         const testData = new ConfluenceParser().parsePageContent(page);
         return { page, testData };
-    }
-
-    private applyReusability(content: string, outputPath: string): string {
-        const result = ReusabilityEngine.extract(content);
-        const createdPaths = new Set<string>();
-
-        if (result.commonFiles.length > 0) {
-            const commonDir = ReusabilityEngine.getCommonDir(outputPath);
-            for (const file of result.commonFiles) {
-                const filePath = path.join(commonDir, path.basename(file.path));
-                FileUtils.writeFile(filePath, file.content);
-                createdPaths.add(path.basename(file.path));
-            }
-            logger.info(`ReusabilityEngine: extracted ${result.commonFiles.length} common file(s) to ${commonDir}`);
-        }
-
-        // Phantom reference handling (Copied logic from WebviewProvider to keep it self-contained)
-        // Ideally this should be in ReusabilityEngine itself but keeping scope limited to refactoring
-        const readRefPattern = /read\(['"]common\/([^'"]+)['"]\)/g;
-        let match: RegExpExecArray | null;
-        while ((match = readRefPattern.exec(result.modifiedContent)) !== null) {
-            const refFilename = match[1];
-            if (!createdPaths.has(refFilename)) {
-                const commonDir = ReusabilityEngine.getCommonDir(outputPath);
-                const stubPath = path.join(commonDir, refFilename);
-                if (!fs.existsSync(stubPath)) {
-                    this.createStubFile(stubPath, refFilename);
-                    createdPaths.add(refFilename);
-                }
-            }
-        }
-
-        return result.modifiedContent;
-    }
-
-    private createStubFile(stubPath: string, refFilename: string) {
-        const featureName = refFilename.replace('.feature', '').replace(/-/g, ' ');
-        let steps = ['  # TODO: Implement this shared helper', `  * def result = 'placeholder'`];
-
-        if (refFilename.includes('setup')) {
-            steps = ["  * def baseUrl = karate.properties['baseUrl'] || 'http://localhost:8080'", '  * url baseUrl', '  * configure ssl = true'];
-        } else if (refFilename.includes('auth')) {
-            steps = ["  * def token = 'mock-token-123'", "  * def authHeader = { Authorization: 'Bearer ' + token }"];
-        } else if (refFilename.includes('headers')) {
-            steps = ["  * def headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' }"];
-        }
-
-        const stubContent = [
-            `Feature: ${featureName.charAt(0).toUpperCase() + featureName.slice(1)} Helper`,
-            '',
-            `Scenario: ${featureName}`,
-            ...steps,
-            '',
-        ].join('\n');
-        FileUtils.writeFile(stubPath, stubContent);
-        logger.info(`ReusabilityEngine: created stub for phantom reference common/${refFilename}`);
     }
 
     private async saveSpecMetadata(specPath: string, endpoints: any[], testFilePath: string): Promise<void> {
