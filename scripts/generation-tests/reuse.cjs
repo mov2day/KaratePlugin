@@ -15,7 +15,7 @@ const keys = r => r.commonFiles.map(f => f.path);
 
 module.exports = [
     {
-        name: 'reuse: a whole auth Background block moves to common/auth.feature with @ignore and a classpath callonce',
+        name: 'reuse: a whole auth Background block moves to common/auth.feature with @ignore and a classpath call (header step => call)',
         run() {
             const r = engine().extract(AUTH_FEATURE);
             assert.deepEqual(keys(r), ['common/auth.feature']);
@@ -23,7 +23,8 @@ module.exports = [
             assert.match(helper, /^@ignore\nFeature:/);
             assert.ok(helper.includes("* def token = karate.sysenv('API_TOKEN', '')"));
             assert.ok(helper.includes("* header Authorization = 'Bearer ' + token"));
-            assert.ok(r.modifiedContent.includes("  * callonce read('classpath:common/auth.feature')"));
+            assert.ok(r.modifiedContent.includes("  * call read('classpath:common/auth.feature')"));
+            assert.equal(r.commonFiles[0].callType, 'call');
             assert.ok(!r.modifiedContent.includes('header Authorization'));
             assert.ok(r.modifiedContent.includes('  * url baseUrl'));
             assert.deepEqual(r.skipped.map(s => s.lines), ['* url baseUrl']);
@@ -124,7 +125,7 @@ module.exports = [
     {
         name: 'reuse: no phantom-stub fabrication remains in src',
         run() {
-            // Excluded: src/**/*.test.* (none today) and webview placeholder text is not matched by these literals.
+            // No exclusions: every .ts/.tsx under src is scanned (tests live in scripts/, outside src).
             // scaffold/CI sample defaults (localhost:8080) are legitimate user-visible defaults, so only the
             // stub-specific literals are checked: the mock token, the stub function, and the stub log line.
             const bad = [];
@@ -137,6 +138,78 @@ module.exports = [
             });
             walk(path.resolve(__dirname, '../../src'));
             assert.deepEqual(bad, []);
+        }
+    },
+    {
+        name: 'reuse: a request chain in the Background is never split (nothing moved, request-steps reason)',
+        run() {
+            const t = join('Feature: x', '', 'Background:', "  Given path '/oauth/token'", "  And form field grant_type = 'client_credentials'",
+                '  When method post', '  Then status 200', '  * def token = response.access_token', ...SCEN);
+            const r = engine().extract(t);
+            assert.equal(r.modifiedContent, t);
+            assert.deepEqual(r.commonFiles, []);
+            assert.ok(r.skipped.some(s => /request/i.test(s.reason) && s.lines.includes('response.access_token')));
+            assert.ok(!r.skipped.some(s => /already extracted/.test(s.reason)));
+        }
+    },
+    {
+        name: 'reuse: only the leading pure-* block moves; steps after a request stay',
+        run() {
+            const t = join('Feature: x', '', 'Background:', "  * def token = karate.sysenv('T', '')", "  Given path 'login'", '  When method post',
+                '  Then status 200', "  * header Authorization = 'Bearer ' + token", ...SCEN);
+            const r = engine().extract(t);
+            assert.deepEqual(keys(r), ['common/auth.feature']);
+            assert.equal(r.commonFiles[0].callType, 'callonce');
+            assert.ok(r.modifiedContent.includes("  * callonce read('classpath:common/auth.feature')\n  Given path 'login'\n  When method post\n  Then status 200\n  * header Authorization"));
+            assert.ok(r.skipped.some(s => /request/i.test(s.reason)));
+        }
+    },
+    {
+        name: 'reuse: callType is callonce only for pure data blocks',
+        run() {
+            const bg = (...steps) => join('Feature: x', '', 'Background:', ...steps, ...SCEN);
+            const kind = t => engine().extract(t).commonFiles.map(f => f.callType);
+            assert.deepEqual(kind(bg("  * def payload = { a: 1 }")), ['callonce']);
+            assert.deepEqual(kind(bg("  * def payload = karate.call('x.feature')")), ['call']);
+            assert.deepEqual(kind(bg("  * configure ssl = true")), ['call']);
+            assert.deepEqual(kind(bg("  * header Accept = 'application/json'")), ['call']);
+            assert.deepEqual(kind(bg("  * call read('classpath:common/cleanup-all.feature')")), ['call']);
+            assert.deepEqual(kind(bg("  * def cleanup = 1")), []);
+        }
+    },
+    {
+        name: 'reuse: CRLF input keeps CRLF in the modified feature and the helpers',
+        run() {
+            const r = engine().extract(AUTH_FEATURE.replace(/\n/g, '\r\n'));
+            assert.equal(r.commonFiles.length, 1);
+            for (const t of [r.modifiedContent, r.commonFiles[0].content]) assert.ok(!/(^|[^\r])\n/.test(t), 'bare LF found');
+        }
+    },
+    {
+        name: 'reuse: content preservation, expanding every helper call restores the original step list',
+        run() {
+            const steps = t => t.split(/\r?\n/).map(l => l.trim()).filter(l => /^(\*|Given|When|Then|And|But)\s/.test(l));
+            const outline = join('Feature: o', '', 'Background:', "  * def authToken = karate.sysenv('T', '')", "  * configure ssl = true", '',
+                'Scenario Outline: x', "  Given path '<p>'", '  When method get', '  Then status 200', '  And match response == []', '  Examples:', '    | p |', '    | a |');
+            const inputs = [
+                AUTH_FEATURE,
+                AUTH_FEATURE.replace(/\n/g, '\r\n'),
+                outline,
+                join('Feature: x', '', 'Background:', "  * def payload = { a: 1 }", "  * header Accept = 'application/json'", "  * def tokenA = karate.uuid()", ...SCEN),
+                join('Feature: x', '', 'Background:', "  * def userId = read('d.json')", '  * def authToken = userId.token', ...SCEN),
+                join('Feature: x', '', 'Background:', "  * def token = 'literal-secret'", "  * configure ssl = true", ...SCEN),
+                join('Feature: x', '', 'Background:', "  Given path 'a'", '  When method post', '  Then status 200', '  * def token = response.t', ...SCEN),
+                join('Feature: x', ...SCEN)
+            ];
+            for (const input of inputs) {
+                const r = engine().extract(input);
+                const files = new Map(r.commonFiles.map(f => [f.path, f.content]));
+                const expanded = r.modifiedContent.split(/\r?\n/).flatMap(l => {
+                    const m = /^\s*\*\s+(?:call|callonce)\s+read\('classpath:(common\/[^']+)'\)/.exec(l);
+                    return m && files.has(m[1]) ? steps(files.get(m[1])) : steps(l);
+                });
+                assert.deepEqual(expanded, steps(input));
+            }
         }
     }
 ];

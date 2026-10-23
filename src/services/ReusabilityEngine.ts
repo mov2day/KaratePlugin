@@ -29,6 +29,10 @@ interface ExtractionPattern {
 }
 
 /** Configuration belongs in karate-config; these lines are never moved. */
+/** `*` steps that belong to a request chain (never extractable, and a block right after one is not either). */
+const REQUEST_STEP = /^\s*\*\s*(path|request|form\s+field|multipart|param|params|method|status|soap|retry)\b/i;
+const DATA_STEP = /^\s*\*\s*(def|text|table|copy|set|json|xml|string|xmlstring|csv|yaml)\s/;
+const SAFE_KARATE = /^(sysenv|sysprop|uuid|copy|faker)\b/;
 const URL_LINE = /baseUrl|urlVariable|^\s*(\*|Given|And)\s+(url|configure\s+url)\b/i;
 const DEFINES = /^\s*(?:\*|Given|And)\s+(?:def|text|table|copy|json|string|xml|csv|yaml)\s+([A-Za-z_$][\w$]*)/;
 const REF_COMMON = /read\(\s*['"](?:classpath:)?(?:\.\/)?common\/([^'"]+)['"]/g;
@@ -52,8 +56,6 @@ export class ReusabilityEngine {
                 /^\s*\*\s*(def|text)\s+.*token/i,
                 /^\s*\*\s*header\s+Authorization/i,
                 /^\s*\*\s*call\s+.*auth/i,
-                /^\s*Given\s+.*\/oauth\/token/i,
-                /^\s*Given\s+.*\/auth\/login/i,
                 /^\s*\*\s*def\s+auth(Token|Response|Header)/i,
             ],
         },
@@ -82,9 +84,9 @@ export class ReusabilityEngine {
         {
             type: 'cleanup', title: 'Cleanup Helper', scenario: 'Cleanup Test Data', file: 'cleanup.feature',
             detect: [
-                /^\s*\*\s*(Given|When)\s+.*delete/i,
                 /^\s*\*\s*call\s+.*cleanup/i,
-                /^\s*\*\s*def\s+cleanup/i,
+                // a plain `def cleanup = ...` is not a cleanup block unless it performs an HTTP delete or calls a feature
+                /^\s*\*\s*def\s+cleanup\w*\s*=.*(method\s+delete|karate\.call\()/i,
             ],
         },
     ];
@@ -94,7 +96,8 @@ export class ReusabilityEngine {
      */
     static extract(featureContent: string): ReusabilityResult {
         const result: ReusabilityResult = { commonFiles: [], modifiedContent: featureContent, skipped: [] };
-        const lines = featureContent.split('\n');
+        const eol = featureContent.includes('\r\n') ? '\r\n' : '\n';
+        const lines = featureContent.split(/\r?\n/);
         const bg = lines.findIndex(l => /^\s*Background:/.test(l));
         if (bg < 0) { return result; }
         let end = bg + 1;
@@ -129,19 +132,20 @@ export class ReusabilityEngine {
             const block = entries.slice(i, j + 1);
             const pattern = this.PATTERNS.find(p => p.type === e.type)!;
             const text = block.map(b => b.text.trim()).join('\n');
-            const reason = this.blockRejection(block, pattern, stayDefined, existing, used);
+            const reason = this.blockRejection(block, pattern, stayDefined, existing, used, entries[i - 1]);
             if (reason) {
                 result.skipped.push({ reason, lines: text });
                 block.forEach(b => this.noteDefs(b, stayDefined));
             } else {
                 used.add(pattern.file);
+                const callType = this.callTypeFor(block, pattern);
                 const indent = (block[0].text.match(/^\s*/) || [''])[0];
-                replacements.push({ from: block[0].index, to: block[block.length - 1].index, text: `${indent}* callonce read('classpath:common/${pattern.file}')` });
+                replacements.push({ from: block[0].index, to: block[block.length - 1].index, text: `${indent}* ${callType} read('classpath:common/${pattern.file}')` });
                 result.commonFiles.push({
                     path: `common/${pattern.file}`,
-                    content: ['@ignore', `Feature: ${pattern.title}`, '', `Scenario: ${pattern.scenario}`, ...block.map(b => `  ${b.text.trim()}`), ''].join('\n'),
+                    content: ['@ignore', `Feature: ${pattern.title}`, '', `Scenario: ${pattern.scenario}`, ...block.map(b => `  ${b.text.trim()}`), ''].join(eol),
                     type: pattern.type,
-                    callType: 'callonce',
+                    callType,
                 });
             }
             i = j + 1;
@@ -155,14 +159,20 @@ export class ReusabilityEngine {
                 cursor = r.to + 1;
             }
             out.push(...lines.slice(cursor));
-            result.modifiedContent = out.join('\n');
+            result.modifiedContent = out.join(eol);
         }
         return result;
     }
 
     private static blockRejection(
-        block: Entry[], pattern: ExtractionPattern, stayDefined: Set<string>, existing: Set<string>, used: Set<string>
+        block: Entry[], pattern: ExtractionPattern, stayDefined: Set<string>, existing: Set<string>, used: Set<string>, prev: Entry | undefined
     ): string | undefined {
+        if (block.some(b => !/^\s*\*\s/.test(b.text) || REQUEST_STEP.test(b.text))) {
+            return 'Contains request steps; extract the whole request manually';
+        }
+        if (prev && prev.kind === 'step' && (!/^\s*\*\s/.test(prev.text) || REQUEST_STEP.test(prev.text))) {
+            return 'Follows a request step that stays in the feature; extract the whole request manually';
+        }
         if (existing.has(pattern.file)) { return `The Background already references common/${pattern.file}`; }
         if (used.has(pattern.file)) { return `Another ${pattern.type} block was already extracted into common/${pattern.file}`; }
         for (const b of block) {
@@ -174,6 +184,14 @@ export class ReusabilityEngine {
             if (dep) { return `Uses '${dep}', defined by an earlier step that stays in the feature`; }
         }
         return undefined;
+    }
+
+    /** `callonce` only when every step is a pure data step; header/configure/call/cleanup steps must re-apply per scenario. */
+    private static callTypeFor(block: Entry[], pattern: ExtractionPattern): 'call' | 'callonce' {
+        if (pattern.type === 'cleanup') { return 'call'; }
+        const pure = block.every(b => DATA_STEP.test(b.text)
+            && (b.text.match(/karate\.(\w+)/g) || []).every(k => SAFE_KARATE.test(k.slice(7))));
+        return pure ? 'callonce' : 'call';
     }
 
     private static hasLiteralCredential(step: string): boolean {
