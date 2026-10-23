@@ -56,6 +56,7 @@ export function renderScenario(s: KarateScenario, style: KarateStyle): string {
     const d = SCENARIO_DEPTH;
     const lines: string[] = [];
 
+    if (s.section) {lines.push(comment(style, d, `---- ${s.section} ----`));}
     const base = (s.tags ?? []).map(normalizeTag);
     const tags = [...new Set(s.draftReason !== undefined ? ['@ignore', ...base] : base)];
     if (tags.length > 0) {lines.push(`${pad(style, d)}${tags.join(' ')}`);}

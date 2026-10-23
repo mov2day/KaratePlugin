@@ -3,9 +3,11 @@ import type { KarateStyle } from '../../types';
 export type TagCategory = 'positive' | 'negative' | 'edge' | 'boundary' | 'security' | 'exploratory';
 export type ScenarioCategory = 'positive' | 'negative' | 'edge' | 'boundary' | 'security';
 
+export type LayoutSplit = 'none' | 'category' | 'tag' | 'path';
+
 export interface GeneratorConfig {
     karateVersion: '2';
-    layout: { outputRoot: string; strategy: 'domain' | 'flat' | 'method'; classpathRoot: string };
+    layout: { outputRoot: string; strategy: 'domain' | 'flat' | 'method'; classpathRoot: string; splitBy: LayoutSplit; maxScenariosPerFile: number; sections: boolean };
     config: { mode: 'standard' | 'env-json'; urlVariable: string; envs: string[] };
     style: KarateStyle;
     tags: { auto: boolean; taxonomy: Record<TagCategory, string> };
@@ -17,7 +19,7 @@ export interface GeneratorConfig {
 
 export const DEFAULT_GENERATOR_CONFIG: GeneratorConfig = {
     karateVersion: '2',
-    layout: { outputRoot: 'src/test/karate', strategy: 'domain', classpathRoot: 'src/test/java' },
+    layout: { outputRoot: 'src/test/karate', strategy: 'domain', classpathRoot: 'src/test/java', splitBy: 'none', maxScenariosPerFile: 0, sections: false },
     config: { mode: 'standard', urlVariable: 'baseUrl', envs: ['dev', 'staging'] },
     style: { indentation: '  ', variableCase: 'camelCase', commentStyle: 'hash', lineSpacing: 1 },
     tags: {
@@ -49,6 +51,7 @@ const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 const ENUMS: Record<string, readonly string[]> = {
     'layout.strategy': ['domain', 'flat', 'method'],
+    'layout.splitBy': ['none', 'category', 'tag', 'path'],
     'config.mode': ['standard', 'env-json'],
     'style.variableCase': ['camelCase', 'snake_case'],
     'style.commentStyle': ['hash', 'doubleSlash'],
@@ -98,6 +101,10 @@ function sanitize(layer: Plain, schema: Plain, path: string, origin: string, war
                 warnings.push(`${origin}: invalid value(s) ${JSON.stringify(bad)} for "${keyPath}"; using default`);
                 continue;
             }
+        }
+        if (keyPath === 'layout.maxScenariosPerFile' && (!Number.isInteger(value) || (value as number) < 0)) {
+            warnings.push(`${origin}: "${keyPath}" must be a non-negative integer; using default`);
+            continue;
         }
         if (key === 'karateVersion' && value !== '2') {
             warnings.push(`${origin}: "karateVersion" must be '2'; using default`);

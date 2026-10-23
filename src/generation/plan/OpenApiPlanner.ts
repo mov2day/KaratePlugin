@@ -15,6 +15,9 @@ export interface PlannedFeature {
     feature: KarateFeature;
     /** Planner grouping used by consumers that must exclude security probes. */
     featureKind?: Kind;
+    /** Set by the layout stage on category-split files. */
+    category?: string;
+    tags?: string[];
 }
 
 export interface PlannedFile {

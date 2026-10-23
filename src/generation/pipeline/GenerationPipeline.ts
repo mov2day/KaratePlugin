@@ -17,6 +17,7 @@ import type { GenerationModel, SourceKind } from '../model/TestModel';
 import { refine } from '../ai/AiRefiner';
 import type { AiCall, RefineResult, SkillSource } from '../ai/AiRefiner';
 import { planOpenApi } from '../plan/OpenApiPlanner';
+import { applyLayout, layoutWarnings } from '../layout/LayoutStage';
 import type { PlanOptions, PlannedFeature } from '../plan/OpenApiPlanner';
 import { parseFeature, runGate } from '../quality/QualityGate';
 import type { Finding } from '../quality/QualityGate';
@@ -186,6 +187,9 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
             }) } }));
         }
     }
+
+    warnings.push(...layoutWarnings(config.layout));
+    planned = applyLayout(planned, config.layout);
 
     const uniqueSupport: { path: string; content: string; owner: 'user' | 'generated' }[] = [];
     const seen = new Set<string>();

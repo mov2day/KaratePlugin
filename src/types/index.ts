@@ -20,6 +20,8 @@ export interface KarateScenario {
     comments?: string[];
     source?: string;
     draftReason?: string;
+    /** Rendered as a `# ---- <section> ----` comment line directly above the scenario (set by the layout stage). */
+    section?: string;
 }
 
 export interface KarateStep {
