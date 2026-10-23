@@ -119,7 +119,7 @@ class Planner {
     private readonly files = new Map<string, string>();
     private readonly schemaNames = new Map<string, Map<string, string>>();
     private readonly data = new Map<string, Record<string, unknown>>();
-    private readonly warningList: string[] = [];
+    readonly warningList: string[] = [];
     private readonly items: Item[] = [];
     private readonly style: KarateStyle;
     private readonly auth: AuthPlan;
@@ -267,7 +267,7 @@ class Planner {
         return scenarios;
     }
 
-    private collectFiles(): PlannedFile[] {
+    collectFiles(): PlannedFile[] {
         for (const [resource, entries] of this.data) {
             if (this.config.data.externalize) {this.files.set(`data/${this.dir}${resource}.json`, `${JSON.stringify(entries, null, 2)}\n`);}
         }
@@ -330,6 +330,61 @@ class Planner {
         const ok = successResponses(op)[0];
         const steps = [...this.requestSteps(op, { noBody: true, auth: false }), st('Then', `status ${ok?.status ?? '200'}`)];
         this.push(op, 'main', this.scenario(op, 'positive', this.label(op), steps, { draftReason: reason }));
+    }
+
+    // ---- single-operation scenarios (requirement mapping)
+
+    /** One scenario for `op` asserting `status` (default: its lowest declared 2xx). Never pushes; shares data/schema files with the planner. */
+    scenarioFor(op: OperationModel, status?: string): OperationScenario {
+        const secured = this.secured(op);
+        const unsupported = this.unsupported.get(op.sourceRef);
+        if (unsupported !== undefined) {return { reason: unsupported, secured };}
+        if (truncated(op.body?.schema)) {return { reason: 'Request body schema was truncated (too large to expand); provide the request body manually', secured };}
+        const bad = this.unsatisfiable(op);
+        if (bad) {return { reason: `Cannot generate a value matching pattern ${bad}`, secured };}
+        const ok = successResponses(op);
+        const want = status ?? ok[0]?.status;
+        if (!want) {return { reason: `${op.method} ${op.path} declares no 2xx response`, secured };}
+        const res = declared(op, want);
+        if (!res) {return { reason: `Status ${want} is not declared by ${op.method} ${op.path} (declared: ${op.responses.map(r => r.status).join(', ') || 'none'})`, secured };}
+
+        let steps: KarateStep[];
+        let category: Category = 'positive';
+        let note: string | undefined;
+        let draft: string | undefined;
+        if (/^2\d\d$/.test(want)) {
+            const resp = this.responseSteps(op, res, `${op.id}-${want}`);
+            steps = [...this.requestSteps(op), st('Then', `status ${want}`), ...resp.steps];
+            draft = resp.draft;
+            if (op.pathParams.length > 0) {note = 'Assumes a resource with this id exists in the target environment';}
+        } else if (want === '400' || want === '422') {
+            const m = this.invalidMutation(op);
+            if (!m) {return { reason: `No invalid request can be derived from the contract of ${op.method} ${op.path} to trigger ${want}`, secured };}
+            const resp = this.responseSteps(op, res, `${op.id}-${want}`);
+            steps = [...this.requestSteps(op, m.opts), st('Then', `status ${want}`), ...(resp.draft ? [] : resp.steps)];
+            category = 'negative';
+            note = `Contract case: rejects ${m.label}`;
+        } else if (want === '404') {
+            if (op.pathParams.length === 0) {return { reason: `${op.method} ${op.path} has no path parameter to point at an unknown resource`, secured };}
+            const resp = this.responseSteps(op, res, `${op.id}-404`);
+            steps = [...this.requestSteps(op, { pathExprs: { ...unknownIds(op) } }), st('Then', 'status 404'), ...(resp.draft ? [] : resp.steps)];
+            category = 'negative';
+            note = 'Contract case: unknown resource id';
+        } else if (want === '401') {
+            if (!secured) {return { reason: `${op.method} ${op.path} does not require authentication`, secured };}
+            steps = [...this.requestSteps(op, { auth: false }), st('Then', 'status 401')];
+            category = 'security';
+        } else {
+            return { reason: `No safe request can be derived from the contract to trigger ${want} on ${op.method} ${op.path}`, secured };
+        }
+        const scenario = this.scenario(op, category, this.label(op), steps, note ? { comments: [note] } : {});
+        if (draft) {scenario.draftReason = draft;}
+        if (secured && category !== 'security' && this.model.schemes.length > 0) {
+            this.warnSchemeMismatch(op);
+            const reason = this.mismatchReason(op);
+            if (reason && scenario.draftReason === undefined) {scenario.draftReason = reason;}
+        }
+        return { scenario, secured: secured && category !== 'security' };
     }
 
     // ---- request construction
@@ -761,6 +816,27 @@ export interface PlanOptions {
     filePrefix?: string;
     /** Emit response schemas inline (a docstring on the match step) instead of `schemas/*.json` files. Request bodies are inline when `config.data.externalize` is false. */
     inlineSchemas?: boolean;
+}
+
+export interface OperationScenario {
+    scenario?: KarateScenario;
+    /** Why no runnable scenario could be built (the caller drafts it). */
+    reason?: string;
+    /** The scenario needs `common/auth.feature` in the Background. */
+    secured: boolean;
+}
+
+export interface OperationPlanner {
+    scenarioFor(op: OperationModel, status?: string): OperationScenario;
+    /** Data/schema files referenced by the scenarios built so far. */
+    files(): PlannedFile[];
+    warnings(): string[];
+}
+
+/** Builds single-operation scenarios with the planner's own request/assertion builders (used to map requirements to operations). */
+export function createOperationPlanner(model: GenerationModel, config: GeneratorConfig, opts: PlanOptions = {}): OperationPlanner {
+    const planner = new Planner(model, config, opts);
+    return { scenarioFor: (op, status) => planner.scenarioFor(op, status), files: () => planner.collectFiles(), warnings: () => planner.warningList };
 }
 
 export function planOpenApi(model: GenerationModel, config: GeneratorConfig, opts: PlanOptions = {}): PlanResult {

@@ -65,8 +65,40 @@ export class ConfluenceParser {
             }
         }
 
+        testCases.push(...this.extractHeadingCases(content));
+
         logger.info(`Extracted ${testCases.length} test cases`);
         return testCases;
+    }
+
+    /**
+     * Test cases written as a heading ("TC-1 ...", "Test case ...", "Scenario ...") followed by an optional
+     * paragraph (description) and a list of steps; list items starting with "Expect" are the expected result.
+     */
+    private extractHeadingCases(content: string): ConfluenceTestCase[] {
+        const cases: ConfluenceTestCase[] = [];
+        const sectionRegex = /<h([1-6])[^>]*>(.*?)<\/h\1>(.*?)(?=<h[1-6]|$)/gis;
+        for (const match of content.matchAll(sectionRegex)) {
+            const name = this.stripHtml(match[2]);
+            if (!/^(?:TC[-_ ]?\d+\b|test case\b|scenario\b)/i.test(name)) {
+                continue;
+            }
+            const body = match[3];
+            const items = Array.from(body.matchAll(/<li[^>]*>(.*?)<\/li>/gis)).map(m => this.stripHtml(m[1])).filter(Boolean);
+            const expected = items.filter(i => /^expect(?:ed)?\b/i.test(i));
+            const steps = items.filter(i => !/^expect(?:ed)?\b/i.test(i));
+            const paragraph = /<p[^>]*>(.*?)<\/p>/is.exec(body);
+            if (steps.length === 0 && expected.length === 0) {
+                continue;
+            }
+            cases.push({
+                name,
+                description: paragraph ? this.stripHtml(paragraph[1]) || undefined : undefined,
+                steps,
+                expectedResult: expected.length > 0 ? expected.join('; ') : undefined
+            });
+        }
+        return cases;
     }
 
     /**

@@ -1,0 +1,309 @@
+// Pure requirements (Jira acceptance criteria / Confluence test cases) -> planned features adapter.
+// No vscode, no logger, no I/O. Policy: a generator never invents a live step. Without a linked contract every
+// criterion is an `@ignore` draft that restates the criterion; with an OpenAPI model a criterion becomes a runnable
+// scenario only when exactly one operation matches clearly and the asserted status is declared by that operation.
+import type { KarateScenario, KarateStep } from '../../types';
+import type { GeneratorConfig, ScenarioCategory } from '../config/GeneratorConfig';
+import type { GenerationModel, OperationModel } from '../model/TestModel';
+import { createOperationPlanner } from '../plan/OpenApiPlanner';
+import type { PlannedFeature, PlannedFile } from '../plan/OpenApiPlanner';
+import { slug } from '../plan/slug';
+
+export const NO_CONTRACT_REASON = 'No API contract linked; select an OpenAPI spec or enable AI refinement';
+
+export interface RequirementCriterion {
+    /** The criterion or test case name; names the scenario. */
+    text: string;
+    /** Confluence test case steps (rendered as `# Step n:` comments, never as live steps). */
+    steps?: string[];
+    expected?: string;
+}
+
+export interface RequirementItem {
+    /** Jira issue key or Confluence page id; becomes `@req=<id>` and `# source:`. */
+    id: string;
+    title: string;
+    criteria: (string | RequirementCriterion)[];
+    /** Optional origin label for `# source:`; any host is removed. Defaults to the id. */
+    link?: string;
+}
+
+export interface RequirementOptions {
+    model?: GenerationModel;
+    config: GeneratorConfig;
+    /** Names the feature file: `<name>/<name>-requirements.feature`. */
+    name: string;
+}
+
+export interface RequirementBuild {
+    features: PlannedFeature[];
+    /** Data files the matched scenarios read (classpath-relative; namespaced under `data/requirements/`). */
+    files: PlannedFile[];
+    warnings: string[];
+    /** `<id>: <criterion>` for every criterion that stayed a draft because no operation matched clearly. */
+    unmatched: string[];
+}
+
+// ---------------------------------------------------------------- redaction
+
+const CRED_KEY = '(?:password|passwd|pwd|secret|token|api[_-]?key|authorization|credential|private[_-]?key|client[_-]?secret|access[_-]?key)';
+const JWT = /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]*/g;
+const BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
+const BASIC = /\bBasic\s+[A-Za-z0-9+/=]{8,}/g;
+const KEY_PAIR = new RegExp(`([\\w.-]*${CRED_KEY}[\\w.-]*["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|\\{\\{[^}]*\\}\\}|\\[redacted\\]|[^\\s,;&}"']+)`, 'gi');
+const KEY_IS = /\b(password|passwd|pwd|secret|api[_-]?key)\s+(?:is|was)\s+\S+/gi;
+const HOST = /\bhttps?:\/\/[^\s/'"<>)]+/gi;
+
+/** Credential-looking content becomes `[redacted]`; literal hosts become `[host]`. `redacted` reports credentials only. */
+export function redactRequirementText(text: string): { text: string; redacted: boolean } {
+    let redacted = false;
+    const mark = (): string => {
+        redacted = true;
+        return '[redacted]';
+    };
+    let out = text.replace(JWT, mark).replace(BEARER, mark).replace(BASIC, mark);
+    out = out.replace(KEY_PAIR, (_m, head: string, value: string) => (/^\{\{|^\[redacted\]$/.test(value) ? `${head}${value}` : `${head}${mark()}`));
+    out = out.replace(KEY_IS, (_m, key: string) => `${key} is ${mark()}`);
+    out = out.replace(HOST, '[host]');
+    return { text: out, redacted };
+}
+
+const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
+const reqTag = (id: string): string => `@req=${id.replace(/[^A-Za-z0-9._-]/g, '_') || 'unknown'}`;
+const MAX_NAME = 100;
+function scenarioName(text: string, fallback: string): string {
+    const t = oneLine(text);
+    if (t === '') {return fallback;}
+    if (t.length <= MAX_NAME) {return t;}
+    const cut = t.slice(0, MAX_NAME);
+    const space = cut.lastIndexOf(' ');
+    return `${(space > 40 ? cut.slice(0, space) : cut).replace(/[\s.,;:-]+$/, '')}...`;
+}
+
+// ---------------------------------------------------------------- matching
+
+const STOP = new Set(['a', 'an', 'the', 'is', 'are', 'be', 'to', 'of', 'and', 'or', 'for', 'by', 'in', 'on', 'at', 'as', 'it', 'its', 'with', 'that', 'this', 'then', 'when', 'given',
+    'should', 'must', 'can', 'will', 'shall', 'return', 'response', 'status', 'code', 'http', 'api', 'user', 'request', 'respond', 'no', 'not', 'from', 'all', 'any', 'unknown', 'valid', 'invalid']);
+const VERB_METHODS: Record<string, string[]> = {
+    create: ['POST'], add: ['POST'], post: ['POST'], register: ['POST'], submit: ['POST'], place: ['POST'], upload: ['POST'],
+    get: ['GET'], read: ['GET'], list: ['GET'], view: ['GET'], fetch: ['GET'], retrieve: ['GET'], request: ['GET'], show: ['GET'], find: ['GET'], search: ['GET'], lookup: ['GET'],
+    update: ['PUT', 'PATCH'], edit: ['PUT', 'PATCH'], modify: ['PUT', 'PATCH'], change: ['PUT', 'PATCH'], replace: ['PUT', 'PATCH'],
+    delete: ['DELETE'], remove: ['DELETE'], cancel: ['DELETE']
+};
+
+function stem(word: string): string {
+    let w = word.toLowerCase();
+    if (w.length > 4 && w.endsWith('ies')) {w = `${w.slice(0, -3)}y`;}
+    else if (w.length > 5 && w.endsWith('ing')) {w = w.slice(0, -3);}
+    else if (w.length > 4 && w.endsWith('ed')) {w = w.slice(0, -2);}
+    else if (w.length > 3 && w.endsWith('s') && !w.endsWith('ss')) {w = w.slice(0, -1);}
+    if (w.length > 3 && w.endsWith('e')) {w = w.slice(0, -1);}
+    return w;
+}
+const VERB_STEMS = new Map(Object.entries(VERB_METHODS).map(([v, m]) => [stem(v), m]));
+const rawWords = (s: string): string[] => s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const verbStems = (text: string): Set<string> => new Set(rawWords(text).map(stem).filter(w => VERB_STEMS.has(w)));
+
+function nouns(text: string): Set<string> {
+    const out = new Set<string>();
+    for (const w of rawWords(text)) {
+        if (/^\d+$/.test(w) || STOP.has(w)) {continue;}
+        const s = stem(w);
+        if (s.length < 2 || VERB_STEMS.has(s) || STOP.has(s)) {continue;}
+        out.add(s);
+    }
+    return out;
+}
+
+function verbMethods(text: string): Set<string> {
+    const out = new Set<string>();
+    for (const w of rawWords(text)) {
+        for (const m of VERB_STEMS.get(stem(w)) ?? []) {out.add(m);}
+    }
+    return out;
+}
+
+const STATUS_AFTER = /(?:status(?:\s+code)?|returns?|responds?(?:\s+with)?|response|http|code|with|gets?|receives?|is|be|are|=|:)\s*(?:an?\s+)?([1-5]\d\d)\b/i;
+const STATUS_PHRASES: [RegExp, string][] = [
+    [/\bnot found\b/i, '404'], [/\bunauthori[sz]ed\b|\bunauthenticated\b/i, '401'], [/\bforbidden\b/i, '403'], [/\bbad request\b/i, '400'], [/\binvalid\b/i, '400']
+];
+/** The status a criterion asks for: an explicit code first, else a status phrase. */
+export function statusHint(...texts: (string | undefined)[]): string | undefined {
+    for (const t of texts) {
+        const m = t ? STATUS_AFTER.exec(t) : null;
+        if (m) {return m[1];}
+    }
+    for (const t of texts) {
+        if (!t) {continue;}
+        for (const [re, status] of STATUS_PHRASES) {if (re.test(t)) {return status;}}
+    }
+    return undefined;
+}
+
+const categoryOf = (status: string | undefined): ScenarioCategory =>
+    status === '400' || status === '404' || status === '422' ? 'negative' : status === '401' || status === '403' ? 'security' : 'positive';
+
+const normPath = (p: string): string => p.toLowerCase().replace(/\/+$/, '').replace(/\{[^}]*\}|:[a-z_]\w*/g, '{}');
+const EXPLICIT = /\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[^\s,;)"'`]*)/g;
+
+interface Scored {
+    op: OperationModel;
+    score: number;
+}
+
+const lastStatic = (op: OperationModel): string => op.path.split('/').filter(s => s !== '' && !s.startsWith('{')).pop()?.toLowerCase() ?? '';
+const endsWithParam = (op: OperationModel): boolean => /\{[^}]*\}$/.test(op.path);
+
+type Match =
+    | { kind: 'op'; op: OperationModel }
+    | { kind: 'none'; reason: string }
+    | { kind: 'ambiguous'; reason: string };
+
+const label = (op: OperationModel): string => `${op.method.toUpperCase()} ${op.path}`;
+
+function matchOperation(ops: OperationModel[], matchText: string, status: string | undefined): Match {
+    const explicit = [...matchText.matchAll(EXPLICIT)].map(m => ({ method: m[1], path: normPath(m[2].replace(/[.!?]+$/, '')) }));
+    const wantNouns = nouns(matchText);
+    const verbs = verbMethods(matchText);
+    const wantVerbs = verbStems(matchText);
+    const words = new Set(rawWords(matchText));
+    const scored: Scored[] = [];
+    for (const op of ops) {
+        let score = 0;
+        const hit = explicit.some(e => e.method === op.method.toUpperCase() && e.path === normPath(op.path));
+        if (hit) {score += 10;}
+        const opNouns = nouns(`${op.id} ${op.summary ?? ''} ${op.path.replace(/[{}/]/g, ' ')}`);
+        let overlap = 0;
+        for (const n of wantNouns) {if (opNouns.has(n)) {overlap++;}}
+        if (overlap === 0 && !hit) {continue;}
+        score += overlap;
+        if (verbs.has(op.method.toUpperCase())) {score += 1;}
+        if ([...verbStems(`${op.id} ${op.summary ?? ''}`)].some(v => wantVerbs.has(v))) {score += 1;}
+        if (status && op.responses.some(r => r.status === status)) {score += 1;}
+        const seg = lastStatic(op);
+        if (seg && !endsWithParam(op) && words.has(seg)) {score += 0.5;}
+        if (seg && endsWithParam(op) && (words.has('id') || words.has('unknown') || words.has('existing') || words.has(stem(seg)))) {score += 0.5;}
+        scored.push({ op, score });
+    }
+    if (scored.length === 0) {
+        if (explicit.length > 0) {return { kind: 'none', reason: `${explicit[0].method} ${explicit[0].path} is not in the linked contract` };}
+        return { kind: 'none', reason: 'No operation in the linked contract matches this criterion' };
+    }
+    scored.sort((a, b) => b.score - a.score);
+    const [first, second] = scored;
+    if (second && (first.score - second.score) / first.score <= 0.1) {
+        const near = scored.filter(s => (first.score - s.score) / first.score <= 0.1).slice(0, 3).map(s => label(s.op));
+        return { kind: 'ambiguous', reason: `Ambiguous match; candidates: ${near.join(', ')}` };
+    }
+    return { kind: 'op', op: first.op };
+}
+
+// ---------------------------------------------------------------- build
+
+const st = (keyword: KarateStep['keyword'], text: string): KarateStep => ({ keyword, text });
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+export function buildRequirementScenarios(items: RequirementItem[], opts: RequirementOptions): RequirementBuild {
+    if (!opts?.config) {throw new Error('buildRequirementScenarios: "opts.config" is required');}
+    const config = opts.config;
+    const model = opts.model && opts.model.operations.length > 0 ? opts.model : undefined;
+    const warnings: string[] = [];
+    const unmatched: string[] = [];
+    const planner = model ? createOperationPlanner(model, config, { filePrefix: 'requirements', inlineSchemas: true }) : undefined;
+    const ops = model ? [...model.operations].sort((a, b) => cmp(a.path, b.path) || cmp(a.method, b.method)) : [];
+    if (opts.model && !model) {warnings.push('The linked API contract has no operations; requirements were drafted without it');}
+
+    const scenarios: KarateScenario[] = [];
+    const seen = new Set<string>();
+    let needsAuth = false;
+    const tagFor = (category: ScenarioCategory): string[] => (config.tags.auto ? [config.tags.taxonomy[category].startsWith('@') ? config.tags.taxonomy[category] : `@${config.tags.taxonomy[category]}`] : []);
+
+    for (const item of items) {
+        const id = redactRequirementText(item.id).text;
+        const source = oneLine(redactRequirementText(item.link ?? '').text) || id;
+        let redactedAny = redactRequirementText(item.id).redacted || redactRequirementText(item.title).redacted;
+        if (item.criteria.length === 0) {warnings.push(`${id}: no acceptance criteria or test cases found`);}
+        item.criteria.forEach((raw, index) => {
+            const c: RequirementCriterion = typeof raw === 'string' ? { text: raw } : raw;
+            const clean = (t: string): string => {
+                const r = redactRequirementText(t);
+                redactedAny = redactedAny || r.redacted;
+                return oneLine(r.text);
+            };
+            const text = clean(c.text);
+            const steps = (c.steps ?? []).map(clean).filter(Boolean);
+            const expected = c.expected ? clean(c.expected) : '';
+            const fallback = `Requirement ${index + 1}`;
+            let name = scenarioName(text, fallback);
+            for (let n = 2; seen.has(name); n++) {name = `${scenarioName(text, fallback)} (${n})`;}
+            seen.add(name);
+
+            const matchText = [text, ...steps, expected].join(' ');
+            const status = statusHint(expected, text, ...steps);
+            const base: Pick<KarateScenario, 'name' | 'source'> = { name, source };
+            const comments = [
+                `Criterion: ${text || name}`,
+                ...steps.map((s, n) => `Step ${n + 1}: ${s}`),
+                ...(expected ? [`Expected: ${expected}`] : [])
+            ];
+            const draft = (reason: string, category: ScenarioCategory): void => {
+                scenarios.push({ ...base, tags: [...tagFor(category), reqTag(id)], category, comments, steps: [], draftReason: reason });
+            };
+
+            if (!planner) {return draft(NO_CONTRACT_REASON, categoryOf(status));}
+            const match = matchOperation(ops, matchText, status);
+            if (match.kind !== 'op') {
+                unmatched.push(`${id}: ${text || name}`);
+                return draft(match.reason, categoryOf(status));
+            }
+            const built = planner.scenarioFor(match.op, status);
+            if (!built.scenario) {
+                return draft(`Matched ${label(match.op)}: ${built.reason ?? 'no scenario could be built'}`, categoryOf(status));
+            }
+            const s = built.scenario;
+            const category = s.category ?? 'positive';
+            const planned = (s.comments ?? []).filter(x => !comments.includes(x));
+            const extra = (s.tags ?? []).filter(t => !tagFor(category).includes(t));
+            if (built.secured) {needsAuth = true;}
+            scenarios.push({
+                ...s, ...base, tags: [...tagFor(category), reqTag(id), ...extra], category,
+                comments: [...comments, `Operation: ${label(match.op)}`, ...planned]
+            });
+        });
+        if (redactedAny) {warnings.push(`${id}: credential-looking content in the requirements was replaced with [redacted]`);}
+    }
+
+    const root = slug(opts.name) || 'requirements';
+    const ids = [...new Set(items.map(i => redactRequirementText(i.id).text))];
+    const background: KarateStep[] = [st('*', `url ${config.config.urlVariable}`)];
+    if (model && needsAuth && model.schemes.length > 0) {background.push(st('*', "callonce read('classpath:common/auth.feature')"));}
+    const features: PlannedFeature[] = scenarios.length === 0 ? [] : [{
+        relativePath: `${root}/${root}-requirements.feature`,
+        feature: {
+            name: `${oneLine(redactRequirementText(opts.name).text) || 'Requirements'} - requirements`,
+            description: `Requirements ${ids.join(', ')}`,
+            background: { steps: background },
+            scenarios
+        }
+    }];
+    if (planner) {for (const w of planner.warnings()) {if (!warnings.includes(w)) {warnings.push(w);}}}
+    return { features, files: planner ? planner.files() : [], warnings, unmatched };
+}
+
+// ---------------------------------------------------------------- source mappings
+
+/** Jira issues (parsed) -> items. The caller sanitises the text first; the issue key is the id. */
+export function jiraRequirementItems(contents: { issueKey: string; summary: string; acceptanceCriteria: string[] }[]): RequirementItem[] {
+    return contents.map(c => ({ id: c.issueKey, title: c.summary, criteria: c.acceptanceCriteria.filter(a => a.trim() !== '') }));
+}
+
+/** A Confluence page (parsed) -> one item: test cases, else flow steps, else listed requirements. */
+export function confluenceRequirementItems(
+    page: { id: string; title: string },
+    data: { requirements?: string[]; testCases: { name: string; description?: string; steps: string[]; expectedResult?: string }[]; flowSteps?: string[] }
+): RequirementItem[] {
+    let criteria: (string | RequirementCriterion)[] = data.testCases.map(t => ({ text: t.name || t.description || '', steps: t.steps, expected: t.expectedResult }));
+    if (criteria.length === 0 && (data.flowSteps ?? []).length > 0) {criteria = [{ text: 'Flow from Confluence', steps: data.flowSteps }];}
+    if (criteria.length === 0) {criteria = (data.requirements ?? []).filter(r => r.trim() !== '');}
+    return [{ id: page.id, title: page.title, criteria }];
+}
