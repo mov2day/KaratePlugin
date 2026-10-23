@@ -29,6 +29,10 @@ export interface RunGenerationInput {
     mode: SourceKind;
     useAi: boolean;
     extraFiles?: PipelineInput['extraFiles'];
+    /** Classpath-relative support files (for example `data/x.json`); prefixed with the discovered classpath root. */
+    classpathFiles?: { path: string; content: string; owner: 'user' | 'generated' }[];
+    /** Overrides `layout.outputRoot` (workspace-relative, or absolute) for this run, for example an explicit output directory. */
+    outputRoot?: string;
     scenarios?: PlannedFeature[];
     /** Forwarded to the planner (batch runs namespace data/schema files per spec). */
     planOptions?: PlanOptions;
@@ -99,8 +103,13 @@ export async function runGenerationForModel(i: RunGenerationInput): Promise<RunG
         config = loaded.config;
     }
     if (i.configure) {config = i.configure(config);}
+    if (i.outputRoot) {config = { ...config, layout: { ...config.layout, outputRoot: i.outputRoot } };}
 
     const project = discoverProject(i.workspaceRoot, nodeFs);
+    const extraFiles = [
+        ...(i.extraFiles ?? []),
+        ...(i.classpathFiles ?? []).map(f => ({ ...f, path: `${project.classpathRoot.replace(/\\/g, '/').replace(/\/+$/, '')}/${f.path}` }))
+    ];
     const skills = loadSkills(i.context);
     const ai = await buildAi(i.useAi);
     const history = new WorkspaceHashStore(i.context);
@@ -112,7 +121,7 @@ export async function runGenerationForModel(i: RunGenerationInput): Promise<RunG
             model: i.model, scenarios: i.scenarios, extraFeatures: i.extraFeatures, planOptions: i.planOptions, config, project, fsApi: nodeFs, history, skills, ai,
             evidence: i.evidence, request: i.customInstruction?.trim() || undefined,
             generatorVersion: version, sourceRef: i.sourceRef, mode: i.mode, progress: i.progress,
-            extraFiles: i.extraFiles, root: i.workspaceRoot
+            extraFiles, root: i.workspaceRoot
         });
     } finally {
         try {

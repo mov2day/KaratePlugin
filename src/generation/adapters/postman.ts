@@ -103,15 +103,6 @@ const authBlock = (auth: PostmanAuth, key: string): string | undefined => {
     return v === undefined || v === null ? undefined : String(v);
 };
 
-interface Draftable {
-    entry: Entry;
-    steps: KarateStep[];
-    comments: string[];
-    reasons: string[];
-    statuses: string[];
-    secured: boolean;
-}
-
 interface Member {
     entry: Entry;
     pre: ScriptAnalysis | null;
