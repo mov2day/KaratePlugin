@@ -32,7 +32,7 @@ export interface ImportResult {
 export class PostmanImportService {
     private parser: PostmanParser;
 
-    /** `context` is required to run an import (skills, hash history); `importEnvironment` does not need it. */
+    /** `context` is required to run an import (skills, hash history). */
     constructor(private readonly context?: vscode.ExtensionContext) {
         this.parser = new PostmanParser();
     }
@@ -116,11 +116,17 @@ export class PostmanImportService {
 
             writeSummaryDetails(run.summary, `Postman: ${path.basename(collectionPath)}`);
             result.createdFiles = run.createdPaths;
-            result.featuresCreated = run.createdPaths.length;
+            // featuresCreated counts every planned feature file the pipeline processed (created, refreshed, kept or written
+            // side by side), so a re-import that creates nothing new is still a success.
+            const planned = run.features.length;
+            const createdNew = run.features.filter(f => run.written.created.includes(f.path)).length;
+            result.featuresCreated = planned;
             result.warnings.push(...run.warnings);
             if (run.summary.level === 'warning') {result.warnings.push(run.summary.headline);}
-
-            result.success = run.createdPaths.length > 0;
+            if (planned > createdNew) {
+                result.warnings.push(`${createdNew === 0 ? 'No new files: ' : ''}${planned - createdNew} feature file(s) already existed and were refreshed or left unchanged`);
+            }
+            result.success = planned > 0;
             if (!result.success) {result.warnings.push('No feature files were generated');}
             logger.info(`Successfully imported ${result.featuresCreated} feature files`);
         } catch (error) {
@@ -146,47 +152,5 @@ export class PostmanImportService {
         };
         strip(clone);
         return clone;
-    }
-
-    /**
-     * Import environment file only
-     */
-    public async importEnvironment(
-        environmentPath: string,
-        outputPath: string
-    ): Promise<{ success: boolean; variableCount: number }> {
-        try {
-            const environment = this.parser.parseEnvironmentFile(environmentPath);
-            const variables = this.parser.extractEnvironmentVariables(environment);
-
-            // Create Karate config file
-            const configLines: string[] = [];
-            configLines.push('function fn() {');
-            configLines.push('  var config = {');
-
-            for (const [key, value] of variables) {
-                configLines.push(`    ${key}: '${value}',`);
-            }
-
-            configLines.push('  };');
-            configLines.push('  return config;');
-            configLines.push('}');
-
-            const configContent = configLines.join('\n');
-            FileUtils.writeFile(outputPath, configContent);
-
-            logger.info(`Created Karate config from environment: ${outputPath}`);
-
-            return {
-                success: true,
-                variableCount: variables.size
-            };
-        } catch (error) {
-            logger.error('Failed to import environment', error as Error);
-            return {
-                success: false,
-                variableCount: 0
-            };
-        }
     }
 }

@@ -228,6 +228,7 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
 
     // ---- script analysis (once per request)
     const analysed = new Map<Entry, Member>();
+    let pmTests = 0;
     for (const e of entries) {
         const m: Member = {
             entry: e,
@@ -235,7 +236,10 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
             test: e.test ? analyzeTestScript(e.test) : null
         };
         analysed.set(e, m);
+        for (const w of [...(m.pre?.warnings ?? []), ...(m.test?.warnings ?? [])]) {warnOnce(`${e.sourceRef}: ${w}`);}
+        pmTests += (e.test.match(/pm\.test\(/g) ?? []).length;
     }
+    if (pmTests > 0) {warnOnce(`${pmTests} pm.test block(s) were flattened into plain assertions; test titles are not kept as comments`);}
 
     const referenced = (e: Entry): Set<string> => {
         const out = new Set<string>();
@@ -254,7 +258,8 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
 
     // ---- feature grouping (folders -> features) and chaining of dependent requests
     const flat = config.layout.strategy !== 'domain';
-    const groupKey = (e: Entry): string => (flat ? '' : e.folders.map(f => slug(f) || 'folder').join('/'));
+    // Group by the folder's actual path; slugs are only used for file names (distinct folders can slug alike).
+    const groupKey = (e: Entry): string => (flat ? '' : e.folders.join('\u0000'));
     const groups = new Map<string, Entry[]>();
     for (const e of entries) {
         const k = groupKey(e);
@@ -278,7 +283,11 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                 const v = idn(n);
                 if (own.has(v) || secret.has(n) || n === baseVar || n.startsWith('$')) {continue;}
                 const c = producerChain.get(v);
-                if (c) {target = c; break;}
+                if (!c) {continue;}
+                if (!target) {target = c;}
+                else if (c !== target) {
+                    warnOnce(`${e.sourceRef} (${e.name}) depends on variables set by more than one earlier request; it was chained to "${target[0].entry.name}" and "${n}" falls back to vars.${v} (set it in the variables file)`);
+                }
             }
             const chain = target ?? [];
             if (!target) {chains.push(chain);}
@@ -286,6 +295,10 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
             for (const v of [...(m.pre?.setVars ?? []), ...(m.test?.setVars ?? [])]) {
                 producerChain.set(idn(v), chain);
             }
+        }
+
+        for (const c of chains) {
+            if (c.length > 1) {warnings.push(`Merged into one scenario because later requests consume variables set by earlier ones: ${c.map(x => x.entry.name).join(', ')}`);}
         }
 
         const leaf = groupEntries[0].folders;
@@ -374,10 +387,14 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                 const split = splitUrl(rawUrl(r));
                 const req: string[] = [];
                 let rest = split.rest;
-                if (split.kind === 'var' && split.name !== baseVar && vars.get(split.name) !== vars.get(baseVar ?? '')) {
+                if (split.kind === 'var' && split.name !== baseVar) {
+                    const val = vars.get(split.name);
                     if (secret.has(split.name)) {
                         reasons.push(`request base URL comes from secret-looking variable ${split.name}`);
-                    } else {
+                    } else if (!val) {
+                        reasons.push(`request base URL variable ${split.name} has no value; it is not the base URL`);
+                        unsupported.push({ sourceRef: e.sourceRef, reason: `base URL variable ${split.name} has no value` });
+                    } else if (val !== (baseVar ? vars.get(baseVar) : undefined)) {
                         req.push(`url ${ref(split.name)}`);
                     }
                 } else if (split.kind === 'literal') {
@@ -430,16 +447,72 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                 // body
                 const body: PostmanBody | undefined = r.body;
                 let bodyLines: string[] = [];
+                let bodyDoc: string | undefined;
+                /** Raw bodies: JSON gets `#(expr)` placeholders (typed substitution); anything else is a docstring text body. */
+                const rawBody = (raw: string): { lines: string[]; doc?: string } => {
+                    const names: string[] = [];
+                    let text = '';
+                    let inStr = false;
+                    let esc = false;
+                    for (let i = 0; i < raw.length; i++) {
+                        const ch = raw[i];
+                        if (raw.startsWith('{{', i)) {
+                            const end = raw.indexOf('}}', i);
+                            if (end > i) {
+                                names.push(raw.slice(i + 2, end).trim());
+                                text += inStr ? `__PM_VAR_${names.length - 1}__` : `"__PM_VAR_${names.length - 1}__"`;
+                                i = end + 1;
+                                continue;
+                            }
+                        }
+                        if (inStr) {
+                            if (esc) {esc = false;} else if (ch === '\\') {esc = true;} else if (ch === '"') {inStr = false;}
+                        } else if (ch === '"') {inStr = true;}
+                        text += ch;
+                    }
+                    let parsed: any;
+                    let isJsonBody = true;
+                    try { parsed = JSON.parse(text); } catch { isJsonBody = false; }
+                    if (isJsonBody) {
+                        const str = (val: string, key: string): string => {
+                            const restored = val.replace(/__PM_VAR_(\d+)__/g, (_x, n: string) => `{{${names[Number(n)]}}}`);
+                            const guarded = guardSecret(key, restored);
+                            if (!guarded.includes('{{')) {return guarded;}
+                            return /^\{\{[^}]+\}\}$/.test(guarded) ? `#(${ref(guarded.slice(2, -2))})` : `#(${tpl(guarded)})`;
+                        };
+                        const walk = (v: any, key: string): any => {
+                            if (Array.isArray(v)) {return v.map(x => walk(x, key));}
+                            if (v && typeof v === 'object') {return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));}
+                            return typeof v === 'string' ? str(v, key) : v;
+                        };
+                        return { lines: [`And request ${JSON.stringify(walk(parsed, ''), null, 2)}`] };
+                    }
+                    // Not JSON (text, XML, form-like): keep as a docstring, but never write a literal credential.
+                    let hit = false;
+                    const scrubbed = raw.replace(/(password|passwd|secret|token|api[_-]?key)(\s*["':=]\s*["']?)([^"'\s{][^"'\s,}]*)/gi, (_x, key: string, sep: string, value: string) => {
+                        hit = true;
+                        return `${key}${sep}${guardSecret(key, value)}`;
+                    });
+                    if (hit) {reasons.push('the request body is not JSON and contained a literal credential; it was replaced with a sysenv variable, review the body');}
+                    return { lines: [], doc: scrubbed.replace(VAR_RE, (_x, n: string) => `#(${ref(n)})`) };
+                };
                 if (body && (body.mode === 'graphql' || body.mode === 'file')) {
                     reasons.push(`${body.mode} request bodies are not converted`);
                     unsupported.push({ sourceRef: e.sourceRef, reason: `${body.mode} request body is not converted` });
+                } else if (body && body.mode === 'raw') {
+                    if (body.raw) {
+                        const converted = rawBody(body.raw);
+                        bodyLines = converted.lines;
+                        bodyDoc = converted.doc;
+                    }
                 } else if (body) {
-                    const guarded = guardBody(body, guardSecret, tpl);
+                    const guarded = guardBody(body, guardSecret);
                     const subst = (text: string): string => text.replace(VAR_RE, (_x, n: string) => `#(${ref(n)})`);
                     bodyLines = convertBody(guarded, subst);
                 }
 
                 req.forEach((text, i) => emit(i === 0 ? 'Given' : 'And', text));
+                if (bodyDoc !== undefined) {emit(req.length === 0 ? 'Given' : 'And', 'request', { docString: bodyDoc });}
                 bodyLines.forEach((line, i) => {
                     const m2 = /^And ([\s\S]*)$/.exec(line);
                     const content = m2 ? m2[1] : line;
@@ -448,7 +521,7 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                     if (nl > 0 && content.startsWith('request ')) {emit(kw, 'request', { docString: content.slice('request '.length) });}
                     else {emit(kw, content.replace(/\n/g, ' '));}
                 });
-                emit(req.length === 0 && bodyLines.length === 0 ? 'Given' : 'When', `method ${e.method.toLowerCase()}`);
+                emit(req.length === 0 && bodyLines.length === 0 && bodyDoc === undefined ? 'Given' : 'When', `method ${e.method.toLowerCase()}`);
 
                 // assertions
                 const test = m.test;
@@ -465,16 +538,11 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                     const def = /^def (\w+) =/.exec(parsed[2]);
                     if (parsed[1] === '*' && def) {local.add(def[1]);}
                 });
-                const hasStatus = ordered.some(isStatus);
-                if (!hasStatus) {
-                    const scriptHasAssertions = test !== null && (test.lines.length > 0 || test.lostAssertions.length > 0);
-                    if (!test || !scriptHasAssertions) {
-                        // No test script at all: no status can be inferred, so assert only that the call succeeded
-                        // (below 400). A guessed `status 200` would be a made-up expectation.
-                        emit('Then', 'assert responseStatus < 400');
-                    } else {
-                        reasons.push('the Postman test script asserts no status code; add one');
-                    }
+                if (!ordered.some(isStatus)) {
+                    // No status assertion survived (no test script, or a script that only checks bodies/variables):
+                    // the status cannot be inferred, so assert only that the call succeeded (below 400) instead of
+                    // guessing `status 200`. The scenario stays active; only a LOST assertion drafts it (below).
+                    emit(ordered.length === 0 ? 'Then' : 'And', 'assert responseStatus < 400');
                 }
                 if (test) {
                     bits.push(...test.unsupported.filter(u => !bits.includes(u)));
@@ -517,7 +585,7 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
         }
 
         // assemble the feature(s): authenticated and unauthenticated scenarios never share a callonce Background
-        const basePath = flat || key === '' ? collSlug : key;
+        const basePath = flat || key === '' ? collSlug : groupEntries[0].folders.map(f => slug(f) || 'folder').join('/');
         const hasAuth = schemes.length > 0;
         const buckets: { suffix: string; list: typeof scenarios; auth: boolean }[] = [];
         const securedList = scenarios.filter(s => s.secured);
@@ -563,32 +631,11 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
     return { model, features, files, unsupported, warnings };
 }
 
-/** Replace literal values of secret-looking keys in form and JSON bodies with `{{placeholder}}` variables; mixed JSON strings become embedded expressions. */
-function guardBody(body: PostmanBody, guard: (key: string, value: string) => string, tpl: (text: string) => string): PostmanBody {
+/** Replace literal values of secret-looking keys in form bodies with `{{placeholder}}` variables. */
+function guardBody(body: PostmanBody, guard: (key: string, value: string) => string): PostmanBody {
     const out: PostmanBody = { ...body };
     if (body.urlencoded) {out.urlencoded = body.urlencoded.map(f => (f.disabled ? f : { ...f, value: guard(f.key, f.value ?? '') }));}
     if (body.formdata) {out.formdata = body.formdata.map(f => (f.disabled || f.type === 'file' ? f : { ...f, value: guard(f.key, f.value ?? '') }));}
-    if (body.mode === 'raw' && body.raw) {
-        try {
-            const parsed = JSON.parse(body.raw);
-            // a string that is exactly one `{{x}}` stays a plain reference; mixed strings become one embedded expression
-            const str = (val: string): string => (!val.includes('{{') || /^\{\{[^}]+\}\}$/.test(val) ? val : `#(${tpl(val)})`);
-            const walk = (v: any): any => {
-                if (Array.isArray(v)) {return v.map(walk);}
-                if (v && typeof v === 'object') {
-                    const o: Record<string, any> = {};
-                    for (const [k, val] of Object.entries(v)) {o[k] = typeof val === 'string' ? str(guard(k, val)) : walk(val);}
-                    return o;
-                }
-                return typeof v === 'string' ? str(v) : v;
-            };
-            const guarded = walk(parsed);
-            out.raw = JSON.stringify(guarded);
-            out.options = { ...body.options, raw: { ...body.options?.raw, language: 'json' } };
-        } catch {
-            /* not JSON: variables are substituted textually */
-        }
-    }
     return out;
 }
 

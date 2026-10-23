@@ -91,5 +91,26 @@ module.exports = [
                 stub.workspace.workspaceFolders = undefined;
             }
         }
+    },
+    {
+        name: 'postman import: re-import succeeds, counts planned features and reports them as unchanged',
+        async run() {
+            const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'karate-postman-'));
+            stub.workspace.workspaceFolders = [{ uri: { fsPath: ws } }];
+            try {
+                const { PostmanImportService } = out('services/postmanImportService');
+                const ctx = context();
+                const opts = { preserveFolders: true, convertScripts: true, includeAuth: true, useCopilot: false };
+                const run = () => new PostmanImportService(ctx).importCollection(fixture('postman', 'collection.json'), path.join(ws, 'src/test/karate'), opts);
+                const first = await run();
+                assert.equal(first.success, true);
+                const second = await run();
+                assert.equal(second.success, true, second.warnings.join('; '));
+                assert.equal(second.featuresCreated, 1);
+                assert.ok(second.warnings.some(w => /already existed and were refreshed or left unchanged/.test(w)));
+            } finally {
+                stub.workspace.workspaceFolders = undefined;
+            }
+        }
     }
 ];

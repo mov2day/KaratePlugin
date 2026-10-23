@@ -102,6 +102,33 @@ export interface ScriptAnalysis {
     unsupported: string[];
     /** Variables the script defines with `* def`. */
     setVars: string[];
+    /** Credential literals that were replaced by `karate.sysenv(...)` (names only, never values). */
+    warnings: string[];
+}
+
+export const SECRET_NAME = /token|secret|password|passwd|apikey|api_key|api-key|authorization|bearer/i;
+const NON_KARATE_JS = /\bpm\.|\bpostman\.|\bconsole\./;
+const JWT = /^['"]?eyJ[\w-]+\.[\w-]+\.[\w-]+['"]?$/;
+const AUTH_VALUE = /^['"](?:Bearer|Basic|Token)\s+\S+['"]$/i;
+const STRING_OR_NUMBER = /^(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|true|false)$/;
+const envName = (name: string): string =>
+    name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[^A-Za-z0-9]+/).filter(Boolean).map(w => w.toUpperCase()).join('_') || 'SECRET';
+
+/**
+ * Guard one converted line: `* def` values that call Postman/console APIs are unsupported, and credential
+ * literals (secret-looking names, JWTs, Bearer/Basic strings) become `karate.sysenv(...)`. Returns null to drop the line.
+ */
+function guardDef(line: string, out: ScriptAnalysis): { line: string | null; unsupported: boolean } {
+    const m = /^\* def ([^ ]+) = ([\s\S]*)$/.exec(line);
+    if (!m) {return { line, unsupported: false };}
+    const [, name, value] = m;
+    if (NON_KARATE_JS.test(value)) {return { line: null, unsupported: true };}
+    const literal = STRING_OR_NUMBER.test(value.trim());
+    if (literal && (SECRET_NAME.test(name) || JWT.test(value.trim()) || AUTH_VALUE.test(value.trim()))) {
+        out.warnings.push(`Script value assigned to "${name}" looks like a credential; replaced with karate.sysenv('${envName(name)}')`);
+        return { line: `* def ${name} = karate.sysenv('${envName(name)}', '')`, unsupported: false };
+    }
+    return { line, unsupported: false };
 }
 
 const SET_CALL = /pm\.(?:environment|variables|globals|collectionVariables)\.set/;
@@ -216,7 +243,7 @@ const ALIAS_DECL = /^(?:var|let|const)\s+(\w+)\s*=\s*(?:pm\.response\.json\(\)|j
 
 /** Analyse a Postman test script: converted lines plus what could not be converted. */
 export function analyzeTestScript(script: string): ScriptAnalysis {
-    const out: ScriptAnalysis = { lines: [], lostAssertions: [], unsupported: [], setVars: [] };
+    const out: ScriptAnalysis = { lines: [], lostAssertions: [], unsupported: [], setVars: [], warnings: [] };
     const aliases = new Set<string>();
     for (const raw of script.split('\n')) {
         let trimmed = raw.trim();
@@ -232,7 +259,13 @@ export function analyzeTestScript(script: string): ScriptAnalysis {
         }
         const converted = convertTestLine(trimmed);
         if (converted && converted.length > 0) {
-            for (const l of converted) {
+            for (const raw0 of converted) {
+                const g = guardDef(raw0, out);
+                if (g.line === null) {
+                    out.unsupported.push(trimmed);
+                    continue;
+                }
+                const l = g.line;
                 out.lines.push(l);
                 const def = /^\* def (\w+) =/.exec(l);
                 if (def) {out.setVars.push(def[1]);}
@@ -290,7 +323,7 @@ function convertPreLine(trimmed: string): string[] | 'sendRequest' | null {
     if (trimmed.includes('$randomInt') || trimmed.includes('{{$randomInt}}')) {
         return ['* def randomInt = Math.floor(Math.random() * 1000)'];
     }
-    if (trimmed.includes('$guid') || trimmed.includes('{{$guid}}') || trimmed.includes('UUID')) {
+    if (trimmed.includes('$guid') || trimmed.includes('{{$guid}}') || /\buuid\b/i.test(trimmed)) {
         return ['* def randomId = java.util.UUID.randomUUID()'];
     }
     if (trimmed.includes('$timestamp') || trimmed.includes('{{$timestamp}}')) {
@@ -335,7 +368,7 @@ const balanced = (s: string): boolean => {
 
 /** Pre-request analysis for the adapter: only balanced `* def` lines are kept; the rest is reported as unsupported. */
 export function analyzePreRequestScript(script: string): ScriptAnalysis {
-    const out: ScriptAnalysis = { lines: [], lostAssertions: [], unsupported: [], setVars: [] };
+    const out: ScriptAnalysis = { lines: [], lostAssertions: [], unsupported: [], setVars: [], warnings: [] };
     for (const raw of script.split('\n')) {
         const trimmed = raw.trim();
         if (trimmed === '' || trimmed.startsWith('//')) {continue;}
@@ -344,7 +377,13 @@ export function analyzePreRequestScript(script: string): ScriptAnalysis {
             out.unsupported.push(trimmed);
         } else if (r && r.length > 0) {
             if (r.every(balanced)) {
-                for (const l of r) {
+                for (const raw0 of r) {
+                    const g = guardDef(raw0, out);
+                    if (g.line === null) {
+                        out.unsupported.push(trimmed);
+                        continue;
+                    }
+                    const l = g.line;
                     out.lines.push(l);
                     const def = /^\* def (\w+) =/.exec(l);
                     if (def) {out.setVars.push(def[1]);}

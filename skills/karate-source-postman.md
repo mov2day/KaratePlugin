@@ -2,7 +2,7 @@
 name: karate-source-postman
 description: Convert Postman collections, environments and test scripts to native Karate v2 with an unsupported-script policy
 ---
-Preserve requests, variables, auth, scripts, assertions and execution order from the collection. Convert to native Karate; do not wrap Postman JavaScript.
+Preserve requests, variables, auth, scripts, assertions and order. Convert to native Karate; do not wrap Postman JavaScript.
 
 ## Structure
 - A collection folder becomes one feature; a request becomes a scenario, or a step group inside one scenario when later requests consume earlier responses.
@@ -63,3 +63,4 @@ Each `pm.test` title becomes the comment directly above its `match`; it is the f
 * header X-API-Key = karate.sysenv('API_KEY')
 ```
 - V2-CFG-001: base URL from `baseUrl`, not the collection's literal host.
+- `@ignore` a scenario only if an assertion was lost. No status check: `Then assert responseStatus < 400`, never a guessed `status 200`.

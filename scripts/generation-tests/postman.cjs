@@ -328,5 +328,151 @@ module.exports = [
             const b = build();
             assert.equal(JSON.stringify(a), JSON.stringify(b));
         }
+    },
+    {
+        name: 'postman fix: credential literals in pre-request and test scripts never reach output',
+        run() {
+            const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.abcDEF123_-xyz';
+            const coll = richCollection([req('Scripts', 'GET', '/s', {}, null)]);
+            coll.item[0].event = [
+                { listen: 'prerequest', script: { exec: [
+                    "pm.environment.set('apiKey', 'abc-LITERAL-123');",
+                    "var password = 'pw-LITERAL-456';",
+                    `pm.environment.set('session', '${JWT}');`,
+                    "pm.environment.set('hdr', 'Bearer zzz-LITERAL-789');"
+                ] } },
+                testEvent(['pm.response.to.have.status(200);', "pm.collectionVariables.set('authToken', 'tok-LITERAL-000');"])
+            ];
+            const b = build(coll, null);
+            const text = allText(b);
+            for (const lit of ['abc-LITERAL-123', 'pw-LITERAL-456', JWT, 'zzz-LITERAL-789', 'tok-LITERAL-000']) assert.ok(!text.includes(lit), lit);
+            assert.match(text, /\* def apiKey = karate\.sysenv\('API_KEY', ''\)/);
+            assert.match(text, /\* def password = karate\.sysenv\('PASSWORD', ''\)/);
+            assert.match(text, /\* def session = karate\.sysenv\('SESSION', ''\)/);
+            assert.ok(b.warnings.some(w => /credential/.test(w)));
+            assert.ok(!b.warnings.join('\n').includes('LITERAL'));
+        }
+    },
+    {
+        name: 'postman fix: raw JSON body with an unquoted variable is typed, parsed and secret-guarded',
+        run() {
+            const body = raw => ({ body: { mode: 'raw', raw, options: { raw: { language: 'json' } } } });
+            const b = build(richCollection([req('Leak', 'POST', '/l', body('{"password":"hunter2","id":{{userId}},"tag":"a-{{region}}"}'), testEvent(['pm.response.to.have.status(200);']))]), null);
+            const text = allText(b);
+            assert.ok(!text.includes('hunter2'));
+            assert.match(text, /"id": "#\(vars\.userId\)"/);
+            assert.match(text, /"tag": "#\('a-' \+ vars\.region\)"/);
+            assert.match(text, /"password": "#\(password\)"/);
+            assert.match(text, /\* def password = karate\.sysenv\('PASSWORD', ''\)/);
+            assert.ok(!/request '/.test(text));
+        }
+    },
+    {
+        name: 'postman fix: non-JSON raw body with a literal credential is drafted and the value is not written',
+        run() {
+            const b = build(richCollection([req('Text', 'POST', '/t', { body: { mode: 'raw', raw: 'user=bob\npassword: hunter3\nid={{userId}}' } }, testEvent(['pm.response.to.have.status(200);']))]), null);
+            const text = allText(b);
+            assert.ok(!text.includes('hunter3'));
+            const s = b.features[0].feature.scenarios[0];
+            assert.ok(s.draftReason && /credential/.test(s.draftReason));
+            assert.ok(!/request '.*#\(/.test(text));
+            assert.match(text, /id=#\(vars\.userId\)/);
+        }
+    },
+    {
+        name: 'postman fix: Postman/console API calls in script values are unsupported, not active steps',
+        run() {
+            const coll = richCollection([req('Pre', 'GET', '/p', {}, null)]);
+            coll.item[0].event = [
+                { listen: 'prerequest', script: { exec: ["pm.environment.set('ts', pm.variables.get('a') + 1);"] } },
+                testEvent(['pm.response.to.have.status(200);'])
+            ];
+            const b = build(coll, null);
+            const s = b.features[0].feature.scenarios[0];
+            assert.ok(!s.steps.some(x => /\bpm\./.test(x.text)));
+            assert.ok((s.comments ?? []).some(c => c.startsWith('UNSUPPORTED (pm script): ')));
+            assert.equal(b.unsupported.length, 1);
+        }
+    },
+    {
+        name: 'postman fix: only a lost assertion drafts; converted-but-statusless and producer-only scripts stay active',
+        run() {
+            const coll = richCollection([
+                req('Body only', 'GET', '/a', {}, testEvent(["pm.expect(pm.response.json().id).to.be.a('number');"])),
+                req('Producer', 'POST', '/b', {}, testEvent(["pm.environment.set('x', '1');"])),
+                req('Lost', 'GET', '/c', {}, testEvent(['pm.expect(pm.response.json().n).to.be.above(1);']))
+            ]);
+            const [bodyOnly, producer, lost] = build(coll, null).features[0].feature.scenarios;
+            for (const s of [bodyOnly, producer]) {
+                assert.equal(s.draftReason, undefined, s.name);
+                assert.ok(s.steps.some(x => x.text === 'assert responseStatus < 400'), s.name);
+            }
+            assert.ok(bodyOnly.steps.some(x => x.text === "match response.id == '#number'"));
+            assert.ok(lost.draftReason);
+        }
+    },
+    {
+        name: 'postman fix: in a merged chain only a lost assertion drafts the scenario, and the merge is reported',
+        run() {
+            const mk = test2 => build(richCollection([{ name: 'F', item: [
+                req('Create', 'POST', '/t', {}, testEvent(['pm.response.to.have.status(201);', "pm.collectionVariables.set('tid', pm.response.json().id);"])),
+                req('Fetch', 'GET', '/t/{{tid}}', {}, testEvent(test2))
+            ] }]), null);
+            const ok = mk(["pm.expect(pm.response.json().id).to.exist;"]);
+            assert.equal(ok.features[0].feature.scenarios[0].draftReason, undefined);
+            assert.ok(ok.warnings.some(w => /Merged into one scenario/.test(w) && /Create, Fetch/.test(w)));
+            const bad = mk(['pm.expect(pm.response.json().n).to.be.above(1);']);
+            assert.ok(bad.features[0].feature.scenarios[0].draftReason);
+        }
+    },
+    {
+        name: 'postman fix: accented and non-Latin folders get distinct features and stable names',
+        run() {
+            const { slug } = out('generation/plan/slug');
+            assert.equal(slug('Édge API'), 'edge-api');
+            assert.equal(slug('---'), '');
+            assert.match(slug('日本'), /^folder-[0-9a-f]{6}$/);
+            assert.notEqual(slug('日本'), slug('中国'));
+            assert.equal(slug('日本'), slug('日本'));
+            const coll = richCollection([
+                { name: '日本', item: [req('A', 'GET', '/a', {}, testEvent(['pm.response.to.have.status(200);']))] },
+                { name: '中国', item: [req('A', 'GET', '/b', {}, testEvent(['pm.response.to.have.status(200);']))] },
+                { name: 'Fld one', item: [req('A', 'GET', '/c', {}, testEvent(['pm.response.to.have.status(200);']))] },
+                { name: 'fld-one', item: [req('A', 'GET', '/d', {}, testEvent(['pm.response.to.have.status(200);']))] }
+            ]);
+            coll.info.name = 'Édge API';
+            const b = adapter().buildPostmanModel(coll, null, { config: config(), collectionName: 'Édge API' });
+            assert.equal(b.features.length, 4);
+            assert.equal(new Set(b.features.map(f => f.relativePath)).size, 4);
+            assert.ok(b.features.some(f => f.relativePath === 'fld-one/fld-one.feature') && b.features.some(f => f.relativePath === 'fld-one/fld-one-2.feature'));
+            const withVars = adapter().buildPostmanModel(richCollection([{ name: 'X', item: [req('G', 'GET', '/u/{{userId}}', {}, testEvent(['pm.response.to.have.status(200);']))] }]), null, { config: config(), collectionName: 'Édge API' });
+            assert.equal(withVars.files[0].path, 'data/edge-api-variables.json');
+        }
+    },
+    {
+        name: 'postman fix: dependency on two chains warns; an unvalued second host variable drafts instead of using the base URL; cheap warnings',
+        run() {
+            const coll = richCollection([{ name: 'F', item: [
+                req('P1', 'POST', '/1', {}, testEvent(['pm.response.to.have.status(201);', "pm.environment.set('a', pm.response.json().a);"])),
+                req('Mid', 'GET', '/m', {}, testEvent(['pm.response.to.have.status(200);'])),
+                req('P2', 'POST', '/2', {}, testEvent(['pm.response.to.have.status(201);', "pm.environment.set('b', pm.response.json().b);"])),
+                req('Both', 'GET', '/x/{{a}}/{{b}}', {}, testEvent(["pm.test('t', function () {", 'pm.response.to.have.status(200);', '});'])),
+                { name: 'Other host', request: { method: 'GET', url: { raw: '{{otherHost}}/q' } }, event: [testEvent(['pm.response.to.have.status(200);'])] }
+            ] }]);
+            const b = build(coll, null);
+            assert.ok(b.warnings.some(w => /more than one earlier request/.test(w)));
+            assert.ok(b.warnings.some(w => /1 pm\.test block\(s\) were flattened/.test(w)));
+            const other = b.features[0].feature.scenarios.find(s => s.name === 'Other host');
+            assert.ok(other.draftReason && /otherHost/.test(other.draftReason));
+            assert.ok(!other.steps.some(s => /^url /.test(s.text)));
+        }
+    },
+    {
+        name: 'postman fix: pre-request uuid detection is word-bounded',
+        run() {
+            const { convertPreRequestScript } = out('generation/adapters/postmanScript');
+            assert.match(convertPreRequestScript('var id = uuid();'), /randomUUID|\* def id/);
+            assert.ok(!/randomId/.test(convertPreRequestScript("var x = 'Duuidx';") ?? ''));
+        }
     }
 ];

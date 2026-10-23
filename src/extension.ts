@@ -866,9 +866,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
                         // Show warnings if any
                         if (result.warnings.length > 0) {
-                            vscode.window.showWarningMessage(
-                                `Import completed with warnings: ${result.warnings.join(', ')}`
-                            );
+                            // Full list goes to the output channel; the toast shows the first few only.
+                            const { generationChannel } = await import('./generation/vscode/reportSummary');
+                            generationChannel().appendLine(`Postman import warnings:\n${result.warnings.map(w => `  ${w}`).join('\n')}`);
+                            const shown = result.warnings.slice(0, 3).join(', ');
+                            const more = result.warnings.length > 3 ? ` (+${result.warnings.length - 3} more, see Karate Generation output)` : '';
+                            vscode.window.showWarningMessage(`Import completed with warnings: ${shown}${more}`);
                         }
 
                         // Show unsupported features if any
