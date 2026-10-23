@@ -89,7 +89,7 @@ function equal(a, b) { if (a === b) return true; if (a === null || b === null ||
 @ignore
 Feature: Fresh data for every Scout scenario
 Scenario:
-  * def resetFixture = karate.properties['scout.resetFixture']
+  * def resetFixture = karate.sysprop('scout.resetFixture', '')
   * if (resetFixture) karate.call(resetFixture)
 
 ### scout-setup.feature
@@ -97,9 +97,9 @@ Scenario:
 Feature: Scout environment and authentication
 Scenario:
   * def defaults = {"app":"https://shop.test"}
-  * def configuredOrigin = karate.properties['scout.baseUrl']
+  * def configuredOrigin = karate.sysprop('scout.baseUrl', '')
   * if (configuredOrigin) defaults.app = configuredOrigin
-  * def authFixture = karate.properties['scout.authFixture']
+  * def authFixture = karate.sysprop('scout.authFixture', '')
   * def auth = authFixture ? karate.call(authFixture) : {}
   * def origins = auth.origins || defaults
   * def headers = auth.headers || {}

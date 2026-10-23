@@ -89,14 +89,14 @@ export function generateScoutSuite(journey: ScoutJourney): ScoutSuite {
     const setup = [
         '@ignore', 'Feature: Scout environment and authentication', 'Scenario:',
         `  * def defaults = ${quote(defaultOrigins)}`,
-        "  * def configuredOrigin = karate.properties['scout.baseUrl']",
+        "  * def configuredOrigin = karate.sysprop('scout.baseUrl', '')",
         "  * if (configuredOrigin) defaults.app = configuredOrigin",
-        "  * def authFixture = karate.properties['scout.authFixture']",
+        "  * def authFixture = karate.sysprop('scout.authFixture', '')",
         ...(journey.verification.auth !== 'none' ? ["  * if (!authFixture) karate.fail('Authentication setup required: provide -Dscout.authFixture=classpath:your-auth.feature; browser sign-in is not copied')"] : []),
         '  * def auth = authFixture ? karate.call(authFixture) : {}',
         '  * def origins = auth.origins || defaults', '  * def headers = auth.headers || {}', '  * def cookies = auth.cookies || {}', ''
     ].join('\n');
-    const reset = ['@ignore', 'Feature: Fresh data for every Scout scenario', 'Scenario:', "  * def resetFixture = karate.properties['scout.resetFixture']"];
+    const reset = ['@ignore', 'Feature: Fresh data for every Scout scenario', 'Scenario:', "  * def resetFixture = karate.sysprop('scout.resetFixture', '')"];
     if (journey.resetUrl) {
         const resetUrl = new URL(journey.resetUrl);
         const origin = originNames.get(resetUrl.origin);
