@@ -714,7 +714,11 @@ export async function activate(context: vscode.ExtensionContext) {
                             if (text) { return text; }
                         }
                         logger.info(`Spec diff: no pipeline operation for ${endpoint.method} ${endpoint.path}; using legacy generator`);
-                        return generator.featureToString(generator.generateFromOpenAPI([endpoint], 'temp'));
+                        const legacy = generator.featureToString(generator.generateFromOpenAPI([endpoint], 'temp'));
+                        const { runGate } = require('./generation/quality/QualityGate') as typeof import('./generation/quality/QualityGate');
+                        const gate = runGate(legacy);
+                        if (!gate.ok) {throw new Error(`Legacy scenario rejected by quality gate: ${gate.findings.filter(f => f.severity === 'error').map(f => f.ruleId).join(', ')}`);}
+                        return legacy;
                     };
 
                     progress.report({ increment: 40 });

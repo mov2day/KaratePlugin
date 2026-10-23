@@ -5,6 +5,23 @@ import { SharedStyleService } from '../services/SharedStyleService';
 import { logger } from '../utils/logger';
 import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore';
 import { QualityWorkflowService } from '../services/workspace/QualityWorkflowService';
+import * as fs from 'fs';
+import { runGate } from '../generation/quality/QualityGate';
+import { generatedSiblingPath } from '../generation/write/OutputWriter';
+
+/** Same error-budget rule as AI refinement: preserve pre-existing user findings, reject only new ones. */
+const hasNewGateErrors = (before: string, after: string): boolean => {
+    const key = (f: { ruleId: string; message: string }) => `${f.ruleId}|${f.message.toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ')}`;
+    const budget = new Map<string, number>();
+    for (const finding of runGate(before).findings.filter(f => f.severity === 'error')) {
+        const k = key(finding); budget.set(k, (budget.get(k) ?? 0) + 1);
+    }
+    for (const finding of runGate(after).findings.filter(f => f.severity === 'error')) {
+        const k = key(finding); const left = budget.get(k) ?? 0;
+        if (left) {budget.set(k, left - 1);} else {return true;}
+    }
+    return false;
+};
 
 /**
  * Webview provider for the interactive coverage dashboard
@@ -253,30 +270,8 @@ export class CoverageDashboardProvider {
                 // APPEND MODE
                 const content = fs.readFileSync(targetFile, 'utf-8');
 
-                // Generate a simple scenario block (since we don't use AI here)
-                // We try to infer if 'url' variable is used in background for slightly better code
-                const hasUrlVar = content.includes('url baseUrl') || content.includes('url ');
-
-                let scenario = `
-  Scenario: ${endpoint.summary || `${endpoint.method} ${endpoint.path}`}
-    Given path '${endpoint.path}'
-    When method ${endpoint.method}
-    Then status 200
-`;
-                // Simple indentation fix
-                if (content.includes('  Scenario:')) {
-                    // scenario is already indented 2 spaces
-                } else if (content.includes('Scenario:')) {
-                    scenario = scenario.replace(/^  /gm, ''); // Remove indentation if file uses 0 indent
-                }
-
-                const newContent = content + '\n' + scenario;
-                fs.writeFileSync(targetFile, newContent);
-
-                const doc = await vscode.workspace.openTextDocument(targetFile);
-                await vscode.window.showTextDocument(doc);
-
-                vscode.window.showInformationMessage(`Appended test to ${path.basename(targetFile)}`);
+                vscode.window.showWarningMessage('Appending a non-AI placeholder is disabled: generate from the OpenAPI pipeline so status assertions remain contract-derived.');
+                return;
 
             } else {
                 // NEW FILE MODE
@@ -373,7 +368,15 @@ export class CoverageDashboardProvider {
 
                         if (newScenarios && newScenarios.length > 0) {
                             const appendContent = '\n' + newScenarios.join('\n\n');
-                            fs.writeFileSync(targetFile, content + appendContent);
+                            const merged = content + appendContent;
+                            if (hasNewGateErrors(content, merged)) {
+                                let sibling = generatedSiblingPath(targetFile);
+                                while (fs.existsSync(sibling)) sibling = generatedSiblingPath(sibling);
+                                fs.writeFileSync(sibling, merged, 'utf8');
+                                vscode.window.showWarningMessage(`AI scenarios failed the quality gate; wrote ${path.basename(sibling)} for review.`);
+                                return;
+                            }
+                            fs.writeFileSync(targetFile, merged);
 
                             const doc = await vscode.workspace.openTextDocument(targetFile);
                             await vscode.window.showTextDocument(doc);

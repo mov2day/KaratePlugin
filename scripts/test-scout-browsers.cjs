@@ -115,7 +115,7 @@ async function authentication(browser) {
         assert.equal(journey.variants[0].outcome, 'passed', journey.variants[0].message);
         if (browser === 'chrome') {
             const unauthenticated = await karate(journey, 'auth-required'); assert.notEqual(unauthenticated.code, 0); assert.match(unauthenticated.output, /Authentication setup required/);
-            const fixture = ['@ignore','Feature: Supported sample authentication','Scenario:', '  * configure followRedirects = false', `  Given url ${JSON.stringify(demo.url)}`, "  And path 'login'", "  And form field username = 'fixture-account'", "  And form field password = karate.properties['scout.testPassword']", '  When method post', '  Then status 302', "  * def cookies = {}", "  * eval cookies['scout-demo'] = responseCookies['scout-demo'].value", ''].join('\n');
+            const fixture = ['@ignore','Feature: Supported sample authentication','Scenario:', '  * configure followRedirects = false', `  Given url ${JSON.stringify(demo.url)}`, "  And path 'login'", "  And form field username = 'fixture-account'", "  And form field password = karate.sysprop('scout.testPassword')", '  When method post', '  Then status 302', "  * def cookies = {}", "  * eval cookies['scout-demo'] = responseCookies['scout-demo'].value", ''].join('\n');
             const authenticated = await karate(journey, 'auth-fixture', {'scout.authFixture':'classpath:auth.feature','scout.testPassword':'fixture-only'}, {'auth.feature':fixture});
             assert.equal(authenticated.code, 0, authenticated.output.slice(-10000));
         }

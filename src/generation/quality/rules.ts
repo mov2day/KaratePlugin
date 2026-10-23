@@ -48,11 +48,11 @@ function activeTags(p: ParsedFeature): Tag[] {
     return [...p.tags, ...active(p).flatMap(s => s.tags)];
 }
 
-const SECRET_KEY = /(?:^|[^\w])['"]?(password|passwd|secret|client[_-]?secret|api[_-]?key|access[_-]?token|token)['"]?\s*[:=]\s*(['"])((?:(?!\2).)+)\2\s*(?:[,}]|$)/gi;
+const SECRET_KEY = /(?:^|[^\w])['"]?(Authorization|password|passwd|secret|client[_-]?secret|api[_-]?key|access[_-]?token|token)['"]?\s*[:=]\s*(['"])((?:(?!\2).)+)\2\s*(?:[,}]|$)/gi;
 const AUTH_HEADER = /^header\s+Authorization\s*=\s*(['"])(Bearer|Basic|Token)\s+([^'"\s#$]{8,})\1\s*$/i;
 const SECRET_HEADER = /^header\s+([\w-]*(?:api[-_]?key|secret|token|password)[\w-]*)\s*=\s*(['"])([^'"\s#$]{6,})\2\s*$/i;
 
-const isSecretValue = (v: string): boolean => v.length > 0 && !v.startsWith('#') && !v.includes('${') && !/^<.*>$/.test(v);
+const isSecretValue = (v: string): boolean => v.length > 0 && !v.startsWith('#') && !/^(?:Bearer|Basic|Token)\s+#/i.test(v) && !v.includes('${') && !/^<.*>$/.test(v);
 
 const gherkin001: Rule = {
     id: 'V2-GHERKIN-001', severity: 'error',

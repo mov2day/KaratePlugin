@@ -9,7 +9,7 @@ import { KarateGenerator } from './karateGenerator';
 import { OpenAPIParser } from './openApiParser';
 import { logger } from '../utils/logger';
 import { runGate } from '../generation/quality/QualityGate';
-import { generatedSiblingPath } from '../generation/write/OutputWriter';
+import { OutputWriter } from '../generation/write/OutputWriter';
 
 /**
  * Legacy sync has no GenerationConfig/ExtensionContext, so it cannot safely invoke the full pipeline.
@@ -18,10 +18,10 @@ import { generatedSiblingPath } from '../generation/write/OutputWriter';
 export function writeLegacySyncSibling(filePath: string, content: string): string | undefined {
     const gate = runGate(content);
     if (!gate.ok) {return undefined;}
-    let sibling = generatedSiblingPath(filePath);
-    while (fs.existsSync(sibling)) {sibling = generatedSiblingPath(sibling);}
-    fs.writeFileSync(sibling, content, 'utf8');
-    return sibling;
+    const history = new Map<string, string>();
+    const fsApi = { exists: (p: string) => fs.existsSync(p), read: (p: string) => fs.readFileSync(p, 'utf8'), list: (p: string) => fs.readdirSync(p), write: (p: string, v: string) => fs.writeFileSync(p, v, 'utf8') };
+    const written = OutputWriter.write([{ path: filePath, content, owner: 'generated', source: 'legacy-sync', forceSideBySide: true }], fsApi, { get: p => history.get(p), set: (p, h) => history.set(p, h) }, { generatorVersion: 'legacy', workspaceRoot: path.dirname(filePath) });
+    return written.sideBySide[0]?.generatedPath;
 }
 
 /**

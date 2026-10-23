@@ -12,6 +12,8 @@ import { buildPrompt } from '../generation/ai/PromptBuilder';
 import { cleanOutput, refine } from '../generation/ai/AiRefiner';
 import type { RefineResult } from '../generation/ai/AiRefiner';
 import { DEFAULT_GENERATOR_CONFIG } from '../generation/config/GeneratorConfig';
+import type { GeneratorConfig } from '../generation/config/GeneratorConfig';
+import { GeneratorConfigLoader } from '../generation/vscode/GeneratorConfigLoader';
 import type { SourceKind } from '../generation/model/TestModel';
 
 type Evidence = { label: string; text: string };
@@ -69,10 +71,25 @@ export class CopilotService {
         const contextType = fullContext?.type || 'general';
         const skillContext = await AgentSkillsService.buildSkillContextForPrompt(contextType);
         const request = `${safeContext}\n\nPreserve intended behavior and unrelated scenarios. Use functional negative testing only.`;
+        if (!/^\s*(?:@[^\n]+\s*\n\s*)*Feature\s*:/m.test(featureContent)) {
+            return this.completePlainText(request, contextType, this.buildInlineEvidence(fullContext));
+        }
         return this.completeFeature({
             feature: featureContent, request, skillContext, evidence: this.buildInlineEvidence(fullContext),
             task: 'enhance-feature', mode: this.modeForContext(contextType), logContext: context
         });
+    }
+
+    /** Complete a non-feature response (JSON insights, lists, prose) without Feature-only refinement. */
+    static async completePlainText(prompt: string, contextType: CopilotFullContext['type'] | 'general' = 'general', evidence: Evidence[] = []): Promise<string> {
+        try {
+            const skillContext = await AgentSkillsService.buildSkillContextForPrompt(contextType);
+            const built = buildPrompt({ task: this.taskForContext(contextType), mode: this.modeForContext(contextType), skills: skillContext, evidence, request: InputSanitizer.sanitizeUserInstruction(prompt), feature: '' });
+            return cleanOutput(await AIProviderRegistry.getInstance().complete(built.user, { maxTokens: 4096, temperature: 0.2, systemPrompt: built.system, task: this.taskForContext(contextType) }));
+        } catch (error) {
+            logger.error('Plain-text AI completion failed', error as Error);
+            return '';
+        }
     }
 
     static async enhanceKarateTestComprehensive(
@@ -159,6 +176,9 @@ export class CopilotService {
                     return undefined;
                 }
             }).filter((item): item is Evidence => item !== undefined);
+            if (!/^\s*(?:@[^\n]+\s*\n\s*)*Feature\s*:/m.test(featureContent)) {
+                return this.completePlainText(context, contextType, evidence);
+            }
             return await this.completeFeature({
                 feature: featureContent,
                 request: `${InputSanitizer.sanitizeUserInstruction(context)}\n\nUse the source evidence as the contract boundary.`,
@@ -201,8 +221,7 @@ export class CopilotService {
                 evidence: o.evidence,
                 request: o.request,
                 skills: { select: () => ({ text: o.skillContext }) },
-                knownFiles: new Set<string>(),
-                config: DEFAULT_GENERATOR_CONFIG,
+                ...(await this.featureRuntimeContext()),
                 ai: async p => {
                     CopilotLogger.logRequest('Karate AI Enhancement', o.logContext, p.user);
                     const out = await AIProviderRegistry.getInstance().complete(p.user, {
@@ -234,6 +253,24 @@ export class CopilotService {
             case 'confluence': return 'confluence';
             default: return 'combined';
         }
+    }
+
+    /** Use workspace generation policy and real classpath files when refining a feature. */
+    private static async featureRuntimeContext(): Promise<{ config: GeneratorConfig; knownFiles: Set<string> }> {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!root) {return { config: DEFAULT_GENERATOR_CONFIG, knownFiles: new Set<string>() };}
+        const config = (await GeneratorConfigLoader.load(root)).config;
+        const knownFiles = new Set<string>();
+        const scan = (dir: string, depth: number): void => {
+            if (depth > 5 || !fs.existsSync(dir)) {return;}
+            for (const name of fs.readdirSync(dir)) {
+                const full = path.join(dir, name);
+                if (fs.statSync(full).isDirectory()) {scan(full, depth + 1);}
+                else {knownFiles.add(path.relative(path.join(root, 'src', 'test', 'java'), full).replace(/\\/g, '/'));}
+            }
+        };
+        for (const part of ['common', 'data', 'schemas']) {scan(path.join(root, 'src', 'test', 'java', part), 0);}
+        return { config, knownFiles };
     }
 
     private static taskForContext(contextType: 'openapi' | 'postman' | 'confluence' | 'combined' | 'coverage' | 'general'): AITask {

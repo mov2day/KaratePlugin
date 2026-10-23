@@ -11,6 +11,7 @@ import { ProjectExecutionResolver } from './ProjectExecutionResolver';
 import { readExecutionSettings } from './ExecutionSettings';
 import { ProcessResult } from './ProcessRunner';
 import { ConfigDiscovery } from './ConfigDiscovery';
+import { karateV2Preflight } from './KarateV2Preflight';
 
 /**
  * Main orchestrator for Karate test execution
@@ -50,6 +51,17 @@ export class TestExecutor {
                 logger.info(`No Karate Java runner found in ${project.projectRoot}; using standalone CLI.`);
             }
             project = runnableProject;
+            if (project.strategy === 'cli') {
+                const jar = KarateCliExecutor.resolveJar(this.extensionPath, settings, project.projectRoot);
+                const texts: string[] = [];
+                const collect = (candidate: string): void => {
+                    try { if (fs.statSync(candidate).isFile()) {texts.push(fs.readFileSync(candidate, 'utf8'));} } catch { /* optional input */ }
+                };
+                if (typeof options.target === 'string') {collect(options.target);}
+                for (const name of ['karate-config.js', 'karate-config-dev.js', 'karate-config-staging.js']) {collect(path.join(project.projectRoot, name));}
+                const blocked = karateV2Preflight(jar.version, jar.bundled, texts);
+                if (blocked) {throw new Error(blocked);}
+            }
             const resolvedOptions: TestExecutionOptions = {
                 ...options,
                 buildTool: project.strategy,

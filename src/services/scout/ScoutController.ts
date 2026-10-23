@@ -17,6 +17,9 @@ import { writeSummaryDetails } from '../../generation/vscode/reportSummary';
 import { allowedUrl, isAuthUrl, normalizeConnection, safeRequest, safeUrl, sanitize } from './privacy';
 import { HarImporter } from '../session/HarImporter';
 import { TestExecutor } from '../execution/TestExecutor';
+import { KarateCliExecutor } from '../execution/KarateCliExecutor';
+import { readExecutionSettings } from '../execution/ExecutionSettings';
+import { karateV2Preflight } from '../execution/KarateV2Preflight';
 import { AIProviderRegistry } from '../ai/AIProviderRegistry';
 import { startScoutDemo, ScoutDemo } from './demo';
 
@@ -162,6 +165,11 @@ export class ScoutController implements vscode.Disposable {
         if (!featurePath || !fs.existsSync(featurePath)) throw new Error('Save a Karate suite first.');
         if (this.demotedAtSave?.path === featurePath && this.demotedAtSave.demoted.length) throw new Error(demotedMessage(this.demotedAtSave.demoted));
         const suite = generateScoutSuite(journey);
+        const executionRoot = path.dirname(featurePath);
+        const settings = readExecutionSettings(executionRoot);
+        const jar = KarateCliExecutor.resolveJar(this.context.extensionPath, settings, executionRoot);
+        const blocked = karateV2Preflight(jar.version, jar.bundled, Object.values(suite.files));
+        if (blocked) {throw new Error(blocked);}
         if (suite.draftReasons.length || suite.runnableScenarios !== 1 + journey.variants.filter(item => item.kind !== 'baseline').length) throw new Error('Confirm every exported scenario and resolve draft requirements before verifying the complete suite.');
         const config = vscode.workspace.getConfiguration('karateDsl.scout');
         const authFixture = config.get<string>('authFixture', '').trim();
@@ -173,7 +181,7 @@ export class ScoutController implements vscode.Disposable {
             const systemProperties: Record<string, string> = {};
             if (authFixture) systemProperties['scout.authFixture'] = authFixture;
             const resetFixture = config.get<string>('resetFixture', ''); if (resetFixture) systemProperties['scout.resetFixture'] = resetFixture;
-            const result = await new TestExecutor(this.context.extensionPath).execute({ type: 'feature', target: featurePath, workingDirectory: path.dirname(featurePath), buildTool: 'cli', parallel: 1 }, token.token, systemProperties);
+            const result = await new TestExecutor(this.context.extensionPath).execute({ type: 'feature', target: featurePath, workingDirectory: executionRoot, buildTool: 'cli', parallel: 1 }, token.token, systemProperties);
             const passed = result.status === 'success' && result.summary.totalScenarios === suite.runnableScenarios && result.summary.failed === 0 && result.summary.skipped === 0;
             journey.verification.karate = { at: Date.now(), passed, featurePath };
             this.session.changed(passed ? 'Verified in Karate: the generated suite passed independently.' : `Karate verification did not pass: ${result.error || `${result.summary.failed} failed, ${result.summary.skipped} skipped`}. Browser results are unchanged.`);

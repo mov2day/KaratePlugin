@@ -30,7 +30,7 @@ export class KarateCliExecutor {
         return path.join(extensionPath, 'lib', `karate-${version}.jar`);
     }
 
-    private static resolveJar(extensionPath: string, settings?: ExecutionRuntimeSettings, projectRoot?: string): KarateJarResolution {
+    static resolveJar(extensionPath: string, settings?: ExecutionRuntimeSettings, projectRoot?: string): KarateJarResolution {
         const scope = projectRoot || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || extensionPath;
         const resolvedSettings = settings || readExecutionSettings(scope);
         const configuredPath = (resolvedSettings.jarPath || '').trim();

@@ -9,6 +9,15 @@ const cfg = () => JSON.parse(JSON.stringify(out('generation/config/GeneratorConf
 
 module.exports = [
     {
+        name: 'scenario-snippets: excludes no-auth security probes from an authenticated merge',
+        run() {
+            const m = model();
+            const secured = m.operations.find(op => op.security !== 'none');
+            const text = out('generation/plan/ScenarioSnippets').renderScenariosForOperations(m, [secured.sourceRef], cfg());
+            assert.ok(!/without authentication|no auth/i.test(text), text);
+        }
+    },
+    {
         name: 'scenario-snippets: renders scenarios for one operation without Feature or Background header',
         run() {
             const m = model();

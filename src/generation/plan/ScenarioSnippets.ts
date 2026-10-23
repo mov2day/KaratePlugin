@@ -18,6 +18,8 @@ export function renderScenariosForOperations(model: GenerationModel, sourceRefs:
     // Snippets merge into existing files, so they must not reference data/schema files that may not exist: inline both.
     const snippetConfig: GeneratorConfig = { ...config, scenarios: { ...config.scenarios, crud: false }, data: { ...config.data, externalize: false } };
     const plan = planOpenApi({ ...model, operations }, snippetConfig, { inlineSchemas: true });
-    const scenarios = plan.features.flatMap(f => f.feature.scenarios);
+    // The planner also produces unauthenticated 401 probes in a separate no-auth feature.
+    // A snippet merges into the authenticated target feature, so only keep its main scenarios.
+    const scenarios = plan.features.filter(f => !/no-auth/i.test(f.relativePath)).flatMap(f => f.feature.scenarios);
     return scenarios.map(s => renderScenario(s, config.style)).join('\n\n');
 }

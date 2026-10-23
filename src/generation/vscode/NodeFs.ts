@@ -34,6 +34,22 @@ export function workspaceNodeFs(workspaceRoot: string): WritableFs {
     };
     /** Resolve the deepest existing target ancestor before creating anything, then recheck each created directory. */
     const ensureSafeWritePath = (target: string): void => {
+        // existsSync follows links and returns false for a dangling link. lstat every existing
+        // path component so a dangling link cannot turn into an escape during mkdir/write.
+        const relativeParts = path.relative(root, target).split(path.sep).filter(Boolean);
+        let inspected = root;
+        for (const part of relativeParts) {
+            inspected = path.join(inspected, part);
+            try {
+                const stat = fs.lstatSync(inspected);
+                if (stat.isSymbolicLink()) {
+                    const linked = path.resolve(path.dirname(inspected), fs.readlinkSync(inspected));
+                    if (!insideRealRoot(linked)) {rejectEscapedWrite(target, linked);}
+                }
+            } catch (e) {
+                if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {throw e;}
+            }
+        }
         if (fs.existsSync(target)) {
             const realTarget = fs.realpathSync(target);
             if (!insideRealRoot(realTarget)) {rejectEscapedWrite(target, realTarget);}

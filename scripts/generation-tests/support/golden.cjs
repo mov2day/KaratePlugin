@@ -8,7 +8,8 @@ const fixtureDir = root;
 
 function golden(name, text) {
     const file = path.join(goldenDir, name);
-    const actual = String(text).replace(/\r\n/g, '\n');
+    const normalise = value => String(value).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const actual = normalise(text);
     if (process.env.UPDATE_GOLDEN === '1') {
         fs.mkdirSync(path.dirname(file), { recursive: true });
         fs.writeFileSync(file, actual);
@@ -17,7 +18,7 @@ function golden(name, text) {
     if (!fs.existsSync(file)) {
         assert.fail(`Missing golden ${name}; run with UPDATE_GOLDEN=1 to create it`);
     }
-    assert.equal(actual, fs.readFileSync(file, 'utf8'), `Golden mismatch: ${name}`);
+    assert.equal(actual, normalise(fs.readFileSync(file, 'utf8')), `Golden mismatch: ${name}`);
 }
 
 function suite(name, tests) {

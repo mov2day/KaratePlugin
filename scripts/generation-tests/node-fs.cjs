@@ -27,4 +27,14 @@ module.exports = [{
             fs.rmSync(outside, { recursive: true, force: true });
         }
     }
+}, {
+    name: 'node fs: a dangling symlink target outside the workspace is rejected before mkdir',
+    run() {
+        const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'karate-node-fs-workspace-'));
+        try {
+            const linked = path.join(workspace, 'dangling');
+            fs.symlinkSync(path.join(os.tmpdir(), 'outside-missing-target'), linked, 'dir');
+            assert.throws(() => mod().workspaceNodeFs(workspace).write(path.join(linked, 'x.feature'), 'Feature: x\n'), /Refusing filesystem write outside real workspace root/);
+        } finally { fs.rmSync(workspace, { recursive: true, force: true }); }
+    }
 }];

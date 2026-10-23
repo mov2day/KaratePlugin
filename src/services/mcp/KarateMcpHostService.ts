@@ -338,7 +338,7 @@ export class KarateMcpHostService implements vscode.Disposable {
         return [
             {
                 name: 'generate_tests',
-                description: 'Generate Karate feature content from an OpenAPI specification without writing files.',
+                description: 'Generate Karate tests from an OpenAPI specification and write protected scaffold, data, and feature files. Returned file names are absolute paths.',
                 inputSchema: {
                     type: 'object',
                     properties: {
@@ -349,7 +349,7 @@ export class KarateMcpHostService implements vscode.Disposable {
                                 scenario_types: { type: 'array', items: { type: 'string' } },
                                 http_methods: { type: 'array', items: { type: 'string' } },
                                 structuring_strategy: { type: 'string', enum: ['flat', 'domain', 'method'] },
-                                include_background: { type: 'boolean' }
+                                include_background: { type: 'boolean', description: 'Ignored: the shared Karate v2 pipeline always emits a safe Background.' }
                             },
                             additionalProperties: false
                         }

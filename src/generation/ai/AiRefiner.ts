@@ -42,7 +42,8 @@ const AI_RULES = {
     dropped: 'V2-AI-002',
     invented: 'V2-AI-003',
     shape: 'V2-AI-004',
-    docstring: 'V2-AI-005'
+    docstring: 'V2-AI-005',
+    undrafted: 'V2-AI-006'
 } as const;
 
 const err = (ruleId: string, line: number, message: string): Finding => ({ ruleId, severity: 'error', line, message });
@@ -137,6 +138,21 @@ function missingScenarios(input: ParsedFeature, output: ParsedFeature): Finding[
     return missing;
 }
 
+/** An AI must not turn a deliberately ignored feature or scenario back into a runnable test. */
+function ignoredFindings(input: ParsedFeature, output: ParsedFeature): Finding[] {
+    const out: Finding[] = [];
+    if (input.tags.some(t => t.name === '@ignore') && !output.tags.some(t => t.name === '@ignore')) {
+        out.push(err(AI_RULES.undrafted, input.featureLine ?? 1, 'Feature was @ignore in the input but is runnable in the output'));
+    }
+    for (const source of input.scenarios.filter(s => s.ignored)) {
+        const sourceRef = sourceOf(source);
+        const target = output.scenarios.find(s => s.name === source.name || (sourceRef !== undefined && sourceOf(s) === sourceRef));
+        if (!target || !target.ignored) {out.push(err(AI_RULES.undrafted, source.startLine, `Scenario "${source.name}" was @ignore in the input but is runnable or missing in the output`));}
+    }
+    return out;
+}
+
+
 const PATH_STEP = /^path\s+(.+)$/;
 const WORDLIKE = /^[A-Za-z][A-Za-z_-]{2,}$/;
 /** Modes whose evidence is an API contract; prose modes (jira, confluence) never get the path check. */
@@ -217,6 +233,7 @@ function check(raw: string, i: RefineInput, inputParsed: ParsedFeature, known: s
     const gate = newGateErrors(text, i, baseline);
     const problems = [
         ...missingScenarios(inputParsed, parsed),
+        ...ignoredFindings(inputParsed, parsed),
         ...inventedFindings(i.mode, parsed, text, known, i.knownFiles, i.evidence.length > 0),
         ...gate.errors
     ];

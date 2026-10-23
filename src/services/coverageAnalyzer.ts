@@ -264,12 +264,10 @@ Focus on:
             const workspace = await ContextBuilder.buildWorkspaceContext();
             const existingFeatures = workspace.featureFiles.slice(0, 2);
 
-            const response = await CopilotService.enhanceTestWithFileContext(
-                '',
-                prompt,
-                'coverage',
-                existingFeatures
-            );
+            const evidence = existingFeatures.flatMap(uri => {
+                try { return [{ label: path.basename(uri.fsPath), text: fs.readFileSync(uri.fsPath, 'utf8') }]; } catch { return []; }
+            });
+            const response = await CopilotService.completePlainText(prompt, 'coverage', evidence);
 
             const scenarios = response
                 .split('\n')

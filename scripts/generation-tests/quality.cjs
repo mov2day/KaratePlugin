@@ -17,6 +17,7 @@ const cases = [
     ['V2-CFG-001', join('Feature: x', 'Background:', "  * url 'http://localhost:8080'", 'Scenario: s', '  * def b = 2'), ['V2-CFG-001@3']],
     ['V2-CFG-002', join('Feature: x', 'Scenario: s', "  Given path 'a'", '  When method get', '  Then status 200', '  And match response == {}'), ['V2-CFG-002@4']],
     ['V2-SEC-001', join(...HEAD, 'Scenario: s', "  * header Authorization = 'Bearer abcdef0123456789abcdef'", '  When method get', '  Then status 200', '  And match response == {}'), ['V2-SEC-001@7']],
+    ['V2-SEC-001 map', join(...HEAD, 'Scenario: s', "  * configure headers = { Authorization: 'Bearer abcdef0123456789abcdef' }", '  When method get', '  Then status 200', '  And match response == {}'), ['V2-SEC-001@7']],
     ['V2-ASSERT-001', join(...HEAD, 'Scenario: s', '  When method get'), ['V2-ASSERT-001@7']],
     ['V2-ASSERT-002', join(...HEAD, 'Scenario: s', '  When method get', '  Then status 200'), ['V2-ASSERT-002@7']],
     ['V2-DRAFT-001', join(...HEAD, 'Scenario: s', '  * def a = 1', '  # TODO fill in', '  When method get', '  Then status 404'), ['V2-DRAFT-001@8']],

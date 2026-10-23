@@ -162,6 +162,30 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
         throw new Error(`runPipeline: mode "${i.mode}" requires "scenarios"`);
     }
 
+    // auth.feature is explicitly user-owned and write-once. If it already exists, its
+    // declared coverage—not the current model's scaffold plan—is the executable contract.
+    const existingAuth = full(joinPath(cpRoot, 'common/auth.feature'));
+    if ((i.mode === 'openapi' || i.mode === 'combined') && fsApi.exists(existingAuth)) {
+        const header = /^#\s*Configures:\s*([^;\r\n]*)/mi.exec(fsApi.read(existingAuth));
+        const configured = new Set((header?.[1] ?? '').split(',').map(x => x.trim()).filter(x => x && x !== 'none'));
+        const unsupported = (op: typeof model.operations[number]): string[] => {
+            if (op.security === 'none') {return [];}
+            const groups = op.securityGroups ?? (Array.isArray(op.security) ? [op.security] : []);
+            if (!groups.length) {return [];}
+            const satisfiable = groups.some(group => group.every(name => configured.has(name)));
+            return satisfiable ? [] : [...new Set(groups.flat().filter(name => !configured.has(name)))];
+        };
+        const missingBySource = new Map(model.operations.map(op => [op.sourceRef, unsupported(op)]));
+        const missing = [...new Set([...missingBySource.values()].flat())];
+        if (missing.length) {
+            warnings.push(`Existing common/auth.feature does not configure: ${missing.join(', ')}; affected operations are @ignore drafts`);
+            planned = planned.map(file => ({ ...file, feature: { ...file.feature, scenarios: file.feature.scenarios.map(s => {
+                const absent = missingBySource.get(s.source ?? '') ?? [];
+                return absent.length && s.category !== 'security' ? { ...s, tags: [...(s.tags ?? []), '@ignore'], draftReason: `Requires auth scheme(s) not configured by existing common/auth.feature: ${absent.join(', ')}` } : s;
+            }) } }));
+        }
+    }
+
     const uniqueSupport: { path: string; content: string; owner: 'user' | 'generated' }[] = [];
     const seen = new Set<string>();
     const addSupport = (f: { path: string; content: string; owner: 'user' | 'generated' }, label: string): void => {

@@ -32,6 +32,16 @@ const sections = user => {
 
 module.exports = [
     {
+        name: 'ai-refine: an ignored multipart draft cannot be made runnable',
+        async run() {
+            const draft = FEATURE.replace('Scenario: list orders', '@ignore\nScenario: multipart draft');
+            const runnable = draft.replace('@ignore\nScenario: multipart draft', 'Scenario: multipart draft');
+            const r = await refiner().refine(input(async () => runnable, { feature: draft }));
+            assert.equal(r.status, 'rejected');
+            assert.ok(r.findings.some(f => f.ruleId === 'V2-AI-006'), JSON.stringify(r.findings));
+        }
+    },
+    {
         name: 'ai-refine: a step after an Examples table is rejected as invalid Karate v2 structure',
         async run() {
             const invalid = FEATURE.replace('  And match response == []', '  And match response == []\n  Examples:\n    | id |\n    | 1 |\n  * def afterExamples = true');
