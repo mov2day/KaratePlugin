@@ -48,11 +48,6 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
 
     public setScoutHandler(handler: (command: ScoutCommand) => Promise<void>): void { this._scoutHandler = handler; }
 
-    /**
-     * Process feature content through ReusabilityEngine.
-     * Extracts common patterns (auth, setup, headers, etc.) into shared feature files.
-     */
-
     private _specHashManager: SpecHashManager;
 
     constructor(private readonly _extensionUri: vscode.Uri, private readonly _context: vscode.ExtensionContext) {
@@ -1468,7 +1463,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 <div class="help-section">
                     <p><strong>Precision Controls:</strong> In OpenAPI & Combined tabs, use checkboxes to filter by scenario type (positive, negative, edge, security) and HTTP method (GET, POST, PUT, DELETE, PATCH). Add free-text instructions for Copilot.</p>
                     <p><strong>Structuring Strategies:</strong> Set <code>karateDsl.generation.structuringStrategy</code> to <code>domain</code> (default — groups by API domain), <code>flat</code> (single file), or <code>method</code> (groups by HTTP verb).</p>
-                    <p><strong>Smart Reusability:</strong> Generated tests are auto-analyzed for repeated patterns (auth, setup, headers). Common steps are extracted to <code>common/</code> feature files with <code>call</code>/<code>callonce</code>.</p>
+                    <p><strong>Smart Reusability:</strong> Generated tests are planned with shared helpers from the start: authentication is a single <code>callonce read('classpath:common/auth.feature')</code> line, and a missing helper is reported by the quality gate rather than stubbed.</p>
                     <p><strong>Agent Skills:</strong> Copilot prompts are hardened with skill files for Karate DSL expertise, preventing hallucinations and enforcing best practices.</p>
                 </div>
             </div>
