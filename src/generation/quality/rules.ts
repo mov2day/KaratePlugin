@@ -263,7 +263,23 @@ const tag001: Rule = {
     }
 };
 
+const REUSE_HELPER = /^callonce\s+read\(\s*(['"])classpath:\/?common\/([^'"]*)\1/;
+
+const reuse001: Rule = {
+    id: 'V2-REUSE-001', severity: 'warning',
+    check: (p) => {
+        const f = finder(reuse001);
+        const out: Finding[] = [];
+        for (const s of scanSteps(p)) {
+            const m = REUSE_HELPER.exec(s.text);
+            if (!m || !/auth|header|setup|config/i.test(m[2])) {continue;}
+            out.push(f(s.line, 'callonce does not re-apply configure/header settings per scenario; use call', "Use * call read('classpath:common/...') (callonce only for data via def x = callonce read(...))"));
+        }
+        return out;
+    }
+};
+
 export const RULES: Rule[] = [
     gherkin001, lock001, cfg001, cfg002, sec001, assert001, assert002,
-    draft001, dup001, api001, api002, num001, ref001, tag001
+    draft001, dup001, api001, api002, num001, ref001, tag001, reuse001
 ];

@@ -40,6 +40,18 @@ tests.push(
         }
     },
     {
+        name: 'quality: V2-REUSE-001 flags unassigned callonce of config helpers only',
+        run() {
+            const mk = step => join(...HEAD, 'Scenario: s', `  ${step}`);
+            assert.deepEqual(found(mk("* callonce read('classpath:common/auth.feature')")), ['V2-REUSE-001@7']);
+            const bg = join('Feature: x', '', 'Background:', '  * url baseUrl', "  * callonce read('classpath:common/headers.feature')", '', 'Scenario: s', '  * def a = 1');
+            assert.deepEqual(found(bg), ['V2-REUSE-001@5']);
+            assert.deepEqual(found(mk("* call read('classpath:common/auth.feature')")), []);
+            assert.deepEqual(found(mk("* def x = callonce read('classpath:data/seed.feature')")), []);
+            assert.deepEqual(found(mk("* callonce read('classpath:common/seed.feature')")), []);
+        }
+    },
+    {
         name: 'quality: V2-TAG-001 flags non-taxonomy category tag',
         run() {
             const config = JSON.parse(JSON.stringify(cfg().DEFAULT_GENERATOR_CONFIG));
@@ -139,8 +151,8 @@ tests.push(
             assert.equal(p.scenarios[0].steps[0].line, 7);
             assert.equal(p.background.steps[0].text, 'url x');
             const ids = rules().RULES.map(r => r.id).sort();
-            assert.equal(ids.length, 14);
-            assert.ok(ids.includes('V2-REF-001') && ids.includes('V2-TAG-001'));
+            assert.equal(ids.length, 15);
+            assert.ok(ids.includes('V2-REF-001') && ids.includes('V2-TAG-001') && ids.includes('V2-REUSE-001'));
         }
     },
     {

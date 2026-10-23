@@ -299,7 +299,7 @@
         ]
       },
       "priority": 35,
-      "budgetChars": 2500,
+      "budgetChars": 3000,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-API-001",
@@ -314,6 +314,7 @@
         "V2-LOCK-001",
         "V2-NUM-001",
         "V2-REF-001",
+        "V2-REUSE-001",
         "V2-SEC-001",
         "V2-TAG-001"
       ]

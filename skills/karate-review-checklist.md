@@ -19,6 +19,7 @@ Before returning a feature, check it against every rule below. A failed rule is 
 - V2-NUM-001 (error): integers above 9007199254740991 are quoted strings.
 - V2-REF-001 (error): `read('classpath:...')` resolves to an existing or generated file.
 - V2-TAG-001 (warning): category tags match the configured taxonomy (`@positive @negative @edge @boundary @security @exploratory` by default).
+- V2-REUSE-001 (warning): config helpers (auth, headers, setup) are loaded with `call`, never an unassigned `callonce`.
 
 ## Also check
 - Evidence: every path, field, status and value comes from the supplied source; nothing invented.
