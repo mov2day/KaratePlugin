@@ -487,14 +487,15 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                         };
                         return { lines: [`And request ${JSON.stringify(walk(parsed, ''), null, 2)}`] };
                     }
-                    // Not JSON (text, XML, form-like): keep as a docstring, but never write a literal credential.
-                    let hit = false;
-                    const scrubbed = raw.replace(/(password|passwd|secret|token|api[_-]?key)(\s*["':=]\s*["']?)([^"'\s{][^"'\s,}]*)/gi, (_x, key: string, sep: string, value: string) => {
-                        hit = true;
-                        return `${key}${sep}${guardSecret(key, value)}`;
-                    });
-                    if (hit) {reasons.push('the request body is not JSON and contained a literal credential; it was replaced with a sysenv variable, review the body');}
-                    return { lines: [], doc: scrubbed.replace(VAR_RE, (_x, n: string) => `#(${ref(n)})`) };
+                    // Not cleanly parseable JSON (text, XML, form, malformed JSON). Fail safe: never rewrite the text; if it
+                    // mentions any credential-like key the whole body is omitted and the scenario is drafted.
+                    const keys = credentialKeys(raw);
+                    if (keys.length > 0) {
+                        reasons.push(`Request body contains credential-like fields (${keys.join(', ')}); provide the body via data/${collSlug}-variables.json or karate.sysenv`);
+                        comments.push('Body omitted: contains credential-like fields');
+                        return { lines: [] };
+                    }
+                    return { lines: [], doc: raw.replace(VAR_RE, (_x, n: string) => `#(${ref(n)})`) };
                 };
                 if (body && (body.mode === 'graphql' || body.mode === 'file')) {
                     reasons.push(`${body.mode} request bodies are not converted`);
@@ -629,6 +630,26 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
         source: 'postman', name: collectionName, ...(baseUrl ? { baseUrl } : {}), schemes, operations, unsupported
     };
     return { model, features, files, unsupported, warnings };
+}
+
+const CRED_KEY = '(password|passwd|pwd|secret|token|api[_-]?key|authorization|bearer|credential|private[_-]?key|client[_-]?secret|access[_-]?key)';
+/**
+ * Deliberately broad detector for credential-like keys in free-form text: JSON-ish/YAML/form pairs (`key:` `key=`),
+ * XML/HTML tags and attributes. A value that is a pure `{{var}}` reference is not a literal and is ignored.
+ * Returns the matched key names (never values).
+ */
+function credentialKeys(text: string): string[] {
+    const found = new Set<string>();
+    const pure = /^\s*["']?\{\{[^}]*\}\}["']?\s*(?:[,}&;\n<]|$)/;
+    const pair = new RegExp(`[\\w.-]*${CRED_KEY}[\\w.-]*["']?\\s*[:=]`, 'gi');
+    for (const m of text.matchAll(pair)) {
+        if (!pure.test(text.slice(m.index! + m[0].length))) {found.add(m[1].toLowerCase());}
+    }
+    const tag = new RegExp(`<[\\w:.-]*${CRED_KEY}[\\w:.-]*[^>]*>`, 'gi');
+    for (const m of text.matchAll(tag)) {
+        if (!pure.test(text.slice(m.index! + m[0].length)) || /=/.test(m[0])) {found.add(m[1].toLowerCase());}
+    }
+    return [...found].sort();
 }
 
 /** Replace literal values of secret-looking keys in form bodies with `{{placeholder}}` variables. */

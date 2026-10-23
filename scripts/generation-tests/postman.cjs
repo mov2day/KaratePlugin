@@ -376,7 +376,7 @@ module.exports = [
             const s = b.features[0].feature.scenarios[0];
             assert.ok(s.draftReason && /credential/.test(s.draftReason));
             assert.ok(!/request '.*#\(/.test(text));
-            assert.match(text, /id=#\(vars\.userId\)/);
+            assert.match(text, /# Body omitted: contains credential-like fields/);
         }
     },
     {
@@ -473,6 +473,52 @@ module.exports = [
             const { convertPreRequestScript } = out('generation/adapters/postmanScript');
             assert.match(convertPreRequestScript('var id = uuid();'), /randomUUID|\* def id/);
             assert.ok(!/randomId/.test(convertPreRequestScript("var x = 'Duuidx';") ?? ''));
+        }
+    },
+    {
+        name: 'postman fail-safe: raw bodies with credential-like fields are omitted and drafted, never rewritten',
+        run() {
+            const { renderFeature } = out('generation/render/FeatureRenderer');
+            const LITS = ['hunter2', 'k-lit-5', 'tt-lit-1', 's3cr3t-lit'];
+            const cases = [
+                ['<x><password>hunter2</password></x>', 'password'],
+                ['<apiKey>k-lit-5</apiKey>', 'apikey'],
+                ['{"password":"hunter2", // c\n "a":1}', 'password'],
+                ['{"user":"x","token":"tt-lit-1"', 'token'],
+                ['{"password":"hunter2","id":{{userId}}', 'password'],
+                ['password=hunter2&a=1', 'password'],
+                ['client_secret: "s3cr3t-lit"\nid=1', 'secret'],
+                ['<a apiKey="k-lit-5"/>', 'apikey']
+            ];
+            for (const [raw, key] of cases) {
+                const b = build(richCollection([req('Body', 'POST', '/b', { body: { mode: 'raw', raw } }, testEvent(['pm.response.to.have.status(200);']))]), null);
+                const everything = [allText(b), b.warnings.join('\n'), JSON.stringify(b.unsupported), JSON.stringify(b.model)].join('\n');
+                for (const lit of LITS) assert.ok(!everything.includes(lit), `${lit} leaked for ${JSON.stringify(raw)}`);
+                const s = b.features[0].feature.scenarios[0];
+                assert.ok(s.draftReason && s.draftReason.includes(key), `not drafted with key for ${JSON.stringify(raw)}: ${s.draftReason}`);
+                assert.ok(!s.steps.some(x => x.text.startsWith('request')), 'body step must be omitted');
+                assert.ok((s.comments ?? []).includes('Body omitted: contains credential-like fields'));
+                const text = render(b)[0].text;
+                assert.match(text, /# Body omitted: contains credential-like fields/);
+                for (const g of gateAll(b)) assert.deepEqual(g.gate.findings.filter(f => f.severity === 'error'), [], g.path);
+                void renderFeature;
+            }
+        }
+    },
+    {
+        name: 'postman fail-safe: plain text and XML bodies without credential keys stay active and intact',
+        run() {
+            const mk = raw => build(richCollection([req('Text', 'POST', '/t', { body: { mode: 'raw', raw } }, testEvent(['pm.response.to.have.status(200);']))]), null);
+            const xml = mk('<order><id>{{userId}}</id><qty>2</qty></order>');
+            const s = xml.features[0].feature.scenarios[0];
+            assert.equal(s.draftReason, undefined);
+            const step = s.steps.find(x => x.text === 'request');
+            assert.equal(step.docString, '<order><id>#(vars.userId)</id><qty>2</qty></order>');
+            const broken = mk('{"a":1,"id":{{userId}}');
+            assert.equal(broken.features[0].feature.scenarios[0].draftReason, undefined);
+            assert.equal(broken.features[0].feature.scenarios[0].steps.find(x => x.text === 'request').docString, '{"a":1,"id":#(vars.userId)');
+            const refOnly = mk('{"password":"{{userId}}","a":1');
+            assert.equal(refOnly.features[0].feature.scenarios[0].draftReason, undefined);
         }
     }
 ];
