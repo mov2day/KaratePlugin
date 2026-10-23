@@ -7,6 +7,7 @@ import type { GenerationModel, OperationModel, SecurityScheme } from '../model/T
 import { planAuth } from '../plan/AuthSchemes';
 import type { PlannedFeature } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
+import { camelName, credentialKeys, SECRET_HEADER, SECRET_NAME, upperSnake } from './secrets';
 import { analyzePreRequestScript, analyzeTestScript, convertBody } from './postmanScript';
 import type { ScriptAnalysis } from './postmanScript';
 
@@ -26,24 +27,15 @@ export interface PostmanBuild {
     warnings: string[];
 }
 
-const SECRET_NAME = /token|secret|password|passwd|apikey|api_key|api-key|authorization|bearer/i;
-const SECRET_HEADER = /authorization|api[-_]?key|token|secret|password|passwd|cookie|x-auth/i;
 const MAX_COMMENT = 120;
 
 const st = (keyword: KarateStep['keyword'], text: string, extra: Partial<KarateStep> = {}): KarateStep => ({ keyword, text, ...extra });
 const q = (s: string): string => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, '\\n')}'`;
-const words = (name: string): string[] => name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[^A-Za-z0-9]+/).filter(Boolean);
-const upperSnake = (name: string): string => words(name).map(w => w.toUpperCase()).join('_') || 'SECRET';
 const idn = (name: string): string => {
     const s = name.replace(/[^A-Za-z0-9_]/g, '_');
     return /^\d/.test(s) ? `_${s}` : s || '_';
 };
-const camel = (name: string): string => {
-    const w = words(name);
-    if (w.length === 0) {return 'secret';}
-    const joined = w[0].toLowerCase() + w.slice(1).map(x => x[0].toUpperCase() + x.slice(1).toLowerCase()).join('');
-    return /^\d/.test(joined) ? `v${joined}` : joined;
-};
+const camel = camelName;
 const normTag = (t: string): string => (t.startsWith('@') ? t : `@${t}`);
 const isNumberLiteral = (s: string): boolean => /^(?:0|[1-9]\d{0,14})(?:\.\d+)?$/.test(s);
 const VAR_RE = /\{\{([^}]+)\}\}/g;
@@ -630,26 +622,6 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
         source: 'postman', name: collectionName, ...(baseUrl ? { baseUrl } : {}), schemes, operations, unsupported
     };
     return { model, features, files, unsupported, warnings };
-}
-
-const CRED_KEY = '(password|passwd|pwd|secret|token|api[_-]?key|authorization|bearer|credential|private[_-]?key|client[_-]?secret|access[_-]?key)';
-/**
- * Deliberately broad detector for credential-like keys in free-form text: JSON-ish/YAML/form pairs (`key:` `key=`),
- * XML/HTML tags and attributes. A value that is a pure `{{var}}` reference is not a literal and is ignored.
- * Returns the matched key names (never values).
- */
-function credentialKeys(text: string): string[] {
-    const found = new Set<string>();
-    const pure = /^\s*["']?\{\{[^}]*\}\}["']?\s*(?:[,}&;\n<]|$)/;
-    const pair = new RegExp(`[\\w.-]*${CRED_KEY}[\\w.-]*["']?\\s*[:=]`, 'gi');
-    for (const m of text.matchAll(pair)) {
-        if (!pure.test(text.slice(m.index! + m[0].length))) {found.add(m[1].toLowerCase());}
-    }
-    const tag = new RegExp(`<[\\w:.-]*${CRED_KEY}[\\w:.-]*[^>]*>`, 'gi');
-    for (const m of text.matchAll(tag)) {
-        if (!pure.test(text.slice(m.index! + m[0].length)) || /=/.test(m[0])) {found.add(m[1].toLowerCase());}
-    }
-    return [...found].sort();
 }
 
 /** Replace literal values of secret-looking keys in form bodies with `{{placeholder}}` variables. */
