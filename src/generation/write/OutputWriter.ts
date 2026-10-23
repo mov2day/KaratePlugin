@@ -93,7 +93,7 @@ export const OutputWriter = {
                     throw new Error(`Refusing to write path outside the workspace: ${file.path}`);
                 }
                 const out = render(file, options.generatorVersion);
-                if (file.forceSideBySide && fsApi.exists(file.path)) {
+                if (file.forceSideBySide) {
                     const generatedPath = siblingPath(file.path, fsApi, history);
                     fsApi.write(generatedPath, out.text);
                     history.set(generatedPath, out.hash);

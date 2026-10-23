@@ -302,7 +302,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
     }
 
     // (6) dry run staged feature paths before protected writes. The vscode runner resolves a CLI lazily;
-    // a missing CLI remains a skipped check. A parse failure turns existing targets into honest draft siblings.
+    // a missing CLI remains a skipped check. A parse failure turns every target into an honest draft sibling.
     let dryRun: DryRunResult | undefined;
     let dryRunFailed = false;
     if (config.gate.dryRun !== 'off' && i.dryRun && featureFiles.length > 0) {
@@ -312,7 +312,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
             for (const f of dryRun.findings ?? []) {warnings.push(`Dry run: ${f.ruleId} line ${f.line}: ${f.message}`);}
             if (dryRun.status === 'failed') {
                 dryRunFailed = true;
-                warnings.push(`Dry run failed (${dryRun.message}); existing features were kept and new output is a draft sibling`);
+                warnings.push(`Dry run failed (${dryRun.message}); primary features were kept and new output is a draft sibling`);
             }
         } catch (e) {
             dryRun = { status: 'skipped', message: `could not complete: ${msg(e)}` };
@@ -323,7 +323,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
     progress('Writing files', 80);
     const files: WriteFile[] = [
         ...uniqueSupport.map(f => ({ path: full(f.path), content: f.content, owner: f.owner })),
-        ...featureFiles.map(f => dryRunFailed && fsApi.exists(f.path)
+        ...featureFiles.map(f => dryRunFailed
             ? { ...f, content: `# Draft: Karate v2 dry run failed; review before use\n${f.content}`, forceSideBySide: true }
             : f)
     ];

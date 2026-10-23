@@ -243,6 +243,19 @@ module.exports = [
         }
     },
     {
+        name: 'pipeline: a failed dry run on a fresh workspace writes every feature only to marked draft siblings',
+        async run() {
+            const i = base({ dryRun: async () => ({ status: 'failed', message: 'parse error', findings: [] }) });
+            const r = await run(i);
+            const primary = featureFiles(i.fsApi).filter(p => !p.includes('.generated.'));
+            const drafts = featureFiles(i.fsApi).filter(p => p.includes('.generated.'));
+            assert.deepEqual(primary, []);
+            assert.equal(drafts.length, r.features.length);
+            assert.ok(drafts.every(p => i.fsApi.read(p).includes('# Draft: Karate v2 dry run failed; review before use')));
+            assert.equal(r.written.sideBySide.length, r.features.length);
+        }
+    },
+    {
         name: 'pipeline: traversal and absolute output roots are rejected without writes outside the workspace',
         async run() {
             for (const outputRoot of ['../../x', '/tmp/x']) {

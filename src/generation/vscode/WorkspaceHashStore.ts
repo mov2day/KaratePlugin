@@ -6,9 +6,11 @@ const KEY = 'karateDsl.generatedHashes';
 /** HashStore over workspaceState; call flush() after writing. */
 export class WorkspaceHashStore implements HashStore {
     private readonly hashes: Record<string, string>;
+    private readonly workspaceState: vscode.Memento | undefined;
 
-    constructor(private readonly context: vscode.ExtensionContext) {
-        this.hashes = { ...context.workspaceState.get<Record<string, string>>(KEY, {}) };
+    constructor(context: vscode.ExtensionContext) {
+        this.workspaceState = context?.workspaceState;
+        this.hashes = { ...this.workspaceState?.get<Record<string, string>>(KEY, {}) };
     }
 
     get(path: string): string | undefined {
@@ -20,6 +22,6 @@ export class WorkspaceHashStore implements HashStore {
     }
 
     flush(): Thenable<void> {
-        return this.context.workspaceState.update(KEY, this.hashes);
+        return this.workspaceState ? this.workspaceState.update(KEY, this.hashes) : Promise.resolve();
     }
 }
