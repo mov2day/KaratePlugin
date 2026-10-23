@@ -2,7 +2,7 @@
   "name": "karate-test-generator",
   "displayName": "Karate Test Management",
   "description": "Generate, run, manage, and improve Karate API tests (Karate 2.x, Java 21+) from one professional VS Code workspace",
-  "version": "2.1.0",
+  "version": "2.0.4",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",

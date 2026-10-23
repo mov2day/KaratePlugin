@@ -2,7 +2,7 @@
 
 Generate, run, manage, and improve Karate API tests without leaving VS Code.
 
-[![Version](https://img.shields.io/badge/version-2.1.0-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-2.0.4-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-2c9b69.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-5c6370.svg)](LICENSE)
 
@@ -10,7 +10,7 @@ Generate, run, manage, and improve Karate API tests without leaving VS Code.
 
 Karate Test Management brings test creation, execution, coverage, quality, and maintenance into one professional workspace. Use the compact Activity Bar view for quick actions, then open the expanded workspace when you need the full test library, run history, quality queue, or import tools.
 
-## Version 2.1.0 highlights
+## Version 2.0.4 highlights
 
 - **Higher-quality generated Karate 2.x tests** — every generation mode shares one pipeline and one project layout: a `karate-config.js` with environment switching, auth in `common/auth.feature`, request data in `data/`, response schemas in `schemas/`. Operations that cannot be generated safely become `@ignore` drafts instead of runnable guesses. [Generation guide](docs/generation.md).
 - **Configuration file** — `.karate-generator.json` controls layout, style, tag names, scenario categories, and the quality gate; VS Code settings remain as lower-priority defaults.
