@@ -211,5 +211,51 @@ module.exports = [
                 assert.deepEqual(expanded, steps(input));
             }
         }
+    },
+    {
+        name: 'reuse: a request followed by a blank line, comment or docstring body never lets a later def move',
+        run() {
+            const chain = ["  Given path '/oauth/token'", '  When method post', '  Then status 200'];
+            const variants = {
+                blank: [...chain, ''],
+                comment: [...chain, '  # keep'],
+                docstring: ["  Given path '/oauth/token'", '  And request """', '  { "a": 1 }', '  """', '  When method post', '  Then status 200', '  And request """', '  x', '  """'],
+                table: [...chain, '  | a |']
+            };
+            for (const [name, lines] of Object.entries(variants)) {
+                const t = join('Feature: x', '', 'Background:', ...lines, "  * def token = response.access_token", ...SCEN);
+                const r = engine().extract(t);
+                assert.equal(r.modifiedContent, t, name);
+                assert.deepEqual(r.commonFiles, [], name);
+                assert.ok(r.skipped.some(s => /request|response state/i.test(s.reason)), name);
+                // same shape without response state: still blocked by adjacency to the request
+                const t2 = join('Feature: x', '', 'Background:', ...lines, "  * def token = karate.sysenv('T', '')", ...SCEN);
+                const r2 = engine().extract(t2);
+                assert.equal(r2.modifiedContent, t2, name + ' (adjacency)');
+                assert.ok(r2.skipped.some(s => /Follows a request step/.test(s.reason)), name);
+                assert.deepEqual(engine().extract(r.modifiedContent).modifiedContent, r.modifiedContent);
+            }
+        }
+    },
+    {
+        name: 'reuse: a block referencing response state is rejected with the response-dependency reason',
+        run() {
+            for (const id of ['response', 'responseStatus', 'responseHeaders', 'responseCookies', 'responseTime', 'responseBytes', 'responseType']) {
+                const t = join('Feature: x', '', 'Background:', '  * def token = ' + id + '.x', ...SCEN);
+                const r = engine().extract(t);
+                assert.deepEqual(r.commonFiles, [], id);
+                assert.ok(r.skipped.some(s => /response state/.test(s.reason)), id);
+            }
+        }
+    },
+    {
+        name: 'reuse: karate.uuid()/faker blocks use plain call; sysenv/sysprop/copy stay callonce',
+        run() {
+            const kind = step => engine().extract(join('Feature: x', '', 'Background:', step, ...SCEN)).commonFiles.map(f => f.callType);
+            assert.deepEqual(kind('  * def payload = { id: karate.uuid() }'), ['call']);
+            assert.deepEqual(kind('  * def payload = { n: karate.faker.name() }'), ['call']);
+            assert.deepEqual(kind("  * def payload = karate.sysprop('x', '1')"), ['callonce']);
+            assert.deepEqual(kind('  * def payload = karate.copy(base)'), ['callonce']);
+        }
     }
 ];

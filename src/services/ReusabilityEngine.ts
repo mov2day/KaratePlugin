@@ -28,11 +28,14 @@ interface ExtractionPattern {
     file: string;
 }
 
-/** Configuration belongs in karate-config; these lines are never moved. */
 /** `*` steps that belong to a request chain (never extractable, and a block right after one is not either). */
 const REQUEST_STEP = /^\s*\*\s*(path|request|form\s+field|multipart|param|params|method|status|soap|retry)\b/i;
 const DATA_STEP = /^\s*\*\s*(def|text|table|copy|set|json|xml|string|xmlstring|csv|yaml)\s/;
-const SAFE_KARATE = /^(sysenv|sysprop|uuid|copy|faker)\b/;
+// uuid()/faker.* are deliberately not pure: per-scenario uniqueness matters, so such blocks use plain `call`.
+const SAFE_KARATE = /^(sysenv|sysprop|copy)\b/;
+/** Per-scenario state left by the preceding request; a step reading it cannot be moved away from that request. */
+const RESPONSE_STATE = new Set(['response', 'responseStatus', 'responseHeaders', 'responseCookies', 'responseTime', 'responseBytes', 'responseType']);
+/** Configuration belongs in karate-config; these lines are never moved. */
 const URL_LINE = /baseUrl|urlVariable|^\s*(\*|Given|And)\s+(url|configure\s+url)\b/i;
 const DEFINES = /^\s*(?:\*|Given|And)\s+(?:def|text|table|copy|json|string|xml|csv|yaml)\s+([A-Za-z_$][\w$]*)/;
 const REF_COMMON = /read\(\s*['"](?:classpath:)?(?:\.\/)?common\/([^'"]+)['"]/g;
@@ -132,7 +135,7 @@ export class ReusabilityEngine {
             const block = entries.slice(i, j + 1);
             const pattern = this.PATTERNS.find(p => p.type === e.type)!;
             const text = block.map(b => b.text.trim()).join('\n');
-            const reason = this.blockRejection(block, pattern, stayDefined, existing, used, entries[i - 1]);
+            const reason = this.blockRejection(block, pattern, stayDefined, existing, used, this.precedingLogicalStep(entries, i));
             if (reason) {
                 result.skipped.push({ reason, lines: text });
                 block.forEach(b => this.noteDefs(b, stayDefined));
@@ -170,7 +173,11 @@ export class ReusabilityEngine {
         if (block.some(b => !/^\s*\*\s/.test(b.text) || REQUEST_STEP.test(b.text))) {
             return 'Contains request steps; extract the whole request manually';
         }
-        if (prev && prev.kind === 'step' && (!/^\s*\*\s/.test(prev.text) || REQUEST_STEP.test(prev.text))) {
+        for (const b of block) {
+            const dep = this.identifiers(b.text).find(id => RESPONSE_STATE.has(id));
+            if (dep) { return `References response state ('${dep}') from a preceding request; extract the whole request manually`; }
+        }
+        if (prev && (!/^\s*\*\s/.test(prev.text) || REQUEST_STEP.test(prev.text))) {
             return 'Follows a request step that stays in the feature; extract the whole request manually';
         }
         if (existing.has(pattern.file)) { return `The Background already references common/${pattern.file}`; }
@@ -208,6 +215,14 @@ export class ReusabilityEngine {
         return body.match(/[A-Za-z_$][\w$]*/g) || [];
     }
 
+    /** Nearest earlier logical step; blank, comment, docstring and table lines belong to the step before them. */
+    private static precedingLogicalStep(entries: Entry[], index: number): Entry | undefined {
+        for (let k = index - 1; k >= 0; k--) {
+            if (entries[k].stepStart) { return entries[k]; }
+        }
+        return undefined;
+    }
+
     private static noteDefs(e: Entry, defined: Set<string>): void {
         const m = DEFINES.exec(e.text);
         if (m) { defined.add(m[1]); }
@@ -223,8 +238,9 @@ export class ReusabilityEngine {
             const t = text.trim();
             if (t.includes('"""')) {
                 const toggles = (t.match(/"""/g) || []).length;
+                const opensStep = !inDoc && depth === 0 && /^(\*|Given|When|Then|And|But)\s/.test(t);
                 if (toggles % 2 === 1) { inDoc = !inDoc; }
-                out.push({ kind: 'other', index: k, text, simple: false });
+                out.push({ kind: 'other', index: k, text, simple: false, stepStart: opensStep });
                 continue;
             }
             const isStep = /^(\*|Given|When|Then|And|But)\s/.test(t);
@@ -234,12 +250,12 @@ export class ReusabilityEngine {
                 depth += (bare.match(/[{[(]/g) || []).length - (bare.match(/[}\])]/g) || []).length;
             }
             if (inDoc || !isStep || before !== 0 || depth !== 0) {
-                out.push({ kind: 'other', index: k, text, simple: false });
+                out.push({ kind: 'other', index: k, text, simple: false, stepStart: isStep && !inDoc && before === 0 });
                 continue;
             }
             const url = URL_LINE.test(t);
             const type = url ? undefined : this.PATTERNS.find(p => p.detect.some(r => r.test(text)))?.type;
-            out.push({ kind: 'step', index: k, text, simple: true, type, url });
+            out.push({ kind: 'step', index: k, text, simple: true, type, url, stepStart: true });
         }
         return out;
     }
@@ -259,4 +275,6 @@ interface Entry {
     simple: boolean;
     type?: PatternType;
     url?: boolean;
+    /** True on the first line of a logical step (also for multi-line steps classified as 'other'). */
+    stepStart?: boolean;
 }
