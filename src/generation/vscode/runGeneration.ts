@@ -18,6 +18,7 @@ import { formatSummary } from '../pipeline/Summary';
 import type { GenerationSummary } from '../pipeline/Summary';
 import type { PlanOptions, PlannedFeature } from '../plan/OpenApiPlanner';
 import { GeneratorConfigLoader } from './GeneratorConfigLoader';
+import { makeDryRun } from './DryRunRunner';
 import { nodeFs } from './NodeFs';
 import { WorkspaceHashStore } from './WorkspaceHashStore';
 
@@ -121,7 +122,8 @@ export async function runGenerationForModel(i: RunGenerationInput): Promise<RunG
             model: i.model, scenarios: i.scenarios, extraFeatures: i.extraFeatures, planOptions: i.planOptions, config, project, fsApi: nodeFs, history, skills, ai,
             evidence: i.evidence, request: i.customInstruction?.trim() || undefined,
             generatorVersion: version, sourceRef: i.sourceRef, mode: i.mode, progress: i.progress,
-            extraFiles, root: i.workspaceRoot
+            extraFiles, root: i.workspaceRoot,
+            dryRun: makeDryRun(i.context, i.workspaceRoot, config)
         });
     } finally {
         try {
