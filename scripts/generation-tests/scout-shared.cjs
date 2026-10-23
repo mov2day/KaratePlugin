@@ -1,0 +1,92 @@
+const assert = require('node:assert/strict');
+const { generateScoutSuite } = require('../../out/services/scout/ScoutGenerator');
+const { normalizeConnection } = require('../../out/services/scout/privacy');
+const gate = () => require('../../out/generation/adapters/scoutGate');
+const { OutputWriter } = require('../../out/generation/write/OutputWriter');
+
+const connection = normalizeConnection({ browser: 'edge', mode: 'launch', url: 'https://shop.test', allowedOrigins: ['https://api.test'], excludedOrigins: [] });
+const request = (id, extra = {}) => ({ id, timestamp: 1, method: 'POST', url: connection.url + 'api/cart', headers: {}, response: { status: 200, headers: {}, body: { cartId: 'cart-1' }, duration: 1 }, ...extra });
+const confirmedJourney = (over = {}) => {
+    const requests = [request('cart'), request('checkout', { timestamp: 2, url: 'https://shop.test/cart/cart-1?cartId=cart-1', body: { cartId: 'cart-1' } })];
+    return { schemaVersion: 1, name: 'Fixture', connection, origin: 'har', actions: [], requests,
+        expectations: requests.map(r => ({ requestId: r.id, statuses: [200], assertions: [{ pointer: '/cartId', operator: 'present' }], confirmed: true })),
+        variants: [], dependencies: [], baselineConfirmed: true, freshDataPerRun: true, verification: { auth: 'none' }, ...over };
+};
+const memFs = (initial = {}) => {
+    const files = new Map(Object.entries(initial));
+    return { files, exists: p => files.has(p), read: p => files.get(p), list: () => [], write: (p, c) => files.set(p, c) };
+};
+const history = () => { const m = new Map(); return { get: p => m.get(p), set: (p, h) => m.set(p, h) }; };
+const toWrite = (suite, dir, name = 'Fixture') => Object.entries(suite.files).map(([n, content]) => ({
+    path: `${dir}/${n}`, content,
+    owner: ['scout-data.json', 'scout-setup.feature', 'scout-reset.feature'].includes(n) ? 'user' : 'generated',
+    source: n === 'journey.feature' ? `scout:${name}` : undefined
+}));
+
+module.exports = [
+    {
+        name: 'scout shared: generated suite passes the gate with zero errors and uses the sysprop idiom',
+        run() {
+            for (const journey of [confirmedJourney(), confirmedJourney({ verification: { auth: 'required' }, baselineConfirmed: false })]) {
+                const suite = generateScoutSuite(journey);
+                const r = gate().gateScoutSuite(suite);
+                assert.deepEqual(r.findings.filter(f => f.finding.severity === 'error'), [], JSON.stringify(r.findings));
+                assert.equal(r.ok, true);
+                for (const text of Object.values(suite.files)) assert.ok(!text.includes('karate.properties['));
+                assert.match(suite.files['scout-setup.feature'], /karate\.sysprop\('scout\.baseUrl', ''\)/);
+                assert.match(suite.files['scout-setup.feature'], /karate\.sysprop\('scout\.authFixture', ''\)/);
+                assert.match(suite.files['scout-reset.feature'], /karate\.sysprop\('scout\.resetFixture', ''\)/);
+            }
+        }
+    },
+    {
+        name: 'scout shared: literal url in a scenario yields V2-CFG-001 and demotion makes it a passing @ignore draft',
+        run() {
+            const suite = generateScoutSuite(confirmedJourney());
+            const bad = { ...suite, files: { ...suite.files, 'journey.feature': suite.files['journey.feature'].replace(/^(\s*)\* def response_1.*$/m, "$&\n  Given url 'http://x'\n  When method get") } };
+            const r = gate().gateScoutSuite(bad);
+            assert.equal(r.ok, false);
+            assert.ok(r.findings.some(f => f.file === 'journey.feature' && f.finding.ruleId === 'V2-CFG-001'), JSON.stringify(r.findings));
+            const { suite: fixed, demoted } = gate().demoteGateFailures(bad);
+            assert.equal(demoted.length, 1);
+            assert.match(fixed.files['journey.feature'], /@ignore\n\s*# Draft: Quality gate: V2-CFG-001\nScenario:/);
+            assert.equal(fixed.runnableScenarios, 0);
+            assert.ok(fixed.draftReasons.some(x => /Quality gate/.test(x)));
+            assert.equal(gate().gateScoutSuite(fixed).ok, true);
+        }
+    },
+    {
+        name: 'scout shared: demotion leaves clean suites untouched and never throws on garbage',
+        run() {
+            const suite = generateScoutSuite(confirmedJourney());
+            const r = gate().demoteGateFailures(suite);
+            assert.equal(r.suite, suite); assert.deepEqual(r.demoted, []);
+            assert.doesNotThrow(() => gate().demoteGateFailures({ files: { 'journey.feature': "Feature: x\n  Given url 'http://x'\n" }, runnableScenarios: 0, draftReasons: [] }));
+            assert.doesNotThrow(() => gate().gateScoutSuite({ files: { 'journey.feature': null } }));
+        }
+    },
+    {
+        name: 'scout shared: writer protects user-owned scaffolds and journey edits',
+        run() {
+            const fsApi = memFs(); const hist = history(); const dir = '/w/scout-fixture';
+            const v = { generatorVersion: '2.0.3' };
+            const suite = generateScoutSuite(confirmedJourney());
+            const first = OutputWriter.write(toWrite(suite, dir), fsApi, hist, v);
+            assert.equal(first.created.length, 6);
+            assert.match(fsApi.files.get(`${dir}/journey.feature`), /^# Generated by Karate Test Management 2\.0\.3 \| source: scout:Fixture \|/);
+            // unchanged regeneration
+            const again = OutputWriter.write(toWrite(suite, dir), fsApi, hist, v);
+            assert.deepEqual(again.sideBySide, []);
+            assert.ok(again.updated.includes(`${dir}/journey.feature`));
+            assert.equal(again.skippedExisting.length, 3);
+            // user edits setup + journey
+            fsApi.files.set(`${dir}/scout-setup.feature`, '@ignore\nFeature: mine\n');
+            fsApi.files.set(`${dir}/journey.feature`, fsApi.files.get(`${dir}/journey.feature`) + '# my edit\n');
+            const third = OutputWriter.write(toWrite(generateScoutSuite(confirmedJourney({ name: 'Fixture' })), dir), fsApi, hist, v);
+            assert.equal(fsApi.files.get(`${dir}/scout-setup.feature`), '@ignore\nFeature: mine\n');
+            assert.equal(third.sideBySide.length, 1);
+            assert.equal(third.sideBySide[0].generatedPath, `${dir}/journey.generated.feature`);
+            assert.match(fsApi.files.get(`${dir}/journey.feature`), /# my edit/);
+        }
+    }
+];
