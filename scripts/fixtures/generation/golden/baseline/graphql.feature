@@ -1,89 +1,147 @@
 Feature: GraphQL API
+  Generated from a GraphQL schema. Authentication is not part of a schema: configure it in karate-config or a common auth feature.
 
   Background:
-    * url graphqlEndpoint
-    * def headers = { 'Content-Type': 'application/json' }
+    * url baseUrl
 
-  @positive @query
+  @positive @op=book
   Scenario: Query book - success
+    # source: Query book
     Given path 'graphql'
-    And request
+    And text query =
     """
-    { "query": "query { book(id: $id) { id __typename } }", "variables": {"id":"test-id-123"} }
+      query Book($id: ID!) {
+        book(id: $id) {
+          id
+          title
+          author
+          genre
+        }
+      }
     """
-    When method POST
+    And def variables = { id: 'sample' }
+    And request { query: '#(query)', variables: '#(variables)' }
+    When method post
     Then status 200
+    And match response.errors == '#notpresent'
     And match response.data.book == '#present'
-    And match response.errors == '#notpresent'
 
-  @negative @query
-  Scenario: Query book - missing required arguments
+  @negative @op=book
+  Scenario: Query book - missing required variable id
+    # source: Query book
     Given path 'graphql'
-    And request
+    And text query =
     """
-    { "query": "query { book { id __typename } }" }
+      query Book($id: ID!) {
+        book(id: $id) {
+          id
+          title
+          author
+          genre
+        }
+      }
     """
-    When method POST
-    Then status 200
-    And match response.errors == '#present'
-    And match response.errors[0].message == '#present'
+    And request { query: '#(query)' }
+    When method post
+    # GraphQL over HTTP: request errors arrive as 200 or 400 depending on the server
+    Then assert responseStatus == 200 || responseStatus == 400
+    And match response.errors == '#[_ > 0]'
 
-  @positive @query
+  @positive @op=books
   Scenario: Query books - success
+    # source: Query books
     Given path 'graphql'
-    And request
+    And text query =
     """
-    { "query": "query { books(limit: $limit, genre: $genre) { id __typename } }", "variables": {"limit":"10","genre":"test-value"} }
+      query Books($limit: Int) {
+        books(limit: $limit) {
+          id
+          title
+          author
+          genre
+        }
+      }
     """
-    When method POST
+    And def variables = { limit: 10 }
+    And request { query: '#(query)', variables: '#(variables)' }
+    When method post
     Then status 200
-    And match response.data.books == '#present'
     And match response.errors == '#notpresent'
+    And match response.data.books == '##[]'
 
-  @positive @mutation
+  @positive @op=addBook
   Scenario: Mutation addBook - success
+    # source: Mutation addBook
     Given path 'graphql'
-    And request
+    And text query =
     """
-    { "query": "mutation { addBook(title: $title, author: $author) { id __typename } }", "variables": {"title":"test-value","author":"test-value"} }
+      mutation AddBook($title: String!, $author: String!) {
+        addBook(title: $title, author: $author) {
+          id
+          title
+          author
+          genre
+        }
+      }
     """
-    When method POST
+    And def variables = { title: 'Sample name', author: 'sample' }
+    And request { query: '#(query)', variables: '#(variables)' }
+    When method post
     Then status 200
+    And match response.errors == '#notpresent'
     And match response.data.addBook == '#present'
-    And match response.errors == '#notpresent'
 
-  @negative @mutation
-  Scenario: Mutation addBook - missing required arguments
+  @negative @op=addBook
+  Scenario: Mutation addBook - missing required variable title
+    # source: Mutation addBook
     Given path 'graphql'
-    And request
+    And text query =
     """
-    { "query": "mutation { addBook { id __typename } }" }
+      mutation AddBook($title: String!, $author: String!) {
+        addBook(title: $title, author: $author) {
+          id
+          title
+          author
+          genre
+        }
+      }
     """
-    When method POST
-    Then status 200
-    And match response.errors == '#present'
-    And match response.errors[0].message == '#present'
+    And def variables = { author: 'sample' }
+    And request { query: '#(query)', variables: '#(variables)' }
+    When method post
+    # GraphQL over HTTP: request errors arrive as 200 or 400 depending on the server
+    Then assert responseStatus == 200 || responseStatus == 400
+    And match response.errors == '#[_ > 0]'
 
-  @positive @mutation
+  @positive @op=deleteBook
   Scenario: Mutation deleteBook - success
+    # source: Mutation deleteBook
     Given path 'graphql'
-    And request
+    And text query =
     """
-    { "query": "mutation { deleteBook(id: $id) { boolean } }", "variables": {"id":"test-id-123"} }
+      mutation DeleteBook($id: ID!) {
+        deleteBook(id: $id)
+      }
     """
-    When method POST
+    And def variables = { id: 'sample' }
+    And request { query: '#(query)', variables: '#(variables)' }
+    When method post
     Then status 200
-    And match response.data.deleteBook == '#present'
     And match response.errors == '#notpresent'
+    And match response.data.deleteBook == '##boolean'
 
-  @negative @mutation
-  Scenario: Mutation deleteBook - missing required arguments
+  @negative @op=deleteBook
+  Scenario: Mutation deleteBook - missing required variable id
+    # source: Mutation deleteBook
     Given path 'graphql'
-    And request
+    And text query =
     """
-    { "query": "mutation { deleteBook { boolean } }" }
+      mutation DeleteBook($id: ID!) {
+        deleteBook(id: $id)
+      }
     """
-    When method POST
-    Then status 200
-    And match response.errors == '#present'
-    And match response.errors[0].message == '#present'
+    And request { query: '#(query)' }
+    When method post
+    # GraphQL over HTTP: request errors arrive as 200 or 400 depending on the server
+    Then assert responseStatus == 200 || responseStatus == 400
+    And match response.errors == '#[_ > 0]'
