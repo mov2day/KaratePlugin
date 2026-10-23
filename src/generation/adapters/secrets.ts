@@ -25,7 +25,7 @@ const EMBEDDED_BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/i;
 const EMBEDDED_BASIC = /\bBasic\s+[A-Za-z0-9+/=]{8,}/;
 /** True when free-form text contains a credential-shaped value anywhere (not only as a whole value). */
 export function containsCredentialValue(text: string): boolean {
-    return EMBEDDED_JWT.test(text) || EMBEDDED_BEARER.test(text) || EMBEDDED_BASIC.test(text);
+    return scanWindows(text).some(t => EMBEDDED_JWT.test(t) || EMBEDDED_BEARER.test(t) || EMBEDDED_BASIC.test(t));
 }
 
 export const words = (name: string): string[] => name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[^A-Za-z0-9]+/).filter(Boolean);
@@ -49,14 +49,23 @@ export function credentialKeys(text: string): string[] {
     const found = new Set<string>();
     const pure = /^\s*["']?\{\{[^}]*\}\}["']?\s*(?:[,}&;\n<]|$)/;
     const pair = new RegExp(`[\\w.-]{0,40}${CRED_KEY}[\\w.-]{0,40}["']?\\s*[:=]`, 'gi');
-    for (const m of text.matchAll(pair)) {
-        if (!pure.test(text.slice(m.index! + m[0].length))) {found.add(m[1].toLowerCase());}
-    }
-    const tag = new RegExp(`<[\\w:.-]{0,40}${CRED_KEY}[\\w:.-]{0,40}[^>]*>`, 'gi');
-    for (const m of text.matchAll(tag)) {
-        if (!pure.test(text.slice(m.index! + m[0].length)) || /=/.test(m[0])) {found.add(m[1].toLowerCase());}
+    const tag = new RegExp(`<[\\w:.-]{0,40}${CRED_KEY}[\\w:.-]{0,40}[^>]{0,200}>`, 'gi');
+    for (const part of scanWindows(text)) {
+        for (const m of part.matchAll(pair)) {
+            if (!pure.test(part.slice(m.index! + m[0].length, m.index! + m[0].length + 200))) {found.add(m[1].toLowerCase());}
+        }
+        for (const m of part.matchAll(tag)) {
+            if (!pure.test(part.slice(m.index! + m[0].length, m.index! + m[0].length + 200)) || /=/.test(m[0])) {found.add(m[1].toLowerCase());}
+        }
     }
     return [...found].sort();
+}
+
+/** Free-text scan limits for the exported detectors: the first 200,000 characters, plus the last 20,000 so a trailing credential is not missed. */
+export const MAX_SCAN_HEAD = 200000;
+export const MAX_SCAN_TAIL = 20000;
+function scanWindows(text: string): string[] {
+    return text.length <= MAX_SCAN_HEAD ? [text] : [text.slice(0, MAX_SCAN_HEAD), text.slice(-MAX_SCAN_TAIL)];
 }
 
 /** URL with the values of secret-looking query parameters masked; for logs only (never for generated files). */
@@ -84,13 +93,13 @@ const RE_JWT = /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]*/g;
 const RE_BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 const RE_BASIC = /\bBasic\s+[A-Za-z0-9+/=]{8,}/g;
 const RE_KEY_SHAPES = /\b(?:sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{12,}|xox[abp]-[A-Za-z0-9-]{8,})/g;
-const RE_URL_USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+:[^\s/@]+@/gi;
+const RE_URL_USERINFO = /\b([a-z][a-z0-9+.-]{0,20}:\/\/)[^\s/@]{1,128}:[^\s/@]{1,128}@/gi;
 const RE_BARE_USERINFO = /(?<![\w/])[^\s/@:]{1,64}:[^\s/@]{1,128}@(?=[\w-]+\.[\w.-]+)/g;
 const NL_KEY = '(?:password|passwd|pwd|secret|token|credential|api[ _-]?key)s?';
 const RE_KEY_PAIR_TEXT = new RegExp(`([\\w.-]{0,40}${CRED_KEY}[\\w.-]{0,40}["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|\\{\\{[^}]*\\}\\}|\\[redacted\\]|[^\\s,;&}"']+)`, 'gi');
 const RE_KEY_LINK = new RegExp(`\\b(${NL_KEY})\\s+(?:is|was|to|=|:|are|of)\\s+("[^"]*"|'[^']*'|[^\\s,;"']+)`, 'gi');
 const RE_KEY_BARE = /\b(password|passwd|pwd)\s+([^\s,;"'.]+)/gi;
-const RE_SLASH_PAIR = /\b(log(?:s|ged)?\s{0,3}in(?:to)?(?:\s{1,3}as)?|login(?:\s{1,3}as)?|sign(?:s|ed)?\s{0,3}in(?:\s{1,3}as)?|authenticat\w{0,10}\s{1,3}as|credentials?|username\/password)\s{0,3}(?:is\s{1,3}|are\s{1,3}|:\s{0,3})?([^\s/]{1,64})\/(\S{1,128})/gi;
+const RE_SLASH_PAIR = /\b(log(?:s|ged)?\s{0,3}in(?:to)?(?:(?:\s{1,3}[\w'-]{1,20}){0,4}?\s{1,3}as)?|login(?:\s{1,3}as)?|sign(?:s|ed)?\s{0,3}in(?:(?:\s{1,3}[\w'-]{1,20}){0,4}?\s{1,3}as)?|authenticat\w{0,10}\s{1,3}as|credentials?|username\/password)\s{0,3}(?:is\s{1,3}|are\s{1,3}|:\s{0,3})?([^\s/]{1,64})\/(\S{1,128})/gi;
 
 /** Words that follow a credential noun in ordinary prose and are not themselves a value. */
 const NOT_A_VALUE = new Set(['a', 'an', 'the', 'is', 'was', 'are', 'to', 'of', 'and', 'or', 'for', 'with', 'in', 'on', 'at', 'not', 'no', 'must', 'should', 'can', 'will', 'may', 'shall',

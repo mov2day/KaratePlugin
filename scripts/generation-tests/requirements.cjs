@@ -287,7 +287,7 @@ module.exports = [
     { name: 'requirements: login cues redact slash pairs; weakening the cue list would fail; read/write stays', run() {
         const secrets = require('../../out/generation/adapters/secrets');
         for (const [input, leak] of [['Login as admin/hunter2', 'hunter2'], ['Sign in as bob/s3cret', 's3cret'], ['logged in as ann/pw1', 'pw1'],
-            ['authenticated as carl/pw3', 'pw3'], ['signed in as dan/pw4', 'pw4'], ['log in as fay/pw5', 'pw5']]) {
+            ['authenticated as carl/pw3', 'pw3'], ['signed in as dan/pw4', 'pw4'], ['log in as fay/pw5', 'pw5'], ['Log into the app as x/y1', 'y1']]) {
             const r = secrets.redactCredentialText(input);
             assert.ok(!r.text.includes(leak), `${input} -> ${r.text}`);
         }
@@ -296,7 +296,9 @@ module.exports = [
     { name: 'requirements: redaction and detectors stay linear (<150 ms) on adversarial input; long text is truncated with a marker', run() {
         const secrets = require('../../out/generation/adapters/secrets');
         const inputs = { word: 'a'.repeat(20000), colon: 'a:'.repeat(10000), pw: ' password '.repeat(2000), slash: 'x/'.repeat(10000), pweq: 'password='.repeat(2000),
-            at: 'a@'.repeat(10000), bearer: 'Bearer '.repeat(3000), wordeq: 'w'.repeat(20000) + '=' };
+            at: 'a@'.repeat(10000), bearer: 'Bearer '.repeat(3000), wordeq: 'w'.repeat(20000) + '=',
+            ltPw: '<password'.repeat(10000), ltTok: '<token '.repeat(20000), ltA: '<a '.repeat(30000), ltPwGt: '<password>'.repeat(10000), pwQuote: 'password"'.repeat(10000), eqQuote: '="'.repeat(20000) };
+        for (const k of Object.keys(inputs)) inputs[`${k}1M`] = inputs[k].repeat(Math.ceil(1e6 / inputs[k].length)).slice(0, 1e6);
         const fns = { redactCredentialText: secrets.redactCredentialText, credentialKeys: secrets.credentialKeys, containsCredentialValue: secrets.containsCredentialValue,
             redactUrl: secrets.redactUrl, looksLikeCredentialValue: secrets.looksLikeCredentialValue, isSecretKey: secrets.isSecretKey, isSecretName: secrets.isSecretName,
             requirement: out('generation/adapters/requirements').redactRequirementText };
@@ -308,6 +310,8 @@ module.exports = [
                 assert.ok(ms < 150, `${fname}(${iname}) took ${ms} ms`);
             }
         }
+        assert.ok(secrets.credentialKeys(`${'x '.repeat(150000)} password: hunter2`).includes('password'), 'trailing credential beyond the head window is still found');
+        assert.ok(secrets.containsCredentialValue(`${'x '.repeat(150000)} Bearer abcdefghij12345`));
         const long = secrets.redactCredentialText(`password: hunter2 ${'x '.repeat(40000)}`);
         assert.ok(long.text.endsWith('[truncated]') && long.hits.includes('truncated') && !long.text.includes('hunter2'));
         const b = build([{ id: 'L-1', title: 't', criteria: ['y '.repeat(40000)] }]);
