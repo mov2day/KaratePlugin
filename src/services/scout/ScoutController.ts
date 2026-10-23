@@ -8,6 +8,12 @@ import { LaunchedBrowserAdapter } from './LaunchedBrowserAdapter';
 import { CompanionBrowserAdapter } from './CompanionBrowserAdapter';
 import { inferDependencies, isScoutCommand, journeyDocument, loadJourney, validExpectation } from './JourneyModel';
 import { generateScoutSuite } from './ScoutGenerator';
+import type { ScoutSuite } from './ScoutGenerator';
+import { saveScoutSuite } from './saveSuite';
+import type { ScoutSaveResult } from './saveSuite';
+import { nodeFs } from '../../generation/vscode/NodeFs';
+import { WorkspaceHashStore } from '../../generation/vscode/WorkspaceHashStore';
+import { writeSummaryDetails } from '../../generation/vscode/reportSummary';
 import { allowedUrl, isAuthUrl, normalizeConnection, safeRequest, safeUrl, sanitize } from './privacy';
 import { HarImporter } from '../session/HarImporter';
 import { TestExecutor } from '../execution/TestExecutor';
@@ -128,15 +134,24 @@ export class ScoutController implements vscode.Disposable {
     }
 
     private async exportSuite(): Promise<void> {
-        const journey = this.session.requireJourney(); const suite = generateScoutSuite(journey);
+        const journey = this.session.requireJourney(); const generated = generateScoutSuite(journey);
         const folders = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, canSelectMany: false, title: 'Choose a parent folder for the generated Scout suite' });
         if (!folders?.[0]) return;
         const folder = path.join(folders[0].fsPath, `scout-${this.slug(journey.name)}-${Date.now()}`);
-        fs.mkdirSync(folder, { recursive: true });
-        for (const [name, content] of Object.entries(suite.files)) fs.writeFileSync(path.join(folder, name), content, { encoding: 'utf8', flag: 'wx' });
+        const history = new WorkspaceHashStore(this.context);
+        let saved: ScoutSaveResult<ScoutSuite>;
+        try {
+            const version = (this.context.extension?.packageJSON as { version?: string } | undefined)?.version ?? '0.0.0';
+            saved = saveScoutSuite(generated, folder, journey.name, nodeFs, history, version);
+        } finally {
+            try { await history.flush(); } catch { /* hash persistence is best effort */ }
+        }
+        const suite = saved.suite;
+        writeSummaryDetails(saved.summary, 'Karate Scout');
         this.session.snapshot.suitePath = path.join(folder, 'journey.feature');
         journey.verification.karate = undefined;
-        this.session.changed(`Saved ${suite.runnableScenarios} enabled scenario(s). ${suite.draftReasons.length ? 'Draft scenarios are tagged @ignore; review the generated README.' : 'Run in Karate to establish independent verification.'}`);
+        const gateNote = saved.demoted.length ? ` Quality gate demoted ${saved.demoted.length} scenario(s) to @ignore drafts (see the Karate Generation output).` : saved.errors ? ' Quality gate errors are listed in the Karate Generation output.' : '';
+        this.session.changed(`Saved ${suite.runnableScenarios} enabled scenario(s). Quality gate: ${saved.errors} errors / ${saved.warnings} warnings. ${suite.draftReasons.length ? 'Draft scenarios are tagged @ignore; review the generated README.' : 'Run in Karate to establish independent verification.'}${gateNote}${saved.report.sideBySide.length ? ` ${saved.report.sideBySide.length} edited file(s) kept; new versions saved side by side.` : ''}`);
         await vscode.window.showTextDocument(vscode.Uri.file(this.session.snapshot.suitePath), { preview: false });
     }
 

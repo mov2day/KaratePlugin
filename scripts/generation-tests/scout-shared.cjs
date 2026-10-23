@@ -88,5 +88,27 @@ module.exports = [
             assert.equal(third.sideBySide[0].generatedPath, `${dir}/journey.generated.feature`);
             assert.match(fsApi.files.get(`${dir}/journey.feature`), /# my edit/);
         }
+    },
+    {
+        name: 'scout shared: saveScoutSuite gates, demotes, writes protected and reports',
+        run() {
+            const { saveScoutSuite } = require('../../out/services/scout/saveSuite');
+            const fsApi = memFs(); const hist = history(); const dir = '/w/s1';
+            const clean = saveScoutSuite(generateScoutSuite(confirmedJourney()), dir, 'Fixture', fsApi, hist, '2.0.3');
+            assert.equal(clean.errors, 0); assert.equal(clean.report.created.length, 6);
+            assert.match(clean.summary.headline, /Quality gate: 0 errors \/ 0 warnings/);
+            assert.equal(clean.summary.level, 'info');
+            const base = generateScoutSuite(confirmedJourney());
+            const bad = { ...base, files: { ...base.files, 'journey.feature': base.files['journey.feature'].replace(/^(\s*)\* def response_1.*$/m, "$&\n  Given url 'http://x'\n  When method get") } };
+            const dir2 = '/w/s2';
+            const r = saveScoutSuite(bad, dir2, 'Fixture', fsApi, hist, '2.0.3');
+            assert.equal(r.demoted.length, 1); assert.equal(r.errors, 0); assert.equal(r.summary.level, 'warning');
+            assert.match(fsApi.files.get(`${dir2}/journey.feature`), /# Draft: Quality gate: V2-CFG-001/);
+            assert.ok(r.summary.details.some(d => /Demoted to draft/.test(d)));
+            // resave over an edited journey: side-by-side reported
+            fsApi.files.set(`${dir}/journey.feature`, fsApi.files.get(`${dir}/journey.feature`) + '# edit\n');
+            const again = saveScoutSuite(generateScoutSuite(confirmedJourney()), dir, 'Fixture', fsApi, hist, '2.0.3');
+            assert.equal(again.report.sideBySide.length, 1); assert.equal(again.summary.level, 'warning');
+        }
     }
 ];
