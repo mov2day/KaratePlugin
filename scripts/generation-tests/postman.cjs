@@ -520,5 +520,38 @@ module.exports = [
             const refOnly = mk('{"password":"{{userId}}","a":1');
             assert.equal(refOnly.features[0].feature.scenarios[0].draftReason, undefined);
         }
+    },
+    {
+        name: 'postman: raw bodies over the scan limit are omitted and drafted, JSON or not; credential-shaped values in raw text omit the body',
+        run() {
+            const mk = raw => build(richCollection([req('Text', 'POST', '/t', { body: { mode: 'raw', raw } }, testEvent(['pm.response.to.have.status(200);']))]), null);
+            const big = `${'q '.repeat(150000)}SEKRET-MID-PM${' q'.repeat(150000)}`;
+            const bigJson = JSON.stringify({ note: `${'x'.repeat(150000)}SEKRET-LEAF-PM`, sku: 'A' });
+            for (const raw of [big, bigJson]) {
+                const b = mk(raw);
+                const text = allText(b);
+                assert.ok(!text.includes('SEKRET-MID-PM') && !text.includes('SEKRET-LEAF-PM'));
+                assert.match(text, /@ignore/);
+                assert.match(text, /Body is larger than the scan limit \(\d+ chars\); provide it via a data file after reviewing it for secrets/);
+                assert.ok(b.warnings.some(w => /larger than the scan limit/.test(w)));
+            }
+            const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.c2lnbmF0dXJlLXZhbHVl';
+            for (const raw of [`Authorization: Bearer ${jwt}`, `hello ${jwt} world`, `Basic dXNlcjpwYXNzd29yZDEyMw== is sent`]) {
+                const text = allText(mk(raw));
+                assert.ok(!text.includes('eyJhbGci') && !text.includes('dXNlcjpw'), raw);
+                assert.match(text, /@ignore/);
+                assert.match(text, /credential-like values|credential-like fields/);
+            }
+        }
+    },
+    {
+        name: 'postman: unclosed variable runs in raw bodies stay linear',
+        run() {
+            for (const raw of ['{{'.repeat(49000), '{{a'.repeat(33000), '{"a":"' + '{{x}}'.repeat(19000) + '"}']) {
+                const t0 = Date.now();
+                build(richCollection([req('Text', 'POST', '/t', { body: { mode: 'raw', raw } }, testEvent(['pm.response.to.have.status(200);']))]), null);
+                assert.ok(Date.now() - t0 < 1500, `raw body of ${raw.length} chars took ${Date.now() - t0} ms`);
+            }
+        }
     }
 ];

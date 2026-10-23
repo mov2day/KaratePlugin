@@ -20,7 +20,7 @@ export function looksLikeCredentialValue(value: string): boolean {
     return JWT_VALUE.test(v) || BEARER_VALUE.test(v) || BASIC_VALUE.test(v);
 }
 
-const EMBEDDED_JWT = /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]*/;
+const EMBEDDED_JWT = /(?<![\w-])eyJ[\w-]{5,2000}\.[\w-]{5,2000}\.[\w-]{0,2000}/;
 const EMBEDDED_BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/i;
 const EMBEDDED_BASIC = /\bBasic\s+[A-Za-z0-9+/=]{8,}/;
 /** True when free-form text contains a credential-shaped value anywhere (not only as a whole value). */
@@ -45,17 +45,39 @@ const CRED_KEY = '(password|passwd|pwd|secret|token|api[_-]?key|authorization|be
  * XML/HTML tags and attributes. A value that is a pure `{{var}}` reference is not a literal and is ignored.
  * Returns the matched key names (never values).
  */
+/** More credential-like keys than this in one window: stop scanning and report `scan-limit` (callers treat any returned key as credential-like, so the body is omitted: fail safe). */
+const MAX_KEY_MATCHES = 2000;
+export const KEY_SCAN_LIMIT = 'scan-limit';
 export function credentialKeys(text: string): string[] {
     const found = new Set<string>();
     const pure = /^\s*["']?\{\{[^}]*\}\}["']?\s*(?:[,}&;\n<]|$)/;
-    const pair = new RegExp(`[\\w.-]{0,40}${CRED_KEY}[\\w.-]{0,40}["']?\\s*[:=]`, 'gi');
-    const tag = new RegExp(`<[\\w:.-]{0,40}${CRED_KEY}[\\w:.-]{0,40}[^>]{0,200}>`, 'gi');
+    const isPure = (part: string, end: number): boolean => pure.test(part.slice(end, end + 200));
+    // Scan for key occurrences first (linear), then check the bounded suffix with a sticky regex: no unanchored backtracking over long runs.
+    // `client_secret` is reported as `secret` (as before): the compound alternative is dropped for the occurrence scan.
+    const occurrences = new RegExp(CRED_KEY.replace('|client[_-]?secret', ''), 'gi');
+    const pairSuffix = /[\w.-]{0,40}["']?\s*[:=]/y;
+    const tagSuffix = /[\w:.-]{0,40}[^>]{0,200}>/y;
+    const wordChar = /[\w:.-]/;
     for (const part of scanWindows(text)) {
-        for (const m of part.matchAll(pair)) {
-            if (!pure.test(part.slice(m.index! + m[0].length, m.index! + m[0].length + 200))) {found.add(m[1].toLowerCase());}
-        }
-        for (const m of part.matchAll(tag)) {
-            if (!pure.test(part.slice(m.index! + m[0].length, m.index! + m[0].length + 200)) || /=/.test(m[0])) {found.add(m[1].toLowerCase());}
+        let count = 0;
+        for (const m of part.matchAll(occurrences)) {
+            if (++count > MAX_KEY_MATCHES) {found.add(KEY_SCAN_LIMIT); break;}
+            const keyEnd = m.index! + m[0].length;
+            const key = m[1].toLowerCase();
+            pairSuffix.lastIndex = keyEnd;
+            const pair = pairSuffix.exec(part);
+            if (pair && !isPure(part, keyEnd + pair[0].length)) {found.add(key);}
+            // XML/HTML tag or attribute: `<` + up to 40 name characters, the key, then up to 240 characters and `>`
+            let start = m.index!;
+            while (start > 0 && m.index! - start < 40 && wordChar.test(part[start - 1])) {start--;}
+            if (start > 0 && part[start - 1] === '<') {
+                tagSuffix.lastIndex = keyEnd;
+                const tag = tagSuffix.exec(part);
+                if (tag) {
+                    const whole = part.slice(start - 1, keyEnd + tag[0].length);
+                    if (!isPure(part, keyEnd + tag[0].length) || /=/.test(whole)) {found.add(key);}
+                }
+            }
         }
     }
     return [...found].sort();
@@ -89,7 +111,7 @@ export function redactUrl(raw: string): string {
 
 // ---------------------------------------------------------------- free-text redaction (requirements, prose)
 
-const RE_JWT = /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]*/g;
+const RE_JWT = /(?<![\w-])eyJ[\w-]{5,2000}\.[\w-]{5,2000}\.[\w-]{0,2000}/g;
 const RE_BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 const RE_BASIC = /\bBasic\s+[A-Za-z0-9+/=]{8,}/g;
 const RE_KEY_SHAPES = /\b(?:sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{12,}|xox[abp]-[A-Za-z0-9-]{8,})/g;
@@ -141,4 +163,33 @@ function redactBounded(text: string): { text: string; hits: string[] } {
     out = out.replace(RE_KEY_BARE, (m, key: string, value: string) => (value === '[redacted]' || NOT_A_VALUE.has(value.toLowerCase()) ? m : `${key} ${mark('bare')}`));
     out = out.replace(RE_SLASH_PAIR, (_m, cue: string, user: string) => `${cue} ${user}/${mark('slash')}`);
     return { text: out, hits: [...hits].sort() };
+}
+
+// ---------------------------------------------------------------- size policy for source bodies
+
+/**
+ * Fail-safe size policy: the scanners only look at bounded windows, so a single body text (or JSON string leaf) longer than
+ * this is treated as unscannable. Adapters omit it, draft the scenario and warn; they never write it verbatim.
+ */
+export const MAX_BODY_CHARS = 100_000;
+export const isOversized = (text: string): boolean => text.length > MAX_BODY_CHARS;
+export const oversizedReason = (chars: number): string => `Body is larger than the scan limit (${chars} chars); provide it via a data file after reviewing it for secrets`;
+
+/** Replaces every string leaf longer than `MAX_BODY_CHARS` with `null`; reports how many and the longest length. */
+export function scrubOversizedLeaves(value: unknown): { value: unknown; oversized: number; longest: number } {
+    let oversized = 0;
+    let longest = 0;
+    const walk = (v: unknown): unknown => {
+        if (typeof v === 'string') {
+            if (!isOversized(v)) {return v;}
+            oversized++;
+            longest = Math.max(longest, v.length);
+            return null;
+        }
+        if (Array.isArray(v)) {return v.map(walk);}
+        if (v !== null && typeof v === 'object') {return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, walk(x)]));}
+        return v;
+    };
+    const out = walk(value);
+    return { value: out, oversized, longest };
 }

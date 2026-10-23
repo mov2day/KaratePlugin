@@ -7,7 +7,7 @@ import type { GenerationModel, OperationModel, SecurityScheme } from '../model/T
 import { planAuth } from '../plan/AuthSchemes';
 import type { PlannedFeature } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
-import { camelName, credentialKeys, SECRET_HEADER, SECRET_NAME, upperSnake } from './secrets';
+import { camelName, containsCredentialValue, credentialKeys, isOversized, oversizedReason, SECRET_HEADER, SECRET_NAME, upperSnake } from './secrets';
 import { analyzePreRequestScript, analyzeTestScript, convertBody } from './postmanScript';
 import type { ScriptAnalysis } from './postmanScript';
 
@@ -38,7 +38,8 @@ const idn = (name: string): string => {
 const camel = camelName;
 const normTag = (t: string): string => (t.startsWith('@') ? t : `@${t}`);
 const isNumberLiteral = (s: string): boolean => /^(?:0|[1-9]\d{0,14})(?:\.\d+)?$/.test(s);
-const VAR_RE = /\{\{([^}]+)\}\}/g;
+// Variable names are bounded (200 chars) so an unclosed `{{` run cannot rescan the rest of the text.
+const VAR_RE = /\{\{([^}]{1,200})\}\}/g;
 const namesIn = (s: string): string[] => [...s.matchAll(VAR_RE)].map(m => m[1].trim());
 const safeComment = (s: string): string => s.replace(/\s+/g, ' ').replace(/\bTODO\b/g, 'todo').trim();
 
@@ -442,6 +443,13 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                 let bodyDoc: string | undefined;
                 /** Raw bodies: JSON gets `#(expr)` placeholders (typed substitution); anything else is a docstring text body. */
                 const rawBody = (raw: string): { lines: string[]; doc?: string } => {
+                    if (isOversized(raw)) {
+                        // Unscannable: never written (JSON or not); drafted instead.
+                        reasons.push(oversizedReason(raw.length));
+                        comments.push('Body omitted: larger than the scan limit');
+                        warnOnce(`${e.sourceRef}: ${oversizedReason(raw.length)}`);
+                        return { lines: [] };
+                    }
                     const names: string[] = [];
                     let text = '';
                     let inStr = false;
@@ -449,7 +457,8 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                     for (let i = 0; i < raw.length; i++) {
                         const ch = raw[i];
                         if (raw.startsWith('{{', i)) {
-                            const end = raw.indexOf('}}', i);
+                            const rel = raw.slice(i + 2, i + 203).indexOf('}}');
+                            const end = rel >= 0 ? i + 2 + rel : -1;
                             if (end > i) {
                                 names.push(raw.slice(i + 2, end).trim());
                                 text += inStr ? `__PM_VAR_${names.length - 1}__` : `"__PM_VAR_${names.length - 1}__"`;
@@ -482,8 +491,8 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                     // Not cleanly parseable JSON (text, XML, form, malformed JSON). Fail safe: never rewrite the text; if it
                     // mentions any credential-like key the whole body is omitted and the scenario is drafted.
                     const keys = credentialKeys(raw);
-                    if (keys.length > 0) {
-                        reasons.push(`Request body contains credential-like fields (${keys.join(', ')}); provide the body via data/${collSlug}-variables.json or karate.sysenv`);
+                    if (keys.length > 0 || containsCredentialValue(raw)) {
+                        reasons.push(`Request body contains credential-like ${keys.length > 0 ? `fields (${keys.join(', ')})` : 'values'}; provide the body via data/${collSlug}-variables.json or karate.sysenv`);
                         comments.push('Body omitted: contains credential-like fields');
                         return { lines: [] };
                     }

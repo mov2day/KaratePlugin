@@ -20,6 +20,7 @@ const ordersApi = {
 const ordersModel = () => out('generation/adapters/openapi').buildOpenApiModel(ordersApi, 'orders');
 
 const build = (items, model) => adapter().buildRequirementScenarios(items, { config: cfg(), name: 'shop', model });
+const text_ = b => b.features.map(f => render().renderFeature(f.feature, { style: cfg().style })).join('\n');
 const text = b => b.features.map(f => render().renderFeature(f.feature, { style: cfg().style })).join('\n');
 const known = b => new Set(['common/auth.feature', ...b.files.map(f => f.path)]);
 const errors = (t, b) => gate().runGate(t, { knownFiles: known(b), config: cfg() }).findings.filter(f => f.severity === 'error');
@@ -339,5 +340,34 @@ module.exports = [
         const keep = ['The token count is shown', 'Secret santa picks a name', 'keyboard input is accepted', 'password reset flow works', 'read/write access is granted', 'a/b testing', 'the token is valid', 'Users need a password'];
         for (const input of keep) assert.equal(secrets.redactCredentialText(input).text, input);
         assert.equal(secrets.redactCredentialText('Dr. a@b.com').hits.length, 0);
-    } }
+    } },
+    { name: 'requirements: JWT-shaped runs stay linear and fuzzed repetition shapes stay under 150 ms for every detector at 200k chars', run() {
+        const secrets = require('../../out/generation/adapters/secrets');
+        const req = out('generation/adapters/requirements').redactRequirementText;
+        const fns = { credentialKeys: secrets.credentialKeys, containsCredentialValue: secrets.containsCredentialValue, redactCredentialText: secrets.redactCredentialText,
+            redactUrl: secrets.redactUrl, looksLikeCredentialValue: secrets.looksLikeCredentialValue, requirement: req };
+        const time = (name, fn, input) => { const t = Date.now(); fn(input); const ms = Date.now() - t; assert.ok(ms < 150, `${name} took ${ms} ms`); };
+        for (const [n, fn] of Object.entries(fns)) {
+            time(`${n}(jwt-dashes)`, fn, 'eyJaaaaaa-'.repeat(20000));
+            time(`${n}(jwt-dots)`, fn, 'eyJaaaaaa.'.repeat(20000));
+        }
+        const tokens = ['eyJ', 'a', '-', '.', '_', ':', '@', '/', '=', '"', '<', '>', ' ', 'password', 'token', 'Bearer ', 'Basic ', 'sk-', '://', '%'];
+        for (const a of tokens) {
+            for (const b of tokens) {
+                const unit = a + b;
+                const input = unit.repeat(Math.ceil(200000 / unit.length)).slice(0, 200000);
+                for (const [n, fn] of Object.entries(fns)) time(`${n}(${JSON.stringify(unit)}x)`, fn, input);
+            }
+        }
+    } },
+    { name: 'requirements: credentialKeys reports scan-limit when a window holds an absurd number of keys; a secret after 60k chars of source text never survives', run() {
+        const secrets = require('../../out/generation/adapters/secrets');
+        assert.ok(secrets.credentialKeys('token={{v}} '.repeat(5000)).includes('scan-limit'));
+        const text = `${'lorem ipsum '.repeat(5000)}password: SEKRET-AT-60K tail`;
+        const r = out('generation/adapters/requirements').redactRequirementText(text);
+        assert.ok(!r.text.includes('SEKRET-AT-60K') && r.text.endsWith('[truncated]') && r.truncated);
+        const b = build([{ id: 'BIG-1', title: 'Big', criteria: [`${'lorem ipsum '.repeat(5000)}Bearer eyJabcdefghijk.lmnopqrstu.vwxyz0123 end`, { text: 'ok', steps: [`${'x '.repeat(30000)} api_key=SEKRET-STEP-60K`] }] }]);
+        assert.ok(!text_(b).includes('SEKRET') && !text_(b).includes('eyJabcdefghijk'));
+        assert.ok(b.warnings.some(w => /BIG-1: text longer than 50000/.test(w)));
+    } },
 ];

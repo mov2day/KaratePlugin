@@ -8,7 +8,7 @@ import type { GenerationModel, OperationModel, SecurityScheme } from '../model/T
 import { planAuth, requiredSecrets } from '../plan/AuthSchemes';
 import type { PlannedFeature } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
-import { camelName, containsCredentialValue, credentialKeys, isSecretKey, looksLikeCredentialValue, upperSnake } from './secrets';
+import { camelName, containsCredentialValue, credentialKeys, isOversized, isSecretKey, looksLikeCredentialValue, oversizedReason, scrubOversizedLeaves, upperSnake } from './secrets';
 
 export interface HarModelOptions {
     config: GeneratorConfig;
@@ -379,6 +379,12 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
                 const asJson = /json/.test(ctype) || (ctype === '' && /^\s*[{[]/.test(bodyText));
                 const parsed = asJson ? parseJson(bodyText) : { ok: false as const };
                 if (asJson && parsed.ok) {
+                    const scrub = scrubOversizedLeaves(parsed.value);
+                    if (scrub.oversized > 0) {
+                        reasons.push(oversizedReason(scrub.longest));
+                        warnOnce(`${label}: ${oversizedReason(scrub.longest)}`);
+                    }
+                    const jsonValue = scrub.value;
                     if (ctype !== '' && ctype !== 'application/json') {headerKinds.add(`Content-Type = ${q(ctype)}`);}
                     const bodyVar = `body${n}`;
                     const externalize = config.data.externalize;
@@ -403,10 +409,10 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
                         }
                         return v;
                     };
-                    const converted = walk(parsed.value, '', '');
+                    const converted = walk(jsonValue, '', '');
                     if (!externalize || !simple) {
                         // Inline bodies keep `#(expr)` placeholders; a body that `set` cannot address is rewritten inline too.
-                        const value = externalize ? walkInline(parsed.value, subs) : converted;
+                        const value = externalize ? walkInline(jsonValue, subs) : converted;
                         const one = lit(value);
                         if (one.length > 100) {bodyDoc = lit(value, true);} else {bodySteps.push(st('And', `request ${one}`));}
                     } else {
@@ -416,6 +422,11 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
                         for (const s of subs) {sets.push(st('*', `set ${bodyVar}${s.acc} = ${s.expr}`));}
                         bodySteps.push(st('And', `request ${bodyVar}`));
                     }
+                } else if (isOversized(bodyText)) {
+                    reasons.push(oversizedReason(bodyText.length));
+                    comments.push(`Body omitted for ${label}: larger than the scan limit`);
+                    unsupported.push({ sourceRef: label, reason: 'request body omitted: larger than the scan limit' });
+                    warnOnce(`${label}: ${oversizedReason(bodyText.length)}`);
                 } else if (ctype === 'application/x-www-form-urlencoded') {
                     for (const [k, v] of new URLSearchParams(bodyText).entries()) {
                         bodySteps.push(st('And', `form field ${/^\w+$/.test(k) ? k : q(k)} = ${valueExpr(k, v)}`));

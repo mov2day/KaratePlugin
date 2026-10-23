@@ -477,6 +477,31 @@ module.exports = [
             assert.equal(b.model.baseUrl, 'https://shop.test');
             for (const g of gateAll(b)) assert.deepEqual(g.gate.findings.filter(f => f.severity === 'error'), [], g.path);
         }
+    },
+    {
+        name: 'har: a text body over the scan limit is omitted, the scenario drafted, and an unscanned secret never appears',
+        run() {
+            const mid = `${'q '.repeat(150000)}SEKRET-MID-HAR${' q'.repeat(150000)}`;
+            const b = build([entry('POST', `${H}/api/notes`, { headers: { 'Content-Type': 'text/xml' }, body: `<n>${mid}</n>`, json: { id: 'n1' }, status: 201 })]);
+            const all = allText(b);
+            assert.ok(!all.includes('SEKRET-MID-HAR'));
+            assert.match(featureText(b), /@ignore/);
+            assert.match(all, /Body is larger than the scan limit \(\d+ chars\); provide it via a data file after reviewing it for secrets/);
+            assert.ok(b.warnings.some(w => /larger than the scan limit/.test(w)));
+        }
+    },
+    {
+        name: 'har: a JSON string leaf over the scan limit becomes null, drafted, other leaves kept',
+        run() {
+            const body = JSON.stringify({ sku: 'ABC-1', note: `${'x'.repeat(150000)}SEKRET-LEAF-HAR`, quantity: 2 });
+            const b = build([entry('POST', `${H}/api/notes`, { headers: { 'Content-Type': 'application/json' }, body, json: { id: 'n1' }, status: 201 })]);
+            const all = allText(b);
+            assert.ok(!all.includes('SEKRET-LEAF-HAR'));
+            assert.match(all, /ABC-1/);
+            assert.match(featureText(b), /@ignore/);
+            assert.match(all, /larger than the scan limit/);
+            assert.ok(b.warnings.some(w => /larger than the scan limit/.test(w)));
+        }
     }
 ];
 

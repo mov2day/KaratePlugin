@@ -4,7 +4,7 @@ import type { PostmanBody } from '../../services/postmanParser';
 
 /** Replace Postman variables `{{var}}` using a map of known values; unknown ones become `#(var)`. */
 export function replaceVariables(text: string, variables: Map<string, string>): string {
-    return text.replace(/\{\{([^}]+)\}\}/g, (_match, varName: string) => {
+    return text.replace(/\{\{([^}]{1,200})\}\}/g, (_match, varName: string) => {
         if (variables.has(varName)) {
             return variables.get(varName)!;
         }
