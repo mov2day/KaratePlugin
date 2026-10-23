@@ -95,6 +95,8 @@ function unknownIds(op: OperationModel): Record<string, string> {
     return out;
 }
 
+/** Karate step target for a parameter, header or cookie name: bare when it is a plain identifier, otherwise a quoted literal. */
+const quoteName = (n: string): string => (/^[A-Za-z_][\w.-]*$/.test(n) ? n : jsLiteral(n));
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 function domainOf(op: OperationModel): string {
@@ -136,7 +138,7 @@ class Planner {
 
     constructor(private readonly model: GenerationModel, private readonly config: GeneratorConfig, private readonly opts: PlanOptions = {}) {
         this.style = config.style;
-        this.auth = planAuth(model.schemes);
+        this.auth = planAuth(model.schemes, model.operations);
         this.dir = opts.filePrefix ? `${slug(opts.filePrefix)}/` : '';
         this.unsupported = new Map(model.unsupported.map(u => [u.sourceRef, u.reason]));
         this.ops = [...model.operations].sort((a, b) => cmp(a.path, b.path) || cmp(a.method, b.method));
@@ -147,6 +149,7 @@ class Planner {
     plan(): PlanResult {
         const chains = this.config.scenarios.crud ? this.findChains() : [];
         const chained = new Set(chains.map(c => c.del.id));
+        this.warnSchemes();
         for (const op of this.ops) {this.planOperation(op, chained);}
         for (const chain of chains) {this.planChain(chain);}
         if (this.config.scenarios.exploratory) {this.planPathExploratory();}
@@ -166,9 +169,26 @@ class Planner {
         return this.model.schemes.length > 0 && Array.isArray(op.security) && op.security.length > 0;
     }
 
+    /** Optional auth: the spec also allows anonymous access, so rejecting an unauthenticated request is not part of the contract. */
+    private anonymousOk(op: OperationModel): boolean {
+        return op.optionalAuth === true;
+    }
+
+    /** The scheme the operation names; undefined when none of its schemes is declared (callers skip or draft with a reason). */
     private schemeOf(op: OperationModel): SecurityScheme | undefined {
         const names = this.groupsOf(op).flat();
-        return this.model.schemes.find(s => names.includes(s.name) && this.applicable(s.name)) ?? this.model.schemes.find(s => names.includes(s.name)) ?? this.model.schemes[0];
+        return this.model.schemes.find(s => names.includes(s.name) && this.applicable(s.name)) ?? this.model.schemes.find(s => names.includes(s.name));
+    }
+
+    private warnSchemes(): void {
+        for (const u of this.model.unsupported) {
+            if (u.sourceRef.startsWith('securityScheme:')) {this.warn(`Security scheme "${u.sourceRef.slice('securityScheme:'.length)}": ${u.reason}`);}
+        }
+        for (const s of this.model.schemes) {
+            if (s.kind === 'oauth2' && !s.tokenUrl && (s.flow === undefined || s.flow === 'clientCredentials' || s.flow === 'password')) {
+                this.warn(`Security scheme "${s.name}": oauth2 has no tokenUrl; set API_TOKEN_URL for common/auth.feature`);
+            }
+        }
     }
 
     // ---------------------------------------------------------------- layout
@@ -378,6 +398,7 @@ class Planner {
             note = 'Contract case: unknown resource id';
         } else if (want === '401') {
             if (!secured) {return { reason: `${op.method} ${op.path} does not require authentication`, secured };}
+            if (this.anonymousOk(op)) {return { reason: `${op.method} ${op.path} also allows anonymous access (optional authentication)`, secured };}
             steps = [...this.requestSteps(op, { auth: false }), st('Then', 'status 401')];
             category = 'security';
         } else {
@@ -473,7 +494,7 @@ class Planner {
         const request: Array<[string]> = [];
         const segments = op.path.split('/').filter(Boolean);
         if (segments.length > 0) {request.push([`path ${segments.map(s => this.segmentExpr(s)).join(', ')}`]);}
-        const quote = (n: string): string => (/^[A-Za-z_][\w.-]*$/.test(n) ? n : jsLiteral(n));
+        const quote = quoteName;
         for (const q of op.queryParams) {
             if (o.query && q.name in o.query) {
                 if (o.query[q.name] !== null) {request.push([`param ${quote(q.name)} = ${o.query[q.name]}`]);}
@@ -491,7 +512,7 @@ class Planner {
         if (o.auth !== false && this.secured(op)) {
             for (const k of this.stepSchemes(op)) {
                 const variable = this.auth.apiKeyVars.get(k.name)!.variable;
-                request.push([k.in === 'cookie' ? `cookie ${k.paramName ?? 'api_key'} = ${variable}` : `param ${quote(k.paramName ?? 'api_key')} = ${variable}`]);
+                request.push([k.in === 'cookie' ? `cookie ${quote(k.paramName ?? 'api_key')} = ${variable}` : `param ${quote(k.paramName ?? 'api_key')} = ${variable}`]);
             }
         }
         if (hasBody) {request.push([`request ${pv}`]);}
@@ -604,11 +625,15 @@ class Planner {
     // ---- security
 
     private planSecurity(op: OperationModel): void {
-        if (!this.secured(op)) {return;}
+        if (!this.secured(op) || this.anonymousOk(op)) {return;}
         const steps = [...this.requestSteps(op, { auth: false }), st('Then', 'status 401')];
         this.push(op, 'security', this.scenario(op, 'security', `${this.label(op)} - rejects an unauthenticated request with 401`, steps));
         if (declared(op, '403')) {
             const scheme = this.schemeOf(op);
+            if (!scheme) {
+                this.warn(`${op.sourceRef}: no declared security scheme applies; the 403 scenario was skipped`);
+                return;
+            }
             const forbidden = [st('*', "def token = karate.sysenv('API_FORBIDDEN_TOKEN', '')"), ...this.credentialSteps(scheme, 'token')];
             const all = this.requestSteps(op, { auth: false });
             const at = all.findIndex(s => s.keyword === 'Given' || s.keyword === 'When');
@@ -620,15 +645,21 @@ class Planner {
         }
     }
 
-    private credentialSteps(scheme: SecurityScheme | undefined, valueExpr: string): KarateStep[] {
-        if (scheme?.kind === 'apiKey') {
-            const name = scheme.paramName ?? 'X-API-Key';
+    /**
+     * Steps that send `valueExpr` as the scheme's credential. apiKey sends it raw; basic expects the value to be the
+     * base64 of user:password (documented contract for API_FORBIDDEN_TOKEN); bearer, oauth2 and openIdConnect use Bearer.
+     * `empty` sends a blank credential instead (no scheme prefix).
+     */
+    private credentialSteps(scheme: SecurityScheme, valueExpr: string, empty = false): KarateStep[] {
+        if (scheme.kind === 'apiKey') {
+            const name = quoteName(scheme.paramName ?? 'X-API-Key');
             if (scheme.in === 'query') {return [st('*', `param ${name} = ${valueExpr}`)];}
             if (scheme.in === 'cookie') {return [st('*', `cookie ${name} = ${valueExpr}`)];}
             return [st('*', `header ${name} = ${valueExpr}`)];
         }
-        if (scheme?.kind === 'basic') {return [st('*', `header Authorization = 'Basic ' + ${valueExpr}`)];}
-        return [st('*', `header Authorization = 'Bearer ' + ${valueExpr}`)];
+        if (empty) {return [st('*', "header Authorization = ''")];}
+        const prefix = scheme.kind === 'basic' ? 'Basic' : 'Bearer';
+        return [st('*', `header Authorization = '${prefix} ' + ${valueExpr}`)];
     }
 
     // ---- boundary / edge
@@ -794,11 +825,11 @@ class Planner {
             this.push(op, 'main', this.exploratory(op, `${this.label(op)} - handles an injection string in '${field[0]}'`, this.requestSteps(op, { mutate: [st('*', `set payload.${field[0]} = ${jsLiteral(INJECTION)}`)] })));
         }
         // Empty credentials (runs unauthenticated, so it lives with the security scenarios).
-        if (this.secured(op)) {
-            const scheme = this.schemeOf(op);
+        const scheme = this.secured(op) && !this.anonymousOk(op) ? this.schemeOf(op) : undefined;
+        if (scheme) {
             const steps = this.requestSteps(op, { auth: false });
             const at = steps.findIndex(s => s.keyword === 'Given' || s.keyword === 'When');
-            steps.splice(at < 0 ? steps.length : at, 0, ...this.credentialSteps(scheme, "''").map(s => ({ ...s, text: s.text.replace(/ = 'Bearer ' \+ ''$| = 'Basic ' \+ ''$/, " = ''") })));
+            steps.splice(at < 0 ? steps.length : at, 0, ...this.credentialSteps(scheme, "''", true));
             this.push(op, 'security', this.exploratory(op, `${this.label(op)} - handles empty credentials`, steps));
         }
     }

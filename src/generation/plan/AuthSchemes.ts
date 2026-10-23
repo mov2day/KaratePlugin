@@ -1,8 +1,8 @@
 /** Pure planning of which security schemes common/auth.feature can apply. Karate v2 has one active `configure auth`. */
-import type { SecurityScheme } from '../model/TestModel';
+import type { OperationModel, SecurityScheme } from '../model/TestModel';
 
 export interface AuthPlan {
-    /** The single scheme applied with `configure auth` (first bearer/basic/oauth2/openIdConnect in declared order). */
+    /** The single scheme applied with `configure auth`: the most used bearer/basic/oauth2/openIdConnect scheme (ties by declaration order). */
     primary?: SecurityScheme;
     /** Header-placed apiKey schemes, applied together in one `configure headers`. */
     headerKeys: SecurityScheme[];
@@ -19,15 +19,27 @@ export interface AuthPlan {
 }
 
 const isPrimaryKind = (s: SecurityScheme): boolean => s.kind === 'bearer' || s.kind === 'basic' || s.kind === 'oauth2' || s.kind === 'openIdConnect';
-/** Only client-credentials oauth2 (or oauth2 without flow info) can be driven by `configure auth`. */
-const configurable = (s: SecurityScheme): boolean => isPrimaryKind(s) && (s.kind !== 'oauth2' || s.flow === undefined || s.flow === 'clientCredentials');
+/** Client-credentials and password oauth2 (or oauth2 without flow info) can be driven from auth.feature; authorizationCode and implicit need a browser. */
+const configurable = (s: SecurityScheme): boolean => isPrimaryKind(s) && (s.kind !== 'oauth2' || s.flow === undefined || s.flow === 'clientCredentials' || s.flow === 'password');
+
+/** How many operations reference each scheme name (each operation counts a name once). */
+export function schemeUsage(operations: OperationModel[]): Map<string, number> {
+    const usage = new Map<string, number>();
+    for (const op of operations) {
+        const names = new Set((op.securityGroups && op.securityGroups.length > 0 ? op.securityGroups.flat() : Array.isArray(op.security) ? op.security : []));
+        for (const n of names) {usage.set(n, (usage.get(n) ?? 0) + 1);}
+    }
+    return usage;
+}
 
 const words = (name: string): string[] => name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[^A-Za-z0-9]+/).filter(Boolean);
 const upperSnake = (name: string): string => words(name).map(w => w.toUpperCase()).join('_') || 'KEY';
 const camel = (name: string): string => words(name).map(w => w[0].toUpperCase() + w.slice(1).toLowerCase()).join('') || 'Key';
 
-export function planAuth(schemes: SecurityScheme[]): AuthPlan {
-    const primary = schemes.find(configurable);
+export function planAuth(schemes: SecurityScheme[], operations: OperationModel[] = []): AuthPlan {
+    const usage = schemeUsage(operations);
+    // Array.sort is stable, so equal usage keeps declaration order.
+    const primary = schemes.filter(configurable).sort((a, b) => (usage.get(b.name) ?? 0) - (usage.get(a.name) ?? 0))[0];
     const unsupported: SecurityScheme[] = schemes.filter(s => isPrimaryKind(s) && s !== primary);
     const headerKeys: SecurityScheme[] = [];
     const queryKeys: SecurityScheme[] = [];
@@ -38,7 +50,7 @@ export function planAuth(schemes: SecurityScheme[]): AuthPlan {
             continue;
         }
         const header = (s.paramName ?? 'X-API-Key').toLowerCase();
-        if (headerNames.has(header)) {unsupported.push(s);} // a headers object cannot hold the same key twice
+        if (headerNames.has(header) || (primary && header === 'authorization')) {unsupported.push(s);} // a headers object cannot hold the same key twice
         else {
             headerNames.add(header);
             headerKeys.push(s);
@@ -75,7 +87,7 @@ export function requiredSecrets(plan: AuthPlan): string[] {
     switch (plan.primary?.kind) {
         case undefined: break;
         case 'basic': out.push('API_USER', 'API_PASSWORD'); break;
-        case 'oauth2': out.push('API_CLIENT_ID', 'API_CLIENT_SECRET'); break;
+        case 'oauth2': out.push('API_CLIENT_ID', 'API_CLIENT_SECRET', ...(plan.primary.flow === 'password' ? ['API_USERNAME', 'API_PASSWORD'] : [])); break;
         default: out.push('API_TOKEN');
     }
     for (const s of [...plan.headerKeys, ...plan.queryKeys]) {out.push(plan.apiKeyVars.get(s.name)!.env);}
@@ -84,9 +96,9 @@ export function requiredSecrets(plan: AuthPlan): string[] {
 
 /** Why auth.feature cannot configure a scheme. */
 export function unsupportedReason(s: SecurityScheme): string {
-    if (s.kind === 'oauth2' && s.flow && s.flow !== 'clientCredentials') {
-        return `oauth2 ${s.flow} flow cannot be configured automatically; supply a token via API_TOKEN and use bearer, or extend common/auth.feature`;
+    if (s.kind === 'oauth2' && s.flow && s.flow !== 'clientCredentials' && s.flow !== 'password') {
+        return `oauth2 ${s.flow} flow needs an interactive browser login and is not supported; obtain a token yourself, set API_TOKEN and configure a bearer scheme, or extend common/auth.feature`;
     }
-    if (s.kind === 'apiKey') {return 'duplicate header name already used by another apiKey scheme';}
+    if (s.kind === 'apiKey') {return 'header name already used by another apiKey scheme or by the Authorization header of the primary scheme';}
     return "Karate v2 applies a single auth scheme; add credentials manually";
 }

@@ -95,12 +95,39 @@ function authFeature(plan: AuthPlan): string {
             "* configure auth = { type: 'basic', username: '#(username)', password: '#(password)' }"
         );
     } else if (s?.kind === 'oauth2') {
+        const scopes = (s.scopes ?? []).join(' ');
+        if (!s.tokenUrl) {steps.push("# WARNING: the spec declares no tokenUrl for this oauth2 scheme; set API_TOKEN_URL (or replace tokenUrl below)");}
+        const tokenUrl = s.tokenUrl ? q(s.tokenUrl) : 'tokenUrl';
+        if (!s.tokenUrl) {steps.push("* def tokenUrl = karate.sysenv('API_TOKEN_URL', '')");}
         steps.push(
             "* def clientId = karate.sysenv('API_CLIENT_ID', '')",
-            "* def clientSecret = karate.sysenv('API_CLIENT_SECRET', '')",
-            `* configure auth = { type: 'oauth2', tokenUrl: ${q(s.tokenUrl ?? '')}, clientId: '#(clientId)', clientSecret: '#(clientSecret)' }`
+            "* def clientSecret = karate.sysenv('API_CLIENT_SECRET', '')"
         );
+        if (scopes) {steps.push(`# Scopes declared by the spec; override with API_SCOPE (space separated)`, `* def scope = karate.sysenv('API_SCOPE', ${q(scopes)})`);}
+        if (s.flow === 'password') {
+            steps.push(
+                '# Password flow: API_USERNAME and API_PASSWORD are exchanged for a bearer token',
+                "* def username = karate.sysenv('API_USERNAME', '')",
+                "* def password = karate.sysenv('API_PASSWORD', '')",
+                `* url ${tokenUrl}`,
+                "* form field grant_type = 'password'",
+                "* form field client_id = clientId",
+                "* form field client_secret = clientSecret",
+                "* form field username = username",
+                "* form field password = password",
+                ...(scopes ? ['* form field scope = scope'] : []),
+                '* method post',
+                '* status 200',
+                '* def token = response.access_token',
+                "* configure auth = { type: 'bearer', token: '#(token)' }"
+            );
+        } else {
+            steps.push(`* configure auth = { type: 'oauth2', tokenUrl: ${tokenUrl}, clientId: '#(clientId)', clientSecret: '#(clientSecret)'${scopes ? ", scope: '#(scope)'" : ''} }`);
+        }
     } else if (s) {
+        if (s.kind === 'openIdConnect') {
+            steps.push(`# openIdConnect${s.openIdConnectUrl ? ` (${s.openIdConnectUrl})` : ''}: obtain an access token from the provider and set API_TOKEN`);
+        }
         steps.push("* def token = karate.sysenv('API_TOKEN', '')", "* configure auth = { type: 'bearer', token: '#(token)' }");
     }
     for (const k of plan.headerKeys) {
@@ -144,14 +171,14 @@ export function planScaffold(ctx: ScaffoldContext): ScaffoldFile[] {
 
     if (!project.baseConfig) {
         add('karate-config.js', baseConfigJs(urlVar, baseUrl, envJsonMode), 'Base Karate configuration');
-        const secrets = requiredSecrets(planAuth(model.schemes));
+        const secrets = requiredSecrets(planAuth(model.schemes, model.operations));
         for (const env of config.config.envs) {
             if (project.envConfigs.includes(env)) {continue;}
             if (envJsonMode) {add(`config/${env}.json`, envJson(urlVar, baseUrl), `Environment config for ${env}`);}
             else {add(`karate-config-${env}.js`, envConfigJs(env, urlVar, secrets), `Environment overrides for ${env}`);}
         }
     }
-    if (model.schemes.length > 0) {add('common/auth.feature', authFeature(planAuth(model.schemes)), 'Authentication setup from spec security schemes');}
+    if (model.schemes.length > 0) {add('common/auth.feature', authFeature(planAuth(model.schemes, model.operations)), 'Authentication setup from spec security schemes');}
     add('common/utils.feature', UTILS_FEATURE, 'Shared helper functions');
     return files;
 }

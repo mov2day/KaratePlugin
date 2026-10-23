@@ -5,7 +5,7 @@ import type { KarateScenario, KarateStep } from '../../types';
 import type { CapturedRequest } from '../../services/session/CapturedRequest';
 import type { GeneratorConfig } from '../config/GeneratorConfig';
 import type { GenerationModel, OperationModel, SecurityScheme } from '../model/TestModel';
-import { planAuth, requiredSecrets } from '../plan/AuthSchemes';
+import { planAuth, requiredSecrets, unsupportedReason } from '../plan/AuthSchemes';
 import type { PlannedFeature } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
 import { camelName, containsCredentialValue, credentialKeys, isOversized, isSecretKey, looksLikeCredentialValue, oversizedReason, scrubOversizedLeaves, upperSnake } from './secrets';
@@ -251,15 +251,27 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
         if (v === undefined || v.trim() === '') {return undefined;}
         return /^bearer\s/i.test(v) ? { kind: 'bearer' } : /^basic\s/i.test(v) ? { kind: 'basic' } : { kind: 'unknown' };
     };
+    // Dedicated API key headers (X-API-Key, api-key, X-Auth-Token, ...) are classified as apiKey schemes; other secret headers stay per-request.
+    const KEY_HEADER = /^(?:x-)?api[-_]?key$|^x-(?:api|auth|access)-token$/i;
+    const keyHeaders = (c: Call): string[] => Object.keys(c.req.headers ?? {}).filter(h => KEY_HEADER.test(h) && String(c.req.headers[h] ?? '') !== '');
+    const keySchemeName = (h: string): string => `apikey-${slug(h) || 'key'}`;
     let cookieSeen = false;
     for (const c of calls) {
         const a = authOf(c);
         if (a && a.kind !== 'unknown' && !schemes.some(s => s.kind === a.kind)) {schemes.push({ name: a.kind, kind: a.kind });}
+        for (const h of keyHeaders(c)) {
+            if (!schemes.some(s => s.kind === 'apiKey' && s.paramName?.toLowerCase() === h.toLowerCase())) {schemes.push({ name: keySchemeName(h), kind: 'apiKey', in: 'header', paramName: h });}
+        }
         if (header(c.req.headers, 'cookie') !== undefined) {cookieSeen = true;}
     }
-    const authPlan = planAuth(schemes);
+    // The primary bearer/basic scheme is the one most requests use.
+    const securityOf = (c: Call): string[] => {
+        const a = authOf(c);
+        return [...(a && a.kind !== 'unknown' ? [a.kind] : []), ...keyHeaders(c).map(keySchemeName)];
+    };
+    const authPlan = planAuth(schemes, calls.map(c => ({ security: securityOf(c) } as OperationModel)));
     for (const s of authPlan.unsupported) {
-        const reason = 'Karate v2 applies a single auth scheme; configure this one manually';
+        const reason = unsupportedReason(s);
         unsupported.push({ sourceRef: `auth:${s.name}`, reason });
         warnOnce(`Auth "${s.name}": ${reason}`);
     }
@@ -353,6 +365,7 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
                 const l = hName.toLowerCase();
                 const hValue = String(hValueRaw ?? '');
                 if (hName.startsWith(':') || l === 'authorization' || l === 'cookie' || l === 'content-type' || l === 'content-length') {continue;}
+                if (KEY_HEADER.test(hName) && hValue !== '') {continue;} // applied by common/auth.feature
                 const hn = /^[\w-]+$/.test(hName) ? hName : q(hName);
                 if (isSecretKey(hName) || (l.startsWith('x-') && (looksLikeCredentialValue(hValue) || containsCredentialValue(hValue)))) {
                     hdrs.push(st('And', `header ${hn} = ${hValue === '' ? q('') : secretVar(hName)}`));
@@ -496,10 +509,9 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
             let opId = `${call.method.toLowerCase()}-${slug(labelSegs.join('/').replace(/[{}]/g, '')) || 'root'}`;
             for (let i = 2; opIds.has(opId); i++) {opId = `${call.method.toLowerCase()}-${slug(labelSegs.join('/').replace(/[{}]/g, '')) || 'root'}-${i}`;}
             opIds.add(opId);
-            const a = authOf(call);
             operations.push({
                 id: opId, method: call.method, path: `/${labelSegs.join('/')}`, summary: label, tags: [], pathParams: [], queryParams: [], headerParams: [],
-                responses: [{ status: String(call.status) }], security: a && a.kind !== 'unknown' ? [a.kind] : 'none', sourceRef: label
+                responses: [{ status: String(call.status) }], security: securityOf(call).length > 0 ? securityOf(call) : 'none', sourceRef: label
             });
         });
 

@@ -204,35 +204,55 @@ function paramSchema(param: any, ctx: Ctx): JsonSchema {
     return inline;
 }
 
-function buildSchemes(api: any): SecurityScheme[] {
+function buildSchemes(api: any, ctx: Ctx, unsupported: GenerationModel['unsupported']): SecurityScheme[] {
     const defs: Record<string, any> = api.components?.securitySchemes ?? api.securityDefinitions ?? {};
     const schemes: SecurityScheme[] = [];
-    for (const [name, raw] of Object.entries(defs)) {
-        const def = isObject(raw) ? raw : {};
+    const skip = (name: string, reason: string): void => { unsupported.push({ sourceRef: `securityScheme:${name}`, reason }); };
+    for (const [name, rawDef] of Object.entries(defs)) {
+        const resolved = follow(rawDef, ctx);
+        if (!isObject(resolved)) {
+            skip(name, 'security scheme is missing or its $ref cannot be resolved');
+            continue;
+        }
+        const def = resolved;
         const type = String(def.type ?? '').toLowerCase();
-        if (type === 'basic' || (type === 'http' && String(def.scheme).toLowerCase() === 'basic')) {
+        const httpScheme = String(def.scheme).toLowerCase();
+        if (type === 'basic' || (type === 'http' && httpScheme === 'basic')) {
             schemes.push({ name, kind: 'basic' });
-        } else if (type === 'http' && String(def.scheme).toLowerCase() === 'bearer') {
+        } else if (type === 'http' && httpScheme === 'bearer') {
             schemes.push({ name, kind: 'bearer' });
+        } else if (type === 'http') {
+            skip(name, `http scheme "${def.scheme}" is not supported; common/auth.feature cannot configure it, add the credentials manually`);
+        } else if (type === 'mutualtls') {
+            skip(name, 'mutualTLS is not supported; configure the client certificate in karate-config (configure ssl) manually');
         } else if (type === 'apikey') {
-            const where = ['header', 'query', 'cookie'].includes(def.in) ? def.in : undefined;
-            schemes.push({ name, kind: 'apiKey', ...(where ? { in: where } : {}), ...(def.name ? { paramName: def.name } : {}) });
+            const where = typeof def.in === 'string' ? def.in.toLowerCase() : '';
+            if (!['header', 'query', 'cookie'].includes(where)) {
+                skip(name, `apiKey scheme has an invalid "in" (${JSON.stringify(def.in)}); expected header, query or cookie, so the header form is assumed`);
+            }
+            schemes.push({ name, kind: 'apiKey', ...(where === 'header' || where === 'query' || where === 'cookie' ? { in: where } : {}), ...(def.name ? { paramName: def.name } : {}) });
         } else if (type === 'oauth2') {
             const flows = isObject(def.flows) ? def.flows : {};
             const oas2: Record<string, SecurityScheme['flow']> = { application: 'clientCredentials', password: 'password', accesscode: 'authorizationCode', implicit: 'implicit' };
             let flow: SecurityScheme['flow'];
             let tokenUrl: string | undefined;
+            let scopeMap: unknown;
             if (isObject(flows) && Object.keys(flows).length > 0) {
                 const chosen = (flows.clientCredentials ? 'clientCredentials' : Object.keys(flows).find(k => k in oas2 || ['clientCredentials', 'password', 'authorizationCode', 'implicit'].includes(k))) as SecurityScheme['flow'];
                 flow = chosen;
                 tokenUrl = chosen ? flows[chosen]?.tokenUrl : undefined;
+                scopeMap = chosen ? flows[chosen]?.scopes : undefined;
             } else if (typeof def.flow === 'string') {
                 flow = oas2[def.flow.toLowerCase()];
                 tokenUrl = def.tokenUrl;
+                scopeMap = def.scopes;
             }
-            schemes.push({ name, kind: 'oauth2', ...(flow ? { flow } : {}), ...(tokenUrl ? { tokenUrl } : {}) });
+            const scopes = isObject(scopeMap) ? Object.keys(scopeMap) : [];
+            schemes.push({ name, kind: 'oauth2', ...(flow ? { flow } : {}), ...(tokenUrl ? { tokenUrl } : {}), ...(scopes.length > 0 ? { scopes } : {}) });
         } else if (type === 'openidconnect') {
-            schemes.push({ name, kind: 'openIdConnect' });
+            schemes.push({ name, kind: 'openIdConnect', ...(typeof def.openIdConnectUrl === 'string' && def.openIdConnectUrl ? { openIdConnectUrl: def.openIdConnectUrl } : {}) });
+        } else {
+            skip(name, `security scheme type "${String(def.type)}" is not supported`);
         }
     }
     return schemes;
@@ -257,6 +277,11 @@ function securityGroups(sec: any): string[][] {
         if (names.length > 0) {groups.push(names);}
     }
     return groups;
+}
+
+/** An empty requirement object (`{}`) in a security list means anonymous access is allowed. */
+function allowsAnonymous(sec: any): boolean {
+    return Array.isArray(sec) && sec.some(req => isObject(req) && Object.keys(req).length === 0);
 }
 
 function securityNames(sec: any): string[] {
@@ -324,16 +349,21 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
     const model: GenerationModel = {
         source: 'openapi',
         name: sourceName,
-        schemes: buildSchemes(doc),
+        schemes: [],
         operations: [],
         unsupported: []
     };
+    model.schemes = buildSchemes(doc, ctx, model.unsupported);
     const baseUrl = buildBaseUrl(doc);
     if (baseUrl) {
         model.baseUrl = baseUrl;
     }
     const globalSecurity = Array.isArray(doc.security) ? securityNames(doc.security) : undefined;
     const globalGroups = Array.isArray(doc.security) ? securityGroups(doc.security) : [];
+    const globalOptional = allowsAnonymous(doc.security);
+    const knownSchemes = new Set(model.schemes.map(s => s.name));
+    const skippedSchemes = new Set(model.unsupported.map(u => u.sourceRef.replace(/^securityScheme:/, '')));
+    const warnedUnknown = new Set<string>();
 
     const usedIds = new Set<string>();
     for (const [path, rawItem] of Object.entries(doc.paths ?? {})) {
@@ -426,16 +456,26 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
 
             let security: OperationModel['security'];
             let groups: string[][] = [];
+            let optionalAuth = false;
             if (Array.isArray(operation.security)) {
                 // Optional auth ({} alongside named schemes) keeps the names; only an all-empty list means 'none'.
                 const names = securityNames(operation.security);
                 security = names.length === 0 ? 'none' : names;
                 groups = securityGroups(operation.security);
+                optionalAuth = names.length > 0 && allowsAnonymous(operation.security);
             } else if (globalSecurity !== undefined) {
                 security = globalSecurity.length === 0 ? 'none' : globalSecurity;
                 groups = globalGroups;
+                optionalAuth = globalSecurity.length > 0 && globalOptional;
             } else {
                 security = 'inherit';
+            }
+
+            for (const name of Array.isArray(security) ? security : []) {
+                if (!knownSchemes.has(name) && !skippedSchemes.has(name) && !warnedUnknown.has(name)) {
+                    warnedUnknown.add(name);
+                    model.unsupported.push({ sourceRef: `securityScheme:${name}`, reason: `${sourceRef} references security scheme "${name}", which is not declared in the spec's security schemes; add its credentials manually` });
+                }
             }
 
             const baseId: string = operation.operationId || slug(method, path);
@@ -456,6 +496,7 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
                 responses: buildResponses(operation, doc, ctx),
                 security,
                 ...(groups.length > 0 ? { securityGroups: groups } : {}),
+                ...(optionalAuth ? { optionalAuth } : {}),
                 sourceRef
             };
             if (operation.summary) {

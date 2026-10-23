@@ -343,17 +343,17 @@ module.exports = [
         }
     },
     {
-        name: 'scaffold: oauth2 non-clientCredentials flows are unsupported with a clear comment',
+        name: 'scaffold: oauth2 authorizationCode/implicit flows are unsupported with a clear comment',
         run() {
             const { planAuth } = require('../../out/generation/plan/AuthSchemes');
             assert.equal(planAuth([{ name: 'o', kind: 'oauth2', flow: 'clientCredentials', tokenUrl: 'https://t' }]).primary.name, 'o');
             assert.equal(planAuth([{ name: 'o', kind: 'oauth2' }]).primary.name, 'o');
-            const schemes = [{ name: 'pw', kind: 'oauth2', flow: 'password', tokenUrl: 'https://t' }];
+            const schemes = [{ name: 'pw', kind: 'oauth2', flow: 'authorizationCode', tokenUrl: 'https://t' }];
             assert.equal(planAuth(schemes).primary, undefined);
             const m = byPath(plan({}, {}, { schemes }));
             const a = m['src/test/java/common/auth.feature'].content;
             assert.doesNotMatch(a, /configure auth/);
-            assert.match(a, /# Cannot configure pw: oauth2 password flow cannot be configured automatically; supply a token via API_TOKEN and use bearer, or extend common\/auth\.feature/);
+            assert.match(a, /# Cannot configure pw: oauth2 authorizationCode flow needs an interactive browser login and is not supported; obtain a token yourself, set API_TOKEN and configure a bearer scheme, or extend common\/auth\.feature/);
             assert.doesNotMatch(m['src/test/java/karate-config-staging.js'].content, /throw/);
             assert.equal(gate().runGate(a).ok, true);
             // a later bearer scheme is still picked as primary

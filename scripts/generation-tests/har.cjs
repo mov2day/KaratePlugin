@@ -125,16 +125,17 @@ module.exports = [
         name: 'har: a Bearer Authorization header becomes a model scheme and the call auth helper; secrets use karate.sysenv',
         run() {
             const b = build();
-            assert.deepEqual(b.model.schemes.map(s => s.kind), ['bearer']);
+            assert.deepEqual(b.model.schemes.map(s => s.kind), ['bearer', 'apiKey']);
+            assert.deepEqual(b.model.schemes[1], { name: 'apikey-x-api-key', kind: 'apiKey', in: 'header', paramName: 'X-Api-Key' });
             const t = featureText(b);
             assert.match(t, /\* url baseUrl\n/);
             assert.match(t, /\* call read\('classpath:common\/auth\.feature'\)/);
-            assert.match(t, /\* def xApiKey = karate\.sysenv\('X_API_KEY', ''\)/);
+            // the API key header is applied by common/auth.feature, not repeated per request
+            assert.doesNotMatch(t, /x-api-key/i);
             assert.match(t, /\* def token = karate\.sysenv\('TOKEN', ''\)/);
             assert.match(t, /\* def password = karate\.sysenv\('PASSWORD', ''\)/);
-            assert.match(t, /header x-api-key = xApiKey/i);
             assert.match(t, /param token = token/);
-            assert.deepEqual(b.model.operations.map(o => o.security).slice(0, 2), [['bearer'], ['bearer']]);
+            assert.deepEqual(b.model.operations.map(o => o.security).slice(0, 2), [['bearer', 'apikey-x-api-key'], ['bearer']]);
         }
     },
     {

@@ -1,0 +1,61 @@
+swagger: '2.0'
+info:
+  title: Auth Matrix 20
+  version: 1.0.0
+host: localhost:9002
+schemes: [http]
+securityDefinitions:
+  basicAuth:
+    type: basic
+  keyAuth:
+    type: apiKey
+    in: Header
+    name: X-Token
+  pwFlow:
+    type: oauth2
+    flow: password
+    tokenUrl: https://idp.example.com/token
+    scopes:
+      read: Read
+      write: Write
+  implicitFlow:
+    type: oauth2
+    flow: implicit
+    authorizationUrl: https://idp.example.com/authorize
+    scopes: {}
+paths:
+  /a:
+    get:
+      operationId: aOp
+      security:
+        - keyAuth: []
+      responses:
+        '200': { description: ok }
+  /b:
+    get:
+      operationId: bOp
+      security:
+        - pwFlow: [read]
+      responses:
+        '200': { description: ok }
+  /c:
+    get:
+      operationId: cOp
+      security:
+        - basicAuth: []
+      responses:
+        '200': { description: ok }
+  /d:
+    get:
+      operationId: dOp
+      security:
+        - pwFlow: [read, write]
+      responses:
+        '200': { description: ok }
+  /e:
+    get:
+      operationId: eOp
+      security:
+        - implicitFlow: []
+      responses:
+        '200': { description: ok }

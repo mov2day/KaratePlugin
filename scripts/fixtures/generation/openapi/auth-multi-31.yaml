@@ -1,0 +1,51 @@
+openapi: 3.1.0
+info:
+  title: Auth Matrix 31
+  version: 1.0.0
+servers:
+  - url: http://localhost:9001
+security:
+  - {}
+  - headerKey: []
+components:
+  securitySchemes:
+    mtls:
+      type: mutualTLS
+    headerKey:
+      type: apiKey
+      in: HEADER
+      name: X-API-Key
+    bearerRef:
+      $ref: '#/components/securitySchemes/realBearer'
+    realBearer:
+      type: http
+      scheme: bearer
+    oidc:
+      type: openIdConnect
+      openIdConnectUrl: https://idp.example.com/.well-known/openid-configuration
+    emptyToken:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: ''
+          scopes: {}
+paths:
+  /things:
+    get:
+      operationId: listThings
+      responses:
+        '200': { description: ok }
+  /secure:
+    get:
+      operationId: secureThing
+      security:
+        - bearerRef: []
+      responses:
+        '200': { description: ok }
+  /machine:
+    get:
+      operationId: machineThing
+      security:
+        - emptyToken: []
+      responses:
+        '200': { description: ok }

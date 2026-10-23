@@ -80,3 +80,15 @@ Phases 0 and 1 share few files and can run in parallel. Phase 2 needs 0; Phase 3
 ## Execution
 
 Sonnet subagents. Each gets a short brief and returns a summary under 300 words. (`haiku` maps to a nonexistent model in this environment; use it for fixture/golden refreshes only if that is fixed.)
+
+## Phase 1 notes
+
+Done: OpenAPI scheme parsing ($ref'd schemes, case-insensitive `apiKey.in`, warnings for mutualTLS, other `http` schemes, invalid `in` and unknown scheme names, `optionalAuth` on operations), primary scheme chosen by use (`planAuth(schemes, operations)`), oauth2 password flow and scopes, `openIdConnectUrl` recorded, Bearer/Basic/raw credentials derived from the scheme, optional GraphQL `auth` hint, Postman/HAR usage-based primary and HAR API key header classification.
+
+Left for later:
+
+- Scout (`services/scout/*`, `saveSuite.ts`, `ScoutGenerator.ts`) still builds its own fixture/auth setup and never reads `SecurityScheme` or `common/auth.feature`. Bridging it means feeding its captured auth into `planAuth` and calling `auth.feature` from its Background.
+- GraphQL `auth` is an input field only; no command, setting or UI passes it yet (`commands/generateFromGraphQL.ts` would need a setting in `package.json`).
+- oauth2 authorizationCode/implicit stay unsupported (they need a browser login); use `API_TOKEN` with a bearer scheme.
+- The password flow in `auth.feature` requests the token with explicit `form field` steps; the Karate v2 `configure auth` oauth2 keys (including `scope`) are unverified, like the rest of `configure auth` persistence.
+- Only one of bearer/basic/oauth2/openIdConnect can be active (they share `Authorization`); apiKey header, query and cookie schemes combine with it.

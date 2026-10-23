@@ -14,6 +14,10 @@ export interface SecurityScheme {
     tokenUrl?: string;
     /** oauth2 only: the flow the spec declares (clientCredentials preferred when several). */
     flow?: 'clientCredentials' | 'password' | 'authorizationCode' | 'implicit';
+    /** oauth2 only: scopes declared by the selected flow. */
+    scopes?: string[];
+    /** openIdConnect only: discovery document URL from the spec. */
+    openIdConnectUrl?: string;
 }
 
 export interface ParamModel {
@@ -50,6 +54,8 @@ export interface OperationModel {
     security: string[] | 'none' | 'inherit';
     /** Requirement groups: schemes inside a group are ANDed, groups are ORed. Absent when the operation has no named requirement. */
     securityGroups?: string[][];
+    /** True when the security list also allows anonymous access (an empty `{}` alternative). */
+    optionalAuth?: boolean;
     sourceRef: string;
 }
 

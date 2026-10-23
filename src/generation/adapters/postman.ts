@@ -4,7 +4,7 @@ import type { KarateScenario, KarateStep } from '../../types';
 import type { PostmanAuth, PostmanBody, PostmanCollection, PostmanEnvironment, PostmanItem, PostmanRequest } from '../../services/postmanParser';
 import type { GeneratorConfig, ScenarioCategory } from '../config/GeneratorConfig';
 import type { GenerationModel, OperationModel, SecurityScheme } from '../model/TestModel';
-import { planAuth } from '../plan/AuthSchemes';
+import { planAuth, unsupportedReason } from '../plan/AuthSchemes';
 import type { PlannedFeature } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
 import { camelName, containsCredentialValue, credentialKeys, isOversized, oversizedReason, SECRET_HEADER, SECRET_NAME, upperSnake } from './secrets';
@@ -200,18 +200,21 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
             const flow = /client/.test(grant) ? 'clientCredentials' : /password/.test(grant) ? 'password' : /implicit/.test(grant) ? 'implicit' : 'authorizationCode';
             const rawToken = authBlock(auth, 'accessTokenUrl') ?? '';
             const tokenUrl = rawToken.replace(VAR_RE, (m, n: string) => (vars.has(n.trim()) && !secret.has(n.trim()) ? vars.get(n.trim())! : m));
-            s = { name: 'oauth2', kind: 'oauth2', flow, tokenUrl: tokenUrl.includes('{{') ? '' : tokenUrl };
+            const scopes = (authBlock(auth, 'scope') ?? '').split(/[\s,]+/).filter(x => x && !x.includes('{{'));
+            s = { name: 'oauth2', kind: 'oauth2', flow, tokenUrl: tokenUrl.includes('{{') ? '' : tokenUrl, ...(scopes.length > 0 ? { scopes } : {}) };
         }
         if (!s) {return undefined;}
         if (!schemes.some(x => x.name === s!.name)) {schemes.push(s);}
         return s;
     };
-    for (const e of entries) {schemeOf(e.auth);}
-    const authPlan = planAuth(schemes);
+    // Each request names its own scheme, so the primary one is chosen by how many requests use it.
+    const usage = entries.flatMap(e => {
+        const sch = schemeOf(e.auth);
+        return sch ? [{ security: [sch.name] } as OperationModel] : [];
+    });
+    const authPlan = planAuth(schemes, usage);
     for (const s of authPlan.unsupported) {
-        const reason = s.kind === 'oauth2' && s.flow && s.flow !== 'clientCredentials'
-            ? `oauth2 ${s.flow} flow cannot be configured automatically; supply a token via API_TOKEN or extend common/auth.feature`
-            : 'Karate v2 applies a single auth scheme; configure this one manually';
+        const reason = unsupportedReason(s);
         unsupported.push({ sourceRef: `auth:${s.name}`, reason });
         warnings.push(`Auth "${s.name}": ${reason}`);
     }

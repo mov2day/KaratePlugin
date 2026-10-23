@@ -548,13 +548,14 @@ module.exports = [
                     '/none': { get: { operationId: 'noneOp', security: [{ other: [] }], responses: { '200': { description: 'ok' } } } }
                 }
             }, 'alt');
-            model.schemes = [{ name: 'bearerAuth', kind: 'bearer' }, { name: 'other', kind: 'basic' }];
-            model.operations.forEach(o => { o.security = o.path === '/or' ? ['other', 'bearerAuth'] : ['other']; });
+            // all three usage counts tie, so the first declared primary scheme (bearerAuth) wins; 'extra' is a second bearer scheme and cannot be configured
+            model.schemes = [{ name: 'bearerAuth', kind: 'bearer' }, { name: 'other', kind: 'basic' }, { name: 'extra', kind: 'bearer' }];
+            model.operations.forEach(o => { o.security = o.path === '/or' ? ['other', 'bearerAuth'] : ['extra']; o.securityGroups = o.security.map(n => [n]); });
             const planned = plan({}, model);
             assert.equal(bySource(planned, 'GET /or').find(s => s.category === 'positive').draftReason, undefined);
             const none = bySource(planned, 'GET /none').find(s => s.category === 'positive');
-            assert.match(none.draftReason, /Requires other; common\/auth\.feature cannot configure other/);
-            assert.ok(planned.warnings.some(w => /GET \/none/.test(w) && /other/.test(w)));
+            assert.match(none.draftReason, /Requires extra; common\/auth\.feature cannot configure extra/);
+            assert.ok(planned.warnings.some(w => /GET \/none/.test(w) && /extra/.test(w)));
         }
     },
     {
@@ -702,7 +703,7 @@ module.exports = [
         name: 'auth: AND groups - satisfied needs every scheme, step added for query key; unsupported or missing member drafts',
         run() {
             const schemes = [{ name: 'bearerAuth', kind: 'bearer' }, { name: 'qKey', kind: 'apiKey', in: 'query', paramName: 'k' },
-                { name: 'pw', kind: 'oauth2', flow: 'password', tokenUrl: 'https://t' }, { name: 'hKey', kind: 'apiKey', in: 'header', paramName: 'X-H' }];
+                { name: 'pw', kind: 'oauth2', flow: 'authorizationCode', tokenUrl: 'https://t' }, { name: 'hKey', kind: 'apiKey', in: 'header', paramName: 'X-H' }];
             const groups = { '/ok': [['bearerAuth', 'qKey']], '/bad': [['bearerAuth', 'pw']], '/orb': [['pw'], ['hKey']], '/andmiss': [['hKey', 'pw']] };
             const model = buildModel({ openapi: '3.0.0', paths: Object.fromEntries(Object.keys(groups).map(p => [p, { get: { operationId: p.slice(1), responses: { '200': { description: 'ok' }, '403': { description: 'no' } } } }])) }, 'g');
             model.schemes = schemes;
@@ -721,10 +722,10 @@ module.exports = [
         }
     },
     {
-        name: 'auth: oauth2 password-flow only operations are drafts',
+        name: 'auth: oauth2 authorizationCode-flow only operations are drafts',
         run() {
             const model = buildModel({ openapi: '3.0.0', paths: { '/p': { get: { operationId: 'p', responses: { '200': { description: 'ok' } } } } } }, 'o');
-            model.schemes = [{ name: 'pw', kind: 'oauth2', flow: 'password', tokenUrl: 'https://t' }];
+            model.schemes = [{ name: 'pw', kind: 'oauth2', flow: 'authorizationCode', tokenUrl: 'https://t' }];
             model.operations.forEach(o => { o.security = ['pw']; });
             const planned = plan({}, model);
             assert.match(bySource(planned, 'GET /p').find(s => s.category === 'positive').draftReason, /Requires pw; .*cannot configure pw/);

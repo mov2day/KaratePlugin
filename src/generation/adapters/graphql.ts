@@ -5,7 +5,7 @@ import type { KarateScenario, KarateStep } from '../../types';
 import { BUILTIN_SCALARS, namedType, parseTypeRef } from '../../services/graphql/GraphQLParser';
 import type { GraphQLArg, GraphQLField, GraphQLSchema, GraphQLTypeDef, TypeRef } from '../../services/graphql/GraphQLParser';
 import type { GeneratorConfig } from '../config/GeneratorConfig';
-import type { GenerationModel, JsonSchema, OperationModel } from '../model/TestModel';
+import type { GenerationModel, JsonSchema, OperationModel, SecurityScheme } from '../model/TestModel';
 import { valueFor } from '../plan/dataFactory';
 import type { PlannedFeature } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
@@ -19,7 +19,14 @@ export interface GraphQLPlanOptions {
     endpointPath?: string;
     /** Endpoint origin; reduced to scheme://host[:port] (path, query and credentials are never kept). */
     baseUrl?: string;
+    /**
+     * How the endpoint authenticates. A schema cannot say, so without this hint the generated tests are unauthenticated.
+     * With it, every operation is marked secured and the features call `common/auth.feature`.
+     */
+    auth?: GraphQLAuthHint;
 }
+
+export type GraphQLAuthHint = { type: 'bearer' } | { type: 'basic' } | { type: 'apiKey'; /** Header name; default `X-API-Key`. */ header?: string };
 
 export interface GraphQLPlan {
     model: GenerationModel;
@@ -347,6 +354,10 @@ export function buildGraphQLPlan(schema: GraphQLSchema, opts: GraphQLPlanOptions
     };
 
     const operations: OperationModel[] = [];
+    const scheme: SecurityScheme | undefined = opts.auth?.type === 'bearer' ? { name: 'bearer', kind: 'bearer' }
+        : opts.auth?.type === 'basic' ? { name: 'basic', kind: 'basic' }
+        : opts.auth?.type === 'apiKey' ? { name: 'apiKey', kind: 'apiKey', in: 'header', paramName: opts.auth.header?.trim() || 'X-API-Key' }
+        : undefined;
     let deprecated = 0;
     const buildFor = (fields: GraphQLField[], kind: 'Query' | 'Mutation'): { scenarios: KarateScenario[]; secrets: Map<string, string> } => {
         secretDefs.clear();
@@ -365,7 +376,7 @@ export function buildGraphQLPlan(schema: GraphQLSchema, opts: GraphQLPlanOptions
             const opId = `${kind.toLowerCase()}-${field.name}`;
             operations.push({
                 id: opId, method: 'POST', path: `/${endpoint}`, summary: base, tags: [], pathParams: [], queryParams: [], headerParams: [],
-                responses: [{ status: '200' }], security: 'none', sourceRef: base
+                responses: [{ status: '200' }], security: scheme ? [scheme.name] : 'none', sourceRef: base
             });
 
             const pos = variablesFor(field, false);
@@ -450,6 +461,7 @@ export function buildGraphQLPlan(schema: GraphQLSchema, opts: GraphQLPlanOptions
     const make = (kind: 'queries' | 'mutations', built: { scenarios: KarateScenario[]; secrets: Map<string, string> }): PlannedFeature[] => {
         if (built.scenarios.length === 0) {return [];}
         const bg: KarateStep[] = [st('*', `url ${config.config.urlVariable}`)];
+        if (scheme) {bg.push(st('*', "call read('classpath:common/auth.feature')"));}
         for (const [v, env] of built.secrets) {bg.push(st('*', `def ${v} = karate.sysenv(${q(env)}, '')`));}
         if (built.secrets.size > 0) {
             warnOnce(`Credential-like arguments use karate.sysenv(...); set ${[...built.secrets.values()].join(', ')} in the environment before running`);
@@ -459,7 +471,9 @@ export function buildGraphQLPlan(schema: GraphQLSchema, opts: GraphQLPlanOptions
             relativePath: flat ? file : `${stem}/${file}`,
             feature: {
                 name: `${name} ${kind}`,
-                description: 'Generated from a GraphQL schema. Authentication is not part of a schema: configure it in karate-config or a common auth feature.',
+                description: scheme
+                    ? 'Generated from a GraphQL schema. Authentication comes from common/auth.feature.'
+                    : 'Generated from a GraphQL schema. Authentication is not part of a schema: configure it in karate-config or a common auth feature.',
                 background: { steps: bg },
                 scenarios: built.scenarios
             }
@@ -467,7 +481,7 @@ export function buildGraphQLPlan(schema: GraphQLSchema, opts: GraphQLPlanOptions
     };
     const features = [...make('queries', queries), ...make('mutations', mutations)];
 
-    const model: GenerationModel = { source: 'graphql', name, baseUrl, schemes: [], operations, unsupported };
+    const model: GenerationModel = { source: 'graphql', name, baseUrl, schemes: scheme ? [scheme] : [], operations, unsupported };
     return { model, features, files: [], warnings, unsupported };
 }
 
