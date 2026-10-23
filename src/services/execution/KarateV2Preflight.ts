@@ -4,7 +4,7 @@ const MAX_INPUT = 1024 * 1024;
 
 export function usesKarateV2Constructs(text: string): boolean {
     const bounded = text.slice(0, MAX_INPUT);
-    const uncommented = bounded.replace(/^\s*#.*$/gm, '').replace(/^\s*\/\/.*$/gm, '');
+    const uncommented = bounded.replace(/^[ \t]*#.*$/gm, '').replace(/^[ \t]*\/\/.*$/gm, '');
     return V2_CONSTRUCT.test(uncommented);
 }
 
