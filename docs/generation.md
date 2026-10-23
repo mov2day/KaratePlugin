@@ -2,6 +2,8 @@
 
 Every generation mode (OpenAPI, Confluence, OpenAPI + Confluence, Postman, HAR/session, GraphQL, Jira, directory batch, Scout) goes through one pipeline: source adapter, normalized model, scenario planner, renderer, project scaffolder, optional AI refinement, quality gate, writer.
 
+Legacy sync and MCP preview callers retain their compatibility APIs, but no longer invent a `localhost` URL. The normal generation commands use the shared pipeline and protected writer; legacy scenario-only replacement is treated as a draft/review workflow until it can carry the full project context safely.
+
 Generated suites target **Karate 2.x** (skills are verified against 2.1.4). Running Karate 2.x standalone needs **Java 21 or later**.
 
 ## Configuration
@@ -142,6 +144,7 @@ Every generated file passes the gate before it is written. The same rules run in
 | Rule | Severity | Checks |
 |---|---|---|
 | `V2-GHERKIN-001` | error | Steps outside any Background or Scenario |
+| `V2-GHERKIN-002` | error | A step appears after an `Examples:` table |
 | `V2-LOCK-001` | error | `@parallel=false` (unsupported in v2); quick fix to `@lock=<name>` |
 | `V2-CFG-001` | error | Hard-coded `url 'http...'` in a feature |
 | `V2-CFG-002` | error | A request is made but no `url` is set |

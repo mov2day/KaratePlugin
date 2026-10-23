@@ -62,6 +62,14 @@ const gherkin001: Rule = {
     }
 };
 
+const gherkin002: Rule = {
+    id: 'V2-GHERKIN-002', severity: 'error',
+    check: p => {
+        const f = finder(gherkin002);
+        return p.afterExamplesSteps.map(s => f(s.line, 'Step appears after an Examples table', 'Move the step before Examples or into a new Scenario'));
+    }
+};
+
 const lock001: Rule = {
     id: 'V2-LOCK-001', severity: 'error',
     check: p => {
@@ -280,6 +288,6 @@ const reuse001: Rule = {
 };
 
 export const RULES: Rule[] = [
-    gherkin001, lock001, cfg001, cfg002, sec001, assert001, assert002,
+    gherkin001, gherkin002, lock001, cfg001, cfg002, sec001, assert001, assert002,
     draft001, dup001, api001, api002, num001, ref001, tag001, reuse001
 ];

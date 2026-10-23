@@ -384,12 +384,11 @@ export class KarateGenerator {
 
         const varName = this.style.variableCase === 'snake_case' ? 'base_url' : 'baseUrl';
 
-        // Define base URL variable
-        steps.push({
-            keyword: '*',
-            // Legacy fallback only: the generation pipeline scaffolds config-driven base URLs and does not use this path.
-            text: `def ${varName} = '${baseUrl || 'http://localhost:8080'}'`
-        });
+        // Legacy callers may supply a configured URL, but must never invent a localhost fallback.
+        // Without one, leave the config variable unresolved so the generated scenario is visibly non-runnable.
+        if (baseUrl) {
+            steps.push({ keyword: '*', text: `def ${varName} = '${baseUrl}'` });
+        }
 
         // Set URL for all scenarios
         steps.push({

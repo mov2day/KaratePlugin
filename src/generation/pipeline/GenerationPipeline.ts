@@ -56,7 +56,7 @@ export interface PipelineInput {
     extraFiles?: { path: string; content: string; owner: 'user' | 'generated' }[];
     /** Optional path prefix (e.g. the workspace root) applied to every written/read path. */
     root?: string;
-    /** Injectable dry run (Task 17); called with the feature files written. Failures never escape. */
+    /** Injectable dry run (Task 17); called with staged feature paths before protected writes. Failures never escape. */
     dryRun?: (files: string[]) => Promise<DryRunResult>;
 }
 
@@ -91,6 +91,8 @@ const joinPath = (...parts: string[]): string => {
     const norm = parts.map(normPart).filter(p => p !== '');
     return normPart(norm.join('/'));
 };
+/** Only workspace-relative output components may enter the pipeline. Do not normalise away traversal first. */
+const safeRelative = (p: string): boolean => !isAbsolute(p) && !slash(p).split('/').some(part => part === '..');
 const MAX_WALK_DEPTH = 6;
 const errorsOf = (findings: Finding[]): Finding[] => findings.filter(f => f.severity === 'error');
 const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -214,9 +216,17 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
     let gateWarnings = 0;
     const useAi = Boolean(i.ai) && config.ai.refine;
     const failOnError = config.gate.failOn === 'error';
+    const outputRootSafe = safeRelative(config.layout.outputRoot);
+    if (!outputRootSafe) {
+        warnings.push(`Output root "${config.layout.outputRoot}" is absolute or escapes the workspace; feature writes were rejected`);
+    }
 
     for (let n = 0; n < planned.length; n++) {
         const pf = planned[n];
+        if (!outputRootSafe || !safeRelative(pf.relativePath)) {
+            warnings.push(`${pf.relativePath}: rejected output path outside the workspace`);
+            continue;
+        }
         const path = full(joinPath(config.layout.outputRoot, pf.relativePath));
         if (featureFiles.some(f => f.path === path) || seen.has(joinPath(path))) {
             warnings.push(`${pf.relativePath}: path "${path}" collides with another generated file (feature "${pf.feature.name}", ${pf.feature.scenarios.length} scenario(s), source ${i.sourceRef}); kept the first, dropped this one`);
@@ -291,11 +301,31 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
         progress(`Checked ${pf.relativePath}`, pct);
     }
 
-    // (6) write
+    // (6) dry run staged feature paths before protected writes. The vscode runner resolves a CLI lazily;
+    // a missing CLI remains a skipped check. A parse failure turns existing targets into honest draft siblings.
+    let dryRun: DryRunResult | undefined;
+    let dryRunFailed = false;
+    if (config.gate.dryRun !== 'off' && i.dryRun && featureFiles.length > 0) {
+        progress('Dry-running generated features', 78);
+        try {
+            dryRun = await i.dryRun(featureFiles.map(f => f.path));
+            for (const f of dryRun.findings ?? []) {warnings.push(`Dry run: ${f.ruleId} line ${f.line}: ${f.message}`);}
+            if (dryRun.status === 'failed') {
+                dryRunFailed = true;
+                warnings.push(`Dry run failed (${dryRun.message}); existing features were kept and new output is a draft sibling`);
+            }
+        } catch (e) {
+            dryRun = { status: 'skipped', message: `could not complete: ${msg(e)}` };
+        }
+    }
+
+    // (7) write
     progress('Writing files', 80);
     const files: WriteFile[] = [
         ...uniqueSupport.map(f => ({ path: full(f.path), content: f.content, owner: f.owner })),
-        ...featureFiles
+        ...featureFiles.map(f => dryRunFailed && fsApi.exists(f.path)
+            ? { ...f, content: `# Draft: Karate v2 dry run failed; review before use\n${f.content}`, forceSideBySide: true }
+            : f)
     ];
     let written: WriteReport = { created: [], updated: [], skippedExisting: [], sideBySide: [] };
     try {
@@ -310,26 +340,6 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
         }
     }
     progress('Files written', 90);
-
-    // (7) optional dry run
-    let dryRun: DryRunResult | undefined;
-    if (config.gate.dryRun !== 'off' && i.dryRun) {
-        const featurePaths = new Set(featureFiles.map(f => f.path));
-        const touched = [
-            ...written.created.filter(p => featurePaths.has(p)),
-            ...written.updated.filter(p => featurePaths.has(p)),
-            ...written.sideBySide.filter(s => featurePaths.has(s.path)).map(s => s.generatedPath)
-        ];
-        if (touched.length > 0) {progress('Dry-running generated features', 92);}
-        if (touched.length === 0) {
-            dryRun = { status: 'skipped', message: 'No feature files were written; dry run skipped' };
-        } else {try {
-            dryRun = await i.dryRun(touched);
-            for (const f of dryRun.findings ?? []) {warnings.push(`Dry run: ${f.ruleId} line ${f.line}: ${f.message}`);}
-        } catch (e) {
-            dryRun = { status: 'skipped', message: `could not complete: ${msg(e)}` };
-        }}
-    }
 
     progress('Done', 100);
     return {

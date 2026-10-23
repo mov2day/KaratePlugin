@@ -12,6 +12,7 @@ const HEAD = ['Feature: Orders', '', 'Background:', '  * url baseUrl', ''];
 
 const cases = [
     ['V2-GHERKIN-001', join('Feature: x', '  * def a = 1', 'Scenario: s', '  * def b = 2'), ['V2-GHERKIN-001@2']],
+    ['V2-GHERKIN-002', join(...HEAD, 'Scenario Outline: s', "  Given path '<id>'", '  When method get', '  Then status 200', '  And match response == {}', 'Examples:', '  | id |', '  | 1 |', '  * def after = 1'), ['V2-GHERKIN-002@14']],
     ['V2-LOCK-001', join(...HEAD, '@parallel=false', 'Scenario: s', '  * def b = 2'), ['V2-LOCK-001@6']],
     ['V2-CFG-001', join('Feature: x', 'Background:', "  * url 'http://localhost:8080'", 'Scenario: s', '  * def b = 2'), ['V2-CFG-001@3']],
     ['V2-CFG-002', join('Feature: x', 'Scenario: s', "  Given path 'a'", '  When method get', '  Then status 200', '  And match response == {}'), ['V2-CFG-002@4']],
@@ -151,7 +152,7 @@ tests.push(
             assert.equal(p.scenarios[0].steps[0].line, 7);
             assert.equal(p.background.steps[0].text, 'url x');
             const ids = rules().RULES.map(r => r.id).sort();
-            assert.equal(ids.length, 15);
+            assert.equal(ids.length, 16);
             assert.ok(ids.includes('V2-REF-001') && ids.includes('V2-TAG-001') && ids.includes('V2-REUSE-001'));
         }
     },

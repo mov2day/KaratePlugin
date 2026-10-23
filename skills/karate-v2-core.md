@@ -40,7 +40,8 @@ A `{` or `[` right-hand side is relaxed JSON: a bare identifier is a string.
 ```
 
 ## Rules
-- V2-GHERKIN-001: no step outside a Background or Scenario (never after `Examples:`).
+- V2-GHERKIN-001: no step outside a Background or Scenario.
+- V2-GHERKIN-002: `Examples:` is the final block in an outline; never put a step after its table.
 ```gherkin
 # BAD
 Examples:

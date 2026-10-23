@@ -17,6 +17,7 @@
         "V2-API-002",
         "V2-DUP-001",
         "V2-GHERKIN-001",
+        "V2-GHERKIN-002",
         "V2-TAG-001"
       ]
     },
@@ -311,6 +312,7 @@
         "V2-DRAFT-001",
         "V2-DUP-001",
         "V2-GHERKIN-001",
+        "V2-GHERKIN-002",
         "V2-LOCK-001",
         "V2-NUM-001",
         "V2-REF-001",

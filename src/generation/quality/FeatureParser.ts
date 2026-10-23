@@ -22,6 +22,8 @@ export interface ParsedFeature {
     background?: ParsedBackground;
     /** Steps that appear outside any Background/Scenario. */
     orphanSteps: Step[];
+    /** Steps after an Examples table in the same scenario (invalid Karate v2 syntax). */
+    afterExamplesSteps: Step[];
 }
 
 const STEP_RE = /^(Given|When|Then|And|But|\*)\s+(.*)$/;
@@ -39,13 +41,14 @@ function parseTags(trimmed: string, line: number): Tag[] {
 /** Line-based, CRLF-tolerant Gherkin/Karate structure parser. */
 export function parseFeature(text: string): ParsedFeature {
     const lines = text.split(/\r?\n/);
-    const parsed: ParsedFeature = { lines, tags: [], scenarios: [], orphanSteps: [] };
+    const parsed: ParsedFeature = { lines, tags: [], scenarios: [], orphanSteps: [], afterExamplesSteps: [] };
     let pendingTags: Tag[] = [];
     let pendingComments: Comment[] = [];
     let current: ParsedScenario | undefined;
     let inBackground = false;
     let inDocString = false;
     let lastStep: Step | undefined;
+    let afterExamples = false;
 
     const block = (): { steps: Step[]; comments: Comment[] } | undefined =>
         current ?? (inBackground ? parsed.background : undefined);
@@ -87,6 +90,7 @@ export function parseFeature(text: string): ParsedFeature {
             current = undefined;
             lastStep = undefined;
             inBackground = true;
+            afterExamples = false;
             parsed.background = { startLine: lineNo, steps: [], comments: pendingComments };
             pendingTags = [];
             pendingComments = [];
@@ -95,6 +99,7 @@ export function parseFeature(text: string): ParsedFeature {
         const sc = SCENARIO_RE.exec(trimmed);
         if (sc) {
             inBackground = false;
+            afterExamples = false;
             lastStep = undefined;
             const featureIgnored = parsed.tags.some(t => t.name === '@ignore');
             current = {
@@ -116,6 +121,7 @@ export function parseFeature(text: string): ParsedFeature {
             pendingTags = []; // tags above Examples belong to the table, not the next scenario
             pendingComments = [];
             if (current) {current.endLine = lineNo;}
+            afterExamples = Boolean(current);
             continue;
         }
         const st = STEP_RE.exec(trimmed);
@@ -123,7 +129,10 @@ export function parseFeature(text: string): ParsedFeature {
             const step: Step = { line: lineNo, keyword: st[1], text: st[2].trim(), doc: [] };
             lastStep = step;
             const target = block();
-            if (target) {
+            if (current && afterExamples) {
+                parsed.afterExamplesSteps.push(step);
+                current.endLine = lineNo;
+            } else if (target) {
                 target.comments.push(...pendingComments);
                 target.steps.push(step);
                 if (current) {current.endLine = lineNo;}

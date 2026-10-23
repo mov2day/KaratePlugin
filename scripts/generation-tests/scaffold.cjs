@@ -282,6 +282,20 @@ module.exports = [
         }
     },
     {
+        name: 'writer: occupied user-edited generated sibling is never overwritten and gets a unique sibling path',
+        run() {
+            const fsApi = memFs();
+            const h = memHistory();
+            writer().OutputWriter.write([feat(BODY)], fsApi, h, OPTS);
+            fsApi.map.set('f/a.feature', fsApi.map.get('f/a.feature') + '# edited primary\n');
+            fsApi.map.set('f/a.generated.feature', 'my manually edited draft\n');
+            const r = writer().OutputWriter.write([feat(BODY.replace('1', '3'))], fsApi, h, OPTS);
+            assert.equal(fsApi.map.get('f/a.generated.feature'), 'my manually edited draft\n');
+            assert.deepEqual(r.sideBySide, [{ path: 'f/a.feature', generatedPath: 'f/a.generated.generated.feature' }]);
+            assert.match(fsApi.map.get('f/a.generated.generated.feature'), /def a = 3/);
+        }
+    },
+    {
         name: 'writer: header hash alone allows overwrite without history; non-feature naming',
         run() {
             const fsApi = memFs();

@@ -205,7 +205,7 @@ module.exports = [
         }
     },
     {
-        name: 'pipeline: dry run is optional, runs after writing and never throws out of the pipeline',
+        name: 'pipeline: dry run is optional, runs before protected writes and never throws out of the pipeline',
         async run() {
             let got;
             const r = await run(base({ dryRun: async files => { got = files; return { status: 'passed', message: 'ok', findings: [] }; } }));
@@ -217,6 +217,31 @@ module.exports = [
             const off = await run(base({ config: config({ gate: { dryRun: 'off' } }), dryRun: async () => { throw new Error('must not run'); } }));
             assert.equal(off.dryRun, undefined);
             assert.equal((await run(base())).dryRun, undefined);
+        }
+    },
+    {
+        name: 'pipeline: a failed dry run preserves an edited feature and writes only a clearly marked draft sibling',
+        async run() {
+            const i = base();
+            await run(i);
+            const p = 'src/test/karate/system/system.feature';
+            const before = i.fsApi.read(p) + '# user edit\n';
+            i.fsApi.write(p, before);
+            const r = await run({ ...i, dryRun: async () => ({ status: 'failed', message: 'parse error', findings: [] }) });
+            assert.equal(i.fsApi.read(p), before);
+            assert.ok(r.written.sideBySide.some(x => x.path === p));
+            assert.ok(r.warnings.some(w => /Dry run failed/.test(w)), r.warnings.join('|'));
+        }
+    },
+    {
+        name: 'pipeline: traversal and absolute output roots are rejected without writes outside the workspace',
+        async run() {
+            for (const outputRoot of ['../../x', '/tmp/x']) {
+                const i = base({ root: '/workspace', config: config({ layout: { outputRoot } }) });
+                const r = await run(i);
+                assert.ok(![...i.fsApi.map.keys()].some(p => p.includes('/x/')), [...i.fsApi.map.keys()].join(','));
+                assert.ok(r.warnings.some(w => /outside the workspace|absolute/.test(w)), r.warnings.join('|'));
+            }
         }
     },
     {
@@ -254,20 +279,21 @@ module.exports = [
         }
     },
     {
-        name: 'pipeline: root prefix applies to relative paths but not to an absolute outputRoot',
+        name: 'pipeline: root prefix applies to relative paths and rejects an absolute outputRoot',
         async run() {
             const rel = base({ root: '/ws/' });
             await run(rel);
             assert.ok(rel.fsApi.exists('/ws/src/test/karate/system/system.feature'));
             assert.ok(rel.fsApi.exists('/ws/src/test/java/karate-config.js'));
             const abs = base({ root: '/ws', config: config({ layout: { outputRoot: '/abs/out' } }) });
-            await run(abs);
-            assert.ok(abs.fsApi.exists('/abs/out/system/system.feature'));
+            const rejected = await run(abs);
+            assert.ok(!abs.fsApi.exists('/abs/out/system/system.feature'));
+            assert.ok(rejected.warnings.some(w => /absolute or escapes/.test(w)));
             assert.ok(![...abs.fsApi.map.keys()].some(k => k.startsWith('/ws//abs')));
         }
     },
     {
-        name: 'pipeline: write failure returns the partial report, warns, and still dry-runs the written features',
+        name: 'pipeline: write failure returns the partial report after its pre-write dry run',
         async run() {
             const i = base();
             const realWrite = i.fsApi.write;
@@ -277,12 +303,12 @@ module.exports = [
             assert.ok(r.warnings.some(w => /system\/system\.feature/.test(w) && /disk full/.test(w) && /already written/.test(w)), r.warnings.join('|'));
             assert.ok(r.written.created.length >= 5);
             assert.ok(!r.written.created.some(p => p.endsWith('system/system.feature')));
-            assert.equal(got.length, 3);
+            assert.equal(got.length, 4);
             assert.equal(r.dryRun.status, 'passed');
         }
     },
     {
-        name: 'pipeline: failing 3rd write reports exactly the two earlier files; dry run is skipped when no feature was written',
+        name: 'pipeline: failing 3rd write reports exactly the two earlier files after a pre-write dry run',
         async run() {
             const i = base();
             const realWrite = i.fsApi.write;
@@ -292,8 +318,8 @@ module.exports = [
             const r = await run({ ...i, dryRun: async () => { called = true; return { status: 'passed', message: '' }; } });
             assert.equal(r.written.created.length, 2);
             assert.ok(r.warnings.some(w => /boom/.test(w) && /2 file/.test(w)));
-            assert.equal(called, false);
-            assert.equal(r.dryRun.status, 'skipped');
+            assert.equal(called, true);
+            assert.equal(r.dryRun.status, 'passed');
         }
     },
     {

@@ -5,7 +5,8 @@ description: The quality-gate rules as a self-review checklist for Karate v2 fea
 Before returning a feature, check it against every rule below. A failed rule is fixed in place; the gate reports findings by these IDs. Output stays pure Karate DSL: no fences, no commentary.
 
 ## Rules
-- V2-GHERKIN-001 (error): every step sits inside a Background or Scenario; none after `Examples:`.
+- V2-GHERKIN-001 (error): every step sits inside a Background or Scenario.
+- V2-GHERKIN-002 (error): no step follows an `Examples:` table in the same outline.
 - V2-LOCK-001 (error): the v1 parallel tag is not used; shared-state scenarios use `@lock=<name>` (or `@lock=*`).
 - V2-CFG-001 (error): no literal `http://` or `https://` in a `url` step; use `url baseUrl`.
 - V2-CFG-002 (error): a scenario that calls `method` has a `url` in Background or earlier in the scenario.

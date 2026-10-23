@@ -15,6 +15,8 @@ export interface WriteFile {
     owner: 'user' | 'generated';
     /** Source reference shown in the generated header (feature files only). */
     source?: string;
+    /** A failed pre-write validation must not replace an existing feature. */
+    forceSideBySide?: boolean;
 }
 
 export interface WriteOptions {
@@ -53,6 +55,18 @@ function render(file: WriteFile, version: string): { text: string; hash: string 
     return { text, hash };
 }
 
+/** Find a safe generated sibling. An unchanged prior sibling is reusable; user content is never clobbered. */
+function siblingPath(path: string, fsApi: WritableFs, history: HashStore): string {
+    let candidate = generatedSiblingPath(path);
+    while (fsApi.exists(candidate)) {
+        const current = splitHeader(normalize(fsApi.read(candidate)));
+        const hash = sha256(current.body);
+        if (hash === history.get(candidate) || hash === current.headerHash) {return candidate;}
+        candidate = generatedSiblingPath(candidate);
+    }
+    return candidate;
+}
+
 /** Thrown when a file write fails mid-run; `partial` reports what was already written. */
 export class WriteError extends Error {
     constructor(readonly failedPath: string, readonly partial: WriteReport, cause: unknown) {
@@ -67,6 +81,13 @@ export const OutputWriter = {
         for (const file of files) {
             try {
                 const out = render(file, options.generatorVersion);
+                if (file.forceSideBySide && fsApi.exists(file.path)) {
+                    const generatedPath = siblingPath(file.path, fsApi, history);
+                    fsApi.write(generatedPath, out.text);
+                    history.set(generatedPath, out.hash);
+                    report.sideBySide.push({ path: file.path, generatedPath });
+                    continue;
+                }
                 if (!fsApi.exists(file.path)) {
                     fsApi.write(file.path, out.text);
                     history.set(file.path, out.hash);
@@ -84,7 +105,7 @@ export const OutputWriter = {
                     history.set(file.path, out.hash);
                     report.updated.push(file.path);
                 } else {
-                    const generatedPath = generatedSiblingPath(file.path);
+                    const generatedPath = siblingPath(file.path, fsApi, history);
                     fsApi.write(generatedPath, out.text);
                     history.set(generatedPath, out.hash);
                     report.sideBySide.push({ path: file.path, generatedPath });

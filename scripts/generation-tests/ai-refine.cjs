@@ -32,6 +32,15 @@ const sections = user => {
 
 module.exports = [
     {
+        name: 'ai-refine: a step after an Examples table is rejected as invalid Karate v2 structure',
+        async run() {
+            const invalid = FEATURE.replace('  And match response == []', '  And match response == []\n  Examples:\n    | id |\n    | 1 |\n  * def afterExamples = true');
+            const r = await refiner().refine(input(async () => invalid));
+            assert.equal(r.status, 'rejected');
+            assert.ok(r.findings.some(f => f.ruleId === 'V2-GHERKIN-002'), JSON.stringify(r.findings));
+        }
+    },
+    {
         name: 'ai-refine: fenced output is cleaned and accepted',
         async run() {
             const better = FEATURE.replace('And match response == []', "And match response == []\n  And match header Content-Type contains 'json'");
