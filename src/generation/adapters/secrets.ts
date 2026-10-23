@@ -48,11 +48,11 @@ const CRED_KEY = '(password|passwd|pwd|secret|token|api[_-]?key|authorization|be
 export function credentialKeys(text: string): string[] {
     const found = new Set<string>();
     const pure = /^\s*["']?\{\{[^}]*\}\}["']?\s*(?:[,}&;\n<]|$)/;
-    const pair = new RegExp(`[\\w.-]*${CRED_KEY}[\\w.-]*["']?\\s*[:=]`, 'gi');
+    const pair = new RegExp(`[\\w.-]{0,40}${CRED_KEY}[\\w.-]{0,40}["']?\\s*[:=]`, 'gi');
     for (const m of text.matchAll(pair)) {
         if (!pure.test(text.slice(m.index! + m[0].length))) {found.add(m[1].toLowerCase());}
     }
-    const tag = new RegExp(`<[\\w:.-]*${CRED_KEY}[\\w:.-]*[^>]*>`, 'gi');
+    const tag = new RegExp(`<[\\w:.-]{0,40}${CRED_KEY}[\\w:.-]{0,40}[^>]*>`, 'gi');
     for (const m of text.matchAll(tag)) {
         if (!pure.test(text.slice(m.index! + m[0].length)) || /=/.test(m[0])) {found.add(m[1].toLowerCase());}
     }
@@ -85,12 +85,12 @@ const RE_BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 const RE_BASIC = /\bBasic\s+[A-Za-z0-9+/=]{8,}/g;
 const RE_KEY_SHAPES = /\b(?:sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{12,}|xox[abp]-[A-Za-z0-9-]{8,})/g;
 const RE_URL_USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+:[^\s/@]+@/gi;
-const RE_BARE_USERINFO = /(?<![\w/])[^\s/@:]+:[^\s/@]+@(?=[\w-]+\.[\w.-]+)/g;
+const RE_BARE_USERINFO = /(?<![\w/])[^\s/@:]{1,64}:[^\s/@]{1,128}@(?=[\w-]+\.[\w.-]+)/g;
 const NL_KEY = '(?:password|passwd|pwd|secret|token|credential|api[ _-]?key)s?';
-const RE_KEY_PAIR_TEXT = new RegExp(`([\\w.-]*${CRED_KEY}[\\w.-]*["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|\\{\\{[^}]*\\}\\}|\\[redacted\\]|[^\\s,;&}"']+)`, 'gi');
+const RE_KEY_PAIR_TEXT = new RegExp(`([\\w.-]{0,40}${CRED_KEY}[\\w.-]{0,40}["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|\\{\\{[^}]*\\}\\}|\\[redacted\\]|[^\\s,;&}"']+)`, 'gi');
 const RE_KEY_LINK = new RegExp(`\\b(${NL_KEY})\\s+(?:is|was|to|=|:|are|of)\\s+("[^"]*"|'[^']*'|[^\\s,;"']+)`, 'gi');
 const RE_KEY_BARE = /\b(password|passwd|pwd)\s+([^\s,;"'.]+)/gi;
-const RE_SLASH_PAIR = /\b(logs? in as|login|credentials?|username\/password)\s*(?:is\s+|are\s+|:\s*)?([^\s/]+)\/(\S+)/gi;
+const RE_SLASH_PAIR = /\b(log(?:s|ged)?\s{0,3}in(?:to)?(?:\s{1,3}as)?|login(?:\s{1,3}as)?|sign(?:s|ed)?\s{0,3}in(?:\s{1,3}as)?|authenticat\w{0,10}\s{1,3}as|credentials?|username\/password)\s{0,3}(?:is\s{1,3}|are\s{1,3}|:\s{0,3})?([^\s/]{1,64})\/(\S{1,128})/gi;
 
 /** Words that follow a credential noun in ordinary prose and are not themselves a value. */
 const NOT_A_VALUE = new Set(['a', 'an', 'the', 'is', 'was', 'are', 'to', 'of', 'and', 'or', 'for', 'with', 'in', 'on', 'at', 'not', 'no', 'must', 'should', 'can', 'will', 'may', 'shall',
@@ -107,7 +107,16 @@ const NOT_A_VALUE = new Set(['a', 'an', 'the', 'is', 'was', 'are', 'to', 'of', '
  * word right after `password` or after `<noun> is` is redacted (a false positive costs a readable word, a miss leaks a secret).
  * "read/write access" style slashes are only touched after the explicit login/credentials cues.
  */
-export function redactCredentialText(text: string): { text: string; hits: string[] } {
+export const MAX_REDACT_INPUT = 50000;
+export function redactCredentialText(input: string): { text: string; hits: string[] } {
+    // Bounded work: only the first MAX_REDACT_INPUT characters are scanned; the rest is dropped and marked `[truncated]` (hit `truncated`).
+    const truncated = input.length > MAX_REDACT_INPUT;
+    const text = truncated ? input.slice(0, MAX_REDACT_INPUT) : input;
+    const result = redactBounded(text);
+    return truncated ? { text: `${result.text} [truncated]`, hits: [...result.hits, 'truncated'].sort() } : result;
+}
+
+function redactBounded(text: string): { text: string; hits: string[] } {
     const hits = new Set<string>();
     const mark = (kind: string): string => {
         hits.add(kind);

@@ -263,11 +263,55 @@ module.exports = [
         assert.match(text(b), /method delete/);
         assert.deepEqual(errors(text(b), b), []);
     } },
-    { name: 'requirements: add/adding carry the weight of create; invalid body with add maps to POST /pets', run() {
-        const b = build([{ id: 'P-1', title: 't', criteria: ['Adding a pet with an invalid body is a bad request'] }], petModel());
-        const s = scenarios(b)[0];
-        assert.ok(/POST \/pets|Status 400|invalid request/.test(`${s.comments.join('|')}|${s.draftReason ?? ''}`), JSON.stringify(s));
-        assert.doesNotMatch(s.draftReason ?? '', /Ambiguous|No operation/);
+    { name: 'requirements: add/adding/adds/added map to POST /pets, never to another operation', run() {
+        for (const text of ['Adding a pet with an invalid body is a bad request', 'A user adds a pet', 'The pet was added']) {
+            const s = scenarios(build([{ id: 'P-1', title: 't', criteria: [text] }], petModel()))[0];
+            const evidence = `${(s.comments || []).join('|')}|${s.draftReason ?? ''}`;
+            assert.match(evidence, /POST \/pets/, `${text}: ${evidence}`);
+            assert.doesNotMatch(evidence, /GET \/pets/, text);
+            assert.doesNotMatch(s.draftReason ?? '', /Ambiguous|No operation|spans/, text);
+        }
+    } },
+    { name: 'requirements: two different operations in one verb group are drafted in sentence order; one operation stays live', run() {
+        const b = build([{ id: 'P-1', title: 't', criteria: [
+            'Listing pets and fetching a pet by id', 'Listing pets and returning 200', 'create a pet and then delete it', "update the pet's status then return 200"
+        ] }], petModel());
+        const [a, same, cd, upd] = scenarios(b);
+        assert.equal(a.draftReason, 'Criterion spans several operations (GET /pets, GET /pets/{petId}); split it into one criterion per operation or enable AI refinement');
+        assert.equal(same.draftReason, undefined, same.draftReason);
+        assert.match(cd.draftReason, /^Criterion spans several operations \(POST \/pets, DELETE \/pets\/\{petId\}\)/);
+        assert.equal(upd.draftReason, undefined, upd.draftReason);
+        assert.match((upd.comments || []).join('|'), /Operation: PUT \/pets\/\{petId\}/);
+        assert.deepEqual(errors(text(b), b), []);
+    } },
+    { name: 'requirements: login cues redact slash pairs; weakening the cue list would fail; read/write stays', run() {
+        const secrets = require('../../out/generation/adapters/secrets');
+        for (const [input, leak] of [['Login as admin/hunter2', 'hunter2'], ['Sign in as bob/s3cret', 's3cret'], ['logged in as ann/pw1', 'pw1'],
+            ['authenticated as carl/pw3', 'pw3'], ['signed in as dan/pw4', 'pw4'], ['log in as fay/pw5', 'pw5']]) {
+            const r = secrets.redactCredentialText(input);
+            assert.ok(!r.text.includes(leak), `${input} -> ${r.text}`);
+        }
+        assert.equal(secrets.redactCredentialText('read/write access').text, 'read/write access');
+    } },
+    { name: 'requirements: redaction and detectors stay linear (<150 ms) on adversarial input; long text is truncated with a marker', run() {
+        const secrets = require('../../out/generation/adapters/secrets');
+        const inputs = { word: 'a'.repeat(20000), colon: 'a:'.repeat(10000), pw: ' password '.repeat(2000), slash: 'x/'.repeat(10000), pweq: 'password='.repeat(2000),
+            at: 'a@'.repeat(10000), bearer: 'Bearer '.repeat(3000), wordeq: 'w'.repeat(20000) + '=' };
+        const fns = { redactCredentialText: secrets.redactCredentialText, credentialKeys: secrets.credentialKeys, containsCredentialValue: secrets.containsCredentialValue,
+            redactUrl: secrets.redactUrl, looksLikeCredentialValue: secrets.looksLikeCredentialValue, isSecretKey: secrets.isSecretKey, isSecretName: secrets.isSecretName,
+            requirement: out('generation/adapters/requirements').redactRequirementText };
+        for (const [fname, fn] of Object.entries(fns)) {
+            for (const [iname, input] of Object.entries(inputs)) {
+                const t = Date.now();
+                fn(input);
+                const ms = Date.now() - t;
+                assert.ok(ms < 150, `${fname}(${iname}) took ${ms} ms`);
+            }
+        }
+        const long = secrets.redactCredentialText(`password: hunter2 ${'x '.repeat(40000)}`);
+        assert.ok(long.text.endsWith('[truncated]') && long.hits.includes('truncated') && !long.text.includes('hunter2'));
+        const b = build([{ id: 'L-1', title: 't', criteria: ['y '.repeat(40000)] }]);
+        assert.ok(b.warnings.some(w => /L-1: text longer than 50000/.test(w)));
     } },
     { name: 'requirements: non-string and missing input never throws', run() {
         const b = build([{ id: 42, title: undefined, criteria: [null, undefined, 7, { text: undefined, steps: [1, null] }, 'ok thing'] }, null, { id: 'z' }]);

@@ -50,9 +50,9 @@ export interface RequirementBuild {
 const HOST = /\bhttps?:\/\/[^\s/'"<>)]+/gi;
 
 /** Credential-looking content becomes `[redacted]` (shared secrets helper); literal hosts become `[host]`. `redacted` reports credentials only. */
-export function redactRequirementText(text: string): { text: string; redacted: boolean } {
+export function redactRequirementText(text: string): { text: string; redacted: boolean; truncated: boolean } {
     const r = redactCredentialText(String(text ?? ''));
-    return { text: r.text.replace(HOST, '[host]').replace(/\[redacted\]@[\w.-]+/g, '[redacted]@[host]'), redacted: r.hits.length > 0 };
+    return { text: r.text.replace(HOST, '[host]').replace(/\[redacted\]@[\w.-]+/g, '[redacted]@[host]'), redacted: r.hits.some(h => h !== 'truncated'), truncated: r.hits.includes('truncated') };
 }
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
@@ -108,8 +108,12 @@ function nouns(text: string): Set<string> {
 
 function verbMethods(text: string): Set<string> {
     const out = new Set<string>();
+    // `request` is also a noun ("a bad request"): it only counts when no stronger verb is present.
+    const strong = verbGroups(text).size > 0;
     for (const w of rawWords(text)) {
-        for (const m of VERB_STEMS.get(stem(w)) ?? []) {out.add(m);}
+        const st = stem(w);
+        if (strong && st === 'request') {continue;}
+        for (const m of VERB_STEMS.get(st) ?? []) {out.add(m);}
     }
     return out;
 }
@@ -153,10 +157,24 @@ type Match =
 
 const label = (op: OperationModel): string => `${op.method.toUpperCase()} ${op.path}`;
 
+const FRAGMENT_SPLIT = /\s*(?:[,;]|\b(?:and then|then|as well as|plus|and|afterwards|followed by|after that|before)\b)\s*/i;
+
 function matchOperation(ops: OperationModel[], matchText: string, status: string | undefined): Match {
+    // Score each verb-bearing fragment on its own: different best operations (even in one verb group) mean several operations.
+    const bests: OperationModel[] = [];
+    let verbFragments = 0;
+    for (const f of matchText.split(FRAGMENT_SPLIT).map(x => x.trim()).filter(Boolean)) {
+        if (verbGroups(f).size === 0) {continue;}
+        verbFragments++;
+        const m = matchSingle(ops, f, status, true);
+        if (m.kind === 'op' && !bests.includes(m.op)) {bests.push(m.op);}
+    }
+    if (verbFragments >= 2 && bests.length >= 2) {
+        return { kind: 'multi', reason: `Criterion spans several operations (${bests.map(label).join(', ')}); split it into one criterion per operation or enable AI refinement` };
+    }
     const groups = verbGroups(matchText);
     if (groups.size >= 2) {
-        const picks = [...groups].sort().map(g => bestFor(ops, matchText, status, g)).filter((o): o is OperationModel => o !== undefined);
+        const picks = [...groups].map(g => bestFor(ops, matchText, status, g)).filter((o): o is OperationModel => o !== undefined);
         return { kind: 'multi', reason: `Criterion spans several operations (${picks.map(label).join(', ') || [...groups].sort().join(', ')}); split it into one criterion per operation or enable AI refinement` };
     }
     return matchSingle(ops, matchText, status);
@@ -172,7 +190,7 @@ function matchSingle(ops: OperationModel[], matchText: string, status: string | 
     const explicit = [...matchText.matchAll(EXPLICIT)].map(m => ({ method: m[1], path: normPath(m[2].replace(/[.!?]+$/, '')) }));
     const wantNouns = nouns(matchText);
     const verbs = verbMethods(matchText);
-    const wantGroups = allVerbGroups(matchText);
+    const wantGroups = verbGroups(matchText).size > 0 ? verbGroups(matchText) : allVerbGroups(matchText);
     const words = new Set(rawWords(matchText));
     const scored: Scored[] = [];
     for (const op of ops) {
@@ -232,6 +250,7 @@ export function buildRequirementScenarios(items: RequirementItem[], opts: Requir
     for (const item of safeItems) {
         const id = redactRequirementText(item.id).text;
         const source = oneLine(redactRequirementText(item.link ?? '').text) || id;
+        let truncatedAny = false;
         let redactedAny = redactRequirementText(item.id).redacted || redactRequirementText(item.title).redacted;
         if (item.criteria.length === 0) {warnings.push(`${id}: no acceptance criteria or test cases found`);}
         item.criteria.forEach((raw, index) => {
@@ -239,6 +258,7 @@ export function buildRequirementScenarios(items: RequirementItem[], opts: Requir
             const clean = (t: string): string => {
                 const r = redactRequirementText(t);
                 redactedAny = redactedAny || r.redacted;
+                truncatedAny = truncatedAny || r.truncated;
                 return oneLine(r.text);
             };
             const text = clean(c.text);
@@ -281,6 +301,7 @@ export function buildRequirementScenarios(items: RequirementItem[], opts: Requir
                 comments: [...comments, `Operation: ${label(match.op)}`, ...planned]
             });
         });
+        if (truncatedAny) {warnings.push(`${id}: text longer than 50000 characters was truncated`);}
         if (redactedAny) {warnings.push(`${id}: credential-looking content in the requirements was replaced with [redacted]`);}
     }
 
