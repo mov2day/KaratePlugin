@@ -26,6 +26,28 @@ const errors = (t, b) => gate().runGate(t, { knownFiles: known(b), config: cfg()
 const scenarios = b => b.features.flatMap(f => f.feature.scenarios);
 const find = (b, re) => scenarios(b).find(s => re.test(s.name));
 
+function memFs() {
+    const map = new Map();
+    return {
+        map,
+        exists: p => map.has(p) || [...map.keys()].some(k => k.startsWith(p + '/')),
+        read: p => { if (!map.has(p)) throw new Error('ENOENT ' + p); return map.get(p); },
+        list: dir => [...new Set([...map.keys()].filter(k => k.startsWith(dir + '/')).map(k => k.slice(dir.length + 1).split('/')[0]))],
+        write: (p, c) => { map.set(p, c); }
+    };
+}
+const project = { classpathRoot: 'src/test/java', envConfigs: [], hasEnvJson: false, runnerStyle: 'unknown' };
+const hist = () => { const h = new Map(); return { get: p => h.get(p), set: (p, v) => { h.set(p, v); } }; };
+const runPipelineFor = (items, model, mode, over = {}) => {
+    const b = build(items, model);
+    const fsApi = memFs();
+    return out('generation/pipeline/GenerationPipeline').runPipeline({
+        model: model ?? { source: mode, name: 'shop', schemes: [], operations: [], unsupported: [] },
+        scenarios: b.features, extraFiles: b.files.map(f => ({ path: `src/test/java/${f.path}`, content: f.content, owner: 'user' })),
+        config: cfg(), project, fsApi, history: hist(), generatorVersion: '9.9.9', sourceRef: 'SHOP', mode, ...over
+    }).then(r => ({ r, fsApi, b }));
+};
+
 module.exports = [
     { name: 'requirements: without a contract every criterion is an @ignore draft with the reason and no live step', run() {
         const b = build([{ id: 'SHOP-101', title: 'Orders', criteria: ['POST /orders returns 201', 'Quantity of zero is rejected'] }]);
@@ -197,5 +219,37 @@ module.exports = [
     { name: 'requirements: the adapter stays pure (no vscode or logger)', run() {
         const src = fs.readFileSync(require('path').join(__dirname, '../../src/generation/adapters/requirements.ts'), 'utf8');
         assert.doesNotMatch(src, /from 'vscode'|utils\/logger/);
+    } },
+    { name: 'requirements: pipeline run without a contract writes only drafts, zero gate errors (jira and confluence modes)', async run() {
+        for (const mode of ['jira', 'confluence']) {
+            const { r, fsApi } = await runPipelineFor([{ id: 'SHOP-101', title: 'Orders', criteria: ['POST /orders returns 201', 'Quantity zero returns 400'] }], undefined, mode);
+            assert.equal(r.gate.errors, 0, JSON.stringify(r.features.map(f => f.findings)));
+            assert.equal(r.draftScenarios, 2);
+            const file = [...fsApi.map.keys()].find(k => k.endsWith('shop-requirements.feature'));
+            assert.ok(file, [...fsApi.map.keys()].join(','));
+            assert.doesNotMatch(fsApi.map.get(file), /method |status \d/);
+        }
+    } },
+    { name: 'requirements: pipeline run with a contract writes runnable scenarios plus their data file, zero gate errors', async run() {
+        const { r, fsApi } = await runPipelineFor([{ id: 'PET-1', title: 'Pets', criteria: ['creating a pet returns 201', 'requesting an unknown pet returns 404', 'Pets glow at night'] }], petModel(), 'jira');
+        assert.equal(r.gate.errors, 0, JSON.stringify(r.features.map(f => f.findings)));
+        assert.equal(r.draftScenarios, 1);
+        assert.ok(fsApi.map.has('src/test/java/data/requirements/pets.json'));
+        assert.ok(fsApi.map.has('src/test/java/common/auth.feature'));
+    } },
+    { name: 'requirements: AI refinement receives criteria evidence, and ungated output is discarded for the deterministic draft', async run() {
+        const prompts = [];
+        const bad = "Feature: x\n  Background:\n    * url 'http://evil.example.com'\n  Scenario: x\n    Given path 'a'\n    When method get\n    Then status 200\n";
+        const { r, fsApi } = await runPipelineFor([{ id: 'SHOP-101', title: 'Orders', criteria: ['Orders can be listed password: hunter2'] }], undefined, 'jira', {
+            ai: async p => { prompts.push(p.user); return bad; },
+            evidence: [{ label: 'jira-acceptance-criteria', text: 'SHOP-101 Orders can be listed [redacted]' }]
+        });
+        assert.ok(prompts.length >= 1);
+        assert.ok(prompts.every(p => !p.includes('hunter2')));
+        assert.match(prompts[0], /SHOP-101 Orders can be listed/);
+        assert.equal(r.gate.errors, 0);
+        const file = [...fsApi.map.keys()].find(k => k.endsWith('shop-requirements.feature'));
+        assert.doesNotMatch(fsApi.map.get(file), /evil\.example/);
+        assert.match(fsApi.map.get(file), /@ignore/);
     } }
 ];

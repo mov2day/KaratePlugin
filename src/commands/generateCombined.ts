@@ -6,11 +6,14 @@ import { ConfluenceParser } from '../services/confluenceParser';
 import { ConfigManager } from '../utils/configManager';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
-import { requirementsFeature } from '../generation/plan/RequirementDrafts';
+import { buildRequirementScenarios, confluenceRequirementItems } from '../generation/adapters/requirements';
+import { requirementEvidence, safeMessage } from '../generation/vscode/RequirementsRun';
+import { GeneratorConfigLoader } from '../generation/vscode/GeneratorConfigLoader';
 import { reportSummary } from '../generation/vscode/reportSummary';
 import { runGenerationForModel, toIncrementalProgress } from '../generation/vscode/runGeneration';
 
 export async function generateCombined(context: vscode.ExtensionContext): Promise<void> {
+    let secretToken: string | undefined;
     try {
         // Step 1: Select OpenAPI spec
         const fileUri = await vscode.window.showOpenDialog({
@@ -67,6 +70,7 @@ export async function generateCombined(context: vscode.ExtensionContext): Promis
             const baseUrl = ConfigManager.getConfluenceBaseUrl();
             const email = ConfigManager.getConfluenceEmail();
             const apiToken = await ConfigManager.getConfluenceApiToken(context);
+            secretToken = apiToken;
             const authType = vscode.workspace.getConfiguration('karateDsl.confluence').get<'basic' | 'bearer'>('authType', 'basic');
 
             const confluenceClient = new ConfluenceClient(baseUrl, email || "", apiToken, authType);
@@ -76,14 +80,16 @@ export async function generateCombined(context: vscode.ExtensionContext): Promis
             progress.report({ increment: 5, message: 'Parsing Confluence content...' });
             const testData = new ConfluenceParser().parsePageContent(page);
             const specFileName = path.basename(specPath, path.extname(specPath));
-            const draft = requirementsFeature(specFileName, page.title, testData.testCases);
+            const loaded = await GeneratorConfigLoader.load(workspaceRoot);
+            for (const w of loaded.warnings) {logger.warn(`Generator config: ${w}`);}
+            const req = buildRequirementScenarios(confluenceRequirementItems({ id: String(page.id ?? pageId), title: page.title }, testData), { config: loaded.config, name: specFileName, model });
             const pageContent = page.body.storage?.value || page.body.view?.value || '';
 
             const useAi = vscode.workspace.getConfiguration('karateDsl').get<boolean>('useCopilot', false);
             const run = await runGenerationForModel({
                 context, workspaceRoot, model, sourceRef: path.basename(specPath), mode: 'combined', useAi,
-                extraFeatures: draft ? [draft] : undefined,
-                evidence: pageContent ? [{ label: `Confluence: ${page.title}`, text: pageContent.slice(0, 20000) }] : undefined,
+                extraFeatures: req.features.length > 0 ? req.features : undefined, classpathFiles: req.files, config: loaded.config, notes: req.warnings,
+                evidence: requirementEvidence(`Confluence: ${page.title}`, pageContent),
                 progress: toIncrementalProgress(progress, { from: 20, to: 100 })
             });
 
@@ -92,7 +98,8 @@ export async function generateCombined(context: vscode.ExtensionContext): Promis
         });
 
     } catch (error) {
-        logger.error('Failed to generate combined tests', error as Error);
-        vscode.window.showErrorMessage(`Failed to generate combined tests: ${(error as Error).message}`);
+        const message = safeMessage(error, [secretToken, ConfigManager.getConfluenceBaseUrl()]);
+        logger.error('Failed to generate combined tests', new Error(message));
+        vscode.window.showErrorMessage(`Failed to generate combined tests: ${message}`);
     }
 }

@@ -1,15 +1,21 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { JiraClient } from '../services/jira/JiraClient';
 import { JiraParser } from '../services/jira/JiraParser';
 import { InputSanitizer } from '../services/InputSanitizer';
+import { jiraRequirementItems } from '../generation/adapters/requirements';
+import { pickContract, runRequirementsGeneration, safeMessage } from '../generation/vscode/RequirementsRun';
+import { reportSummary } from '../generation/vscode/reportSummary';
+import { toIncrementalProgress } from '../generation/vscode/runGeneration';
+import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
 
 /**
  * Command: karate-dsl.generateFromJira
- * Accepts issue key or JQL query, generates Karate tests from acceptance criteria.
+ * Accepts issue key or JQL query; acceptance criteria run through the shared generation pipeline
+ * (mapped to a linked OpenAPI contract when one is chosen, otherwise honest @ignore drafts).
  */
 export async function generateFromJira(context: vscode.ExtensionContext): Promise<void> {
+    let secretToken: string | undefined;
     try {
         // Check Jira configuration
         const config = vscode.workspace.getConfiguration('karateDsl');
@@ -33,6 +39,7 @@ export async function generateFromJira(context: vscode.ExtensionContext): Promis
         // Get API token from secret storage
         const tokenKey = 'karateDsl.jira.apiToken';
         let apiToken = await context.secrets.get(tokenKey);
+        secretToken = apiToken;
 
         if (!apiToken) {
             apiToken = await vscode.window.showInputBox({
@@ -47,6 +54,7 @@ export async function generateFromJira(context: vscode.ExtensionContext): Promis
                 return;
             }
 
+            secretToken = apiToken;
             await context.secrets.store(tokenKey, apiToken);
         }
 
@@ -59,6 +67,10 @@ export async function generateFromJira(context: vscode.ExtensionContext): Promis
         if (!input) {
             return;
         }
+
+        const workspaceRoot = FileUtils.getWorkspaceRoot();
+        if (!workspaceRoot) {throw new Error('No workspace folder is open');}
+        const contract = await pickContract();
 
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
@@ -86,103 +98,37 @@ export async function generateFromJira(context: vscode.ExtensionContext): Promis
                 return;
             }
 
-            progress.report({ increment: 40, message: `Processing ${issues.length} issue(s)...` });
+            progress.report({ increment: 20, message: `Processing ${issues.length} issue(s)...` });
 
-            // Parse all issues
-            const contents = issues.map(issue => parser.parse(issue));
+            // Parse all issues; text is sanitised before it is used anywhere
+            const items = jiraRequirementItems(issues.map(issue => {
+                const content = parser.parse(issue);
+                return {
+                    issueKey: content.issueKey,
+                    summary: InputSanitizer.sanitizeJiraContent(content.summary),
+                    acceptanceCriteria: content.acceptanceCriteria.map(ac => InputSanitizer.sanitizeJiraContent(ac))
+                };
+            }));
 
-            // Generate Karate feature
-            const featureLines: string[] = [];
-            const featureName = isIssueKey
-                ? `${input.trim().toUpperCase()} - ${contents[0].summary}`
-                : `Jira Stories`;
-
-            featureLines.push(`Feature: ${featureName}`);
-            featureLines.push('');
-            featureLines.push('  Background:');
-            featureLines.push("    * url baseUrl");
-            featureLines.push('');
-
-            for (const content of contents) {
-                // Sanitize content before using
-                const sanitizedDesc = InputSanitizer.sanitizeJiraContent(content.description);
-
-                featureLines.push(`  # Issue: ${content.issueKey} - ${content.summary}`);
-                featureLines.push(`  # Type: ${content.issueType}`);
-
-                for (let i = 0; i < content.acceptanceCriteria.length; i++) {
-                    const ac = content.acceptanceCriteria[i];
-                    const sanitizedAC = InputSanitizer.sanitizeJiraContent(ac);
-
-                    featureLines.push(`  @jira-${content.issueKey.toLowerCase()}`);
-                    featureLines.push(`  Scenario: ${content.issueKey} - ${sanitizedAC.substring(0, 80)}`);
-                    featureLines.push(`    # Acceptance Criteria: ${sanitizedAC}`);
-                    featureLines.push('    # TODO: Implement test steps based on acceptance criteria above');
-                    featureLines.push("    * print 'Scenario placeholder'");
-                    featureLines.push('');
-                }
+            const { build, run } = await runRequirementsGeneration({
+                context, workspaceRoot, items, contract,
+                name: isIssueKey ? input.trim().toUpperCase() : 'jira',
+                mode: 'jira', sourceRef: isIssueKey ? input.trim().toUpperCase() : 'Jira query',
+                useAi: vscode.workspace.getConfiguration('karateDsl').get<boolean>('useCopilot', false),
+                evidenceLabel: 'jira-acceptance-criteria',
+                progress: toIncrementalProgress(progress, { from: 40, to: 100 })
+            });
+            if (!run) {
+                vscode.window.showWarningMessage(`No acceptance criteria found in the Jira issue(s). ${build.warnings.join('; ')}`.trim());
+                return;
             }
-
-            progress.report({ increment: 80, message: 'Saving feature file...' });
-
-            // Optionally enhance with AI
-            let featureContent = featureLines.join('\n');
-
-            try {
-                const { AIProviderRegistry } = await import('../services/ai/AIProviderRegistry');
-                const registry = AIProviderRegistry.getInstance();
-                const isAvailable = await registry.isConfiguredProviderAvailable();
-
-                if (isAvailable) {
-                    progress.report({ message: 'Enhancing with AI...' });
-                    const { refine } = await import('../generation/ai/AiRefiner');
-                    const { DEFAULT_GENERATOR_CONFIG } = await import('../generation/config/GeneratorConfig');
-                    const { AgentSkillsService } = await import('../services/agentSkillsService');
-                    const skillText = await AgentSkillsService.buildSkillContextForPrompt('confluence');
-                    const result = await refine({
-                        feature: featureContent,
-                        mode: 'jira',
-                        task: 'generate-jira',
-                        evidence: [{ label: 'jira-acceptance-criteria', text: contents.map(c => `${c.issueKey} - ${c.summary}\n${c.acceptanceCriteria.map(ac => InputSanitizer.sanitizeJiraContent(ac)).join('\n')}`).join('\n\n') }],
-                        request: 'Replace each placeholder step with real Karate DSL steps (Given path, When method, Then status, And match) using realistic test data. Keep the Feature/Background/Scenario structure and the @jira tags.',
-                        skills: { select: () => ({ text: skillText }) },
-                        knownFiles: new Set<string>(),
-                        config: DEFAULT_GENERATOR_CONFIG,
-                        ai: p => registry.complete(p.user, { maxTokens: 4096, temperature: 0.3, systemPrompt: p.system, task: 'generate-jira' })
-                    });
-                    if (result.status === 'rejected') {
-                        const ids = [...new Set(result.findings.map(f => f.ruleId))].join(', ');
-                        logger.warn(`Jira AI refinement rejected (${ids}); using the template`);
-                        vscode.window.showWarningMessage(`AI refinement rejected: ${ids}. The template feature was kept.`);
-                    }
-                    featureContent = result.text;
-                }
-            } catch {
-                // AI enhancement failed — use template
-            }
-
-            // Save file
-            const { FileUtils } = await import('../utils/fileUtils');
-            const outputPath = FileUtils.resolveOutputPath();
-            const fileName = isIssueKey ? input.trim().toUpperCase() : 'jira-tests';
-            const outputFile = path.join(outputPath, `${fileName}.feature`);
-            const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-            FileUtils.writeFile(uniqueFile, featureContent);
-
-            const totalScenarios = contents.reduce((sum, c) => sum + c.acceptanceCriteria.length, 0);
-            const action = await vscode.window.showInformationMessage(
-                `✅ Generated ${totalScenarios} scenarios from ${issues.length} Jira issue(s)`,
-                'Open File',
-                'Dismiss'
-            );
-
-            if (action === 'Open File') {
-                const doc = await vscode.workspace.openTextDocument(uniqueFile);
-                await vscode.window.showTextDocument(doc);
-            }
+            logger.info(`Generated Jira tests: ${run.createdPaths.join(', ') || '(none)'}`);
+            void reportSummary(run.summary, `Jira: ${items.map(i => i.id).join(', ').slice(0, 80)}`, run.createdPaths[0]);
         });
     } catch (error) {
-        logger.error('Jira generation failed', error as Error);
-        vscode.window.showErrorMessage(`Jira generation failed: ${error}`);
+        // The message may carry the base URL or token (HTTP client errors do); mask both before logging or showing it.
+        const message = safeMessage(error, [secretToken, vscode.workspace.getConfiguration('karateDsl').get<string>('jira.baseUrl')]);
+        logger.error('Jira generation failed', new Error(message));
+        vscode.window.showErrorMessage(`Jira generation failed: ${message}`);
     }
 }

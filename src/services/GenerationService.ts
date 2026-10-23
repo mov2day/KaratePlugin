@@ -16,7 +16,11 @@ import { SharedStyleService } from './SharedStyleService';
 import { categoriesForScenarioTypes } from '../generation/config/ScenarioTypes';
 import type { GeneratorConfig } from '../generation/config/GeneratorConfig';
 import type { GenerationModel } from '../generation/model/TestModel';
-import { requirementsFeature } from '../generation/plan/RequirementDrafts';
+import { buildRequirementScenarios, confluenceRequirementItems } from '../generation/adapters/requirements';
+import type { RequirementBuild } from '../generation/adapters/requirements';
+import { GeneratorConfigLoader } from '../generation/vscode/GeneratorConfigLoader';
+import { requirementEvidence } from '../generation/vscode/RequirementsRun';
+import { slug } from '../generation/plan/slug';
 import type { PlannedFeature } from '../generation/plan/OpenApiPlanner';
 import type { GenerationSummary } from '../generation/pipeline/Summary';
 import { runGenerationForModel } from '../generation/vscode/runGeneration';
@@ -81,59 +85,45 @@ export class GenerationService {
     public async generateFromConfluence(
         options: GenerationOptions,
         progressCallback: (message: string, percentage: number) => void
-    ): Promise<{ files: string[], content: string }> {
+    ): Promise<{ files: string[], content: string, summary: GenerationSummary }> {
         try {
             if (!options.pageUrl) throw new Error('Confluence Page URL is required');
+            const workspaceRoot = FileUtils.getWorkspaceRoot();
+            if (!workspaceRoot) throw new Error('No workspace folder is open');
 
-            progressCallback('Fetching Confluence page...', 30);
-            const { page, scenarios } = await this.fetchConfluenceData(options.pageUrl);
+            progressCallback('Fetching Confluence page...', 10);
+            const { page, testData } = await this.fetchConfluenceData(options.pageUrl);
+            const pageContent = page.body.storage?.value || page.body.view?.value || '';
 
-            progressCallback('Generating Karate tests...', 60);
-            const generator = new KarateGenerator();
-            this.configureGenerator(generator);
-
-            const feature = {
-                name: page.title,
-                description: `Test scenarios from Confluence page ${page.id}`,
-                scenarios,
-                background: generator.generateBackground()
-            };
-
-            let content = generator.featureToString(feature as any);
-
-            if (options.useCopilot) {
-                progressCallback('Enhancing with GitHub Copilot...', 80);
-                const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
-                const { CopilotService } = await import('./copilotService');
-                const isAvailable = await CopilotService.isCopilotAvailable();
-
-                if (isAvailable) {
-                    let tempUri: vscode.Uri | null = null;
-                    try {
-                        tempUri = await CopilotService.createTempFile(confluenceContent, '.html');
-                        const context = `Generate comprehensive Karate API tests from Confluence documentation: ${page.title} with ${scenarios.length} scenarios.`;
-                        content = await CopilotService.enhanceTestWithFileContext(content, context, 'confluence', [tempUri]);
-                    } finally {
-                        if (tempUri) await CopilotService.cleanupTempFiles();
-                    }
-                }
+            // Test cases become drafts (no contract is linked from here); the pipeline gates every feature.
+            const loaded = await GeneratorConfigLoader.load(workspaceRoot, { fallbackStyle: this._learnedStyle });
+            const req = buildRequirementScenarios(confluenceRequirementItems({ id: String(page.id), title: page.title }, testData), {
+                config: loaded.config, name: slug(page.title) || `page-${page.id}`
+            });
+            if (req.features.length === 0) {
+                throw new Error(`No test cases or flows found in the Confluence page. ${req.warnings.join('; ')}`.trim());
             }
-
-            const outputPath = FileUtils.resolveOutputPath();
-            const sanitizedTitle = page.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-            const outputFile = path.join(outputPath, `${sanitizedTitle}.feature`);
-            const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-            content = this.applyReusability(content, uniqueFile);
-            FileUtils.writeFile(uniqueFile, content);
+            const run = await runGenerationForModel({
+                context: this.context, workspaceRoot,
+                model: { source: 'confluence', name: slug(page.title) || 'confluence', schemes: [], operations: [], unsupported: [] },
+                sourceRef: `Confluence page ${page.id}`, mode: 'confluence', useAi: options.useCopilot,
+                scenarios: req.features, classpathFiles: req.files, config: loaded.config, notes: req.warnings,
+                evidence: requirementEvidence(`Confluence: ${page.title}`, pageContent),
+                learnedStyle: this._learnedStyle,
+                progress: (message, pct) => progressCallback(message, 15 + Math.round(pct * 0.85))
+            });
+            if (run.createdPaths.length === 0) {
+                throw new Error(`No feature files were generated. ${run.warnings.join('; ')}`.trim());
+            }
 
             await this.historyManager.addToHistory({
                 type: 'confluence',
                 source: options.pageUrl,
-                outputPath: uniqueFile,
+                outputPath: run.createdPaths[0],
                 template: ConfigManager.getTestTemplate()
             });
 
-            return { files: [uniqueFile], content };
+            return { files: run.createdPaths, content: run.firstContent, summary: run.summary };
 
         } catch (error) {
             logger.error('Failed to generate from Confluence', error as Error);
@@ -154,23 +144,23 @@ export class GenerationService {
 
             progressCallback('Processing both sources...', 2);
             const model = await this.parseFilteredModel(options.openApiPath, options.httpMethods);
-            const { page, scenarios: confluenceScenarios } = await this.fetchConfluenceData(options.confluenceUrl);
+            const { page, testData } = await this.fetchConfluenceData(options.confluenceUrl);
             const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
 
             const specFileName = path.basename(options.openApiPath, path.extname(options.openApiPath));
-            const draft = requirementsFeature(specFileName, page.title, confluenceScenarios.map((sc: any) => ({
-                name: sc.name,
-                description: sc.description,
-                steps: (sc.steps || [])
-                    .map((st: any) => String(st.text))
-                    .filter((t: string) => t.startsWith('# ') && !t.startsWith('# Expected: '))
-                    .map((t: string) => t.slice(2)),
-                expectedResult: (sc.steps || []).map((st: any) => /^# Expected: (.*)$/.exec(String(st.text))?.[1]).find(Boolean)
-            })));
+            const workspaceRoot = FileUtils.getWorkspaceRoot();
+            if (!workspaceRoot) throw new Error('No workspace folder is open');
+            const loaded = await GeneratorConfigLoader.load(workspaceRoot, { fallbackStyle: this._learnedStyle });
+            // Requirements link to real operations of the same contract; unmatched ones stay honest drafts.
+            const req: RequirementBuild = buildRequirementScenarios(confluenceRequirementItems({ id: String(page.id), title: page.title }, testData), {
+                config: loaded.config, name: specFileName, model
+            });
 
             const run = await this.runPipelineFor(model, options.openApiPath, 'combined', options, progressCallback, {
-                extraFeatures: draft ? [draft] : undefined,
-                evidence: confluenceContent ? [{ label: `Confluence: ${page.title}`, text: confluenceContent.slice(0, 20000) }] : undefined
+                extraFeatures: req.features.length > 0 ? req.features : undefined,
+                classpathFiles: req.files,
+                notes: req.warnings,
+                evidence: requirementEvidence(`Confluence: ${page.title}`, confluenceContent)
             });
             const createdFiles = run.createdPaths;
 
@@ -224,7 +214,7 @@ export class GenerationService {
         mode: 'openapi' | 'combined',
         options: GenerationOptions,
         progressCallback: (message: string, percentage: number) => void,
-        extras: { extraFeatures?: PlannedFeature[]; evidence?: { label: string; text: string }[] } = {}
+        extras: { extraFeatures?: PlannedFeature[]; classpathFiles?: { path: string; content: string; owner: 'user' | 'generated' }[]; notes?: string[]; evidence?: { label: string; text: string }[] } = {}
     ) {
         const workspaceRoot = FileUtils.getWorkspaceRoot();
         if (!workspaceRoot) throw new Error('No workspace folder is open');
@@ -244,10 +234,11 @@ export class GenerationService {
             mode,
             useAi: options.useCopilot,
             extraFeatures: extras.extraFeatures,
+            classpathFiles: extras.classpathFiles,
             evidence: extras.evidence,
             customInstruction: options.customInstruction,
             learnedStyle: this._learnedStyle,
-            notes,
+            notes: [...notes, ...(extras.notes ?? [])],
             configure: (c: GeneratorConfig) => ({
                 ...c,
                 scenarios: { ...c.scenarios, categories: categoriesForScenarioTypes(options.scenarioTypes, c.scenarios.categories) }
@@ -274,37 +265,8 @@ export class GenerationService {
         const client = new ConfluenceClient(baseUrl, email || "", apiToken, authType);
         const page = await client.getPageById(pageId);
 
-        const parser = new ConfluenceParser();
-        const testData = parser.parsePageContent(page);
-
-        // Re-use logic from WebviewProvider to create scenarios from test data
-        // For cleaner code, we duplicate the simple mapping logic here or make it static in parser
-        const scenarios = this.mapConfluenceDataToScenarios(testData);
-
-        return { page, scenarios };
-    }
-
-    private mapConfluenceDataToScenarios(testData: any): any[] {
-        const scenarios: any[] = [];
-        for (const testCase of testData.testCases) {
-            const steps: any[] = [];
-            for (let i = 0; i < testCase.steps.length; i++) {
-                steps.push({
-                    keyword: i === 0 ? 'Given' : 'And',
-                    text: `# ${testCase.steps[i]}`
-                });
-            }
-            steps.push({ keyword: 'When', text: 'method get # TODO: Replace with actual API call' });
-            if (testCase.expectedResult) {
-                steps.push({ keyword: 'Then', text: `# Expected: ${testCase.expectedResult}` });
-            }
-            scenarios.push({
-                name: testCase.name,
-                description: testCase.description,
-                steps
-            });
-        }
-        return scenarios;
+        const testData = new ConfluenceParser().parsePageContent(page);
+        return { page, testData };
     }
 
     private applyReusability(content: string, outputPath: string): string {

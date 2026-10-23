@@ -1,15 +1,22 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { ConfluenceClient } from '../services/confluenceClient';
 import { ConfluenceParser } from '../services/confluenceParser';
-import { KarateGenerator } from '../services/karateGenerator';
-import { SharedStyleService } from '../services/SharedStyleService';
 import { ConfigManager } from '../utils/configManager';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
-import { KarateScenario, KarateStep } from '../types';
+import { confluenceRequirementItems } from '../generation/adapters/requirements';
+import { slug } from '../generation/plan/slug';
+import { pickContract, runRequirementsGeneration, safeMessage } from '../generation/vscode/RequirementsRun';
+import { reportSummary } from '../generation/vscode/reportSummary';
+import { toIncrementalProgress } from '../generation/vscode/runGeneration';
 
+/**
+ * Command: karate-dsl.generateFromConfluence
+ * Test cases on the page run through the shared generation pipeline: mapped to a linked OpenAPI contract when one is
+ * chosen, otherwise honest @ignore drafts (steps and expected results stay as comments, never invented live steps).
+ */
 export async function generateFromConfluence(context: vscode.ExtensionContext): Promise<void> {
+    let secretToken: string | undefined;
     try {
         // Step 1: Get Confluence page URL or ID
         const input = await vscode.window.showInputBox({
@@ -34,171 +41,52 @@ export async function generateFromConfluence(context: vscode.ExtensionContext): 
 
         logger.info(`Processing Confluence page: ${pageId}`);
 
+        const workspaceRoot = FileUtils.getWorkspaceRoot();
+        if (!workspaceRoot) {throw new Error('No workspace folder is open');}
+
         // Step 2: Get Confluence credentials
         const baseUrl = ConfigManager.getConfluenceBaseUrl();
         const email = ConfigManager.getConfluenceEmail();
         const apiToken = await ConfigManager.getConfluenceApiToken(context);
+        secretToken = apiToken;
         const authType = vscode.workspace.getConfiguration('karateDsl.confluence').get<'basic' | 'bearer'>('authType', 'basic');
 
-        // Step 3: Fetch and parse page
+        // Step 3: Optional contract link, then fetch and generate
+        const contract = await pickContract();
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: 'Generating Karate tests from Confluence',
             cancellable: false
         }, async (progress) => {
-            // Fetch page
             progress.report({ increment: 30, message: 'Fetching Confluence page...' });
             const client = new ConfluenceClient(baseUrl, email || "", apiToken, authType);
             const page = await client.getPageById(pageId);
 
-            // Parse page content
-            progress.report({ increment: 30, message: 'Parsing page content...' });
-            const parser = new ConfluenceParser();
-            const testData = parser.parsePageContent(page);
+            progress.report({ increment: 20, message: 'Parsing page content...' });
+            const testData = new ConfluenceParser().parsePageContent(page);
+            const items = confluenceRequirementItems({ id: String(page.id ?? pageId), title: page.title }, testData);
+            const pageContent = page.body.storage?.value || page.body.view?.value || '';
 
-            // Generate Karate tests
-            progress.report({ increment: 25, message: 'Generating Karate tests...' });
-            const scenarios: KarateScenario[] = [];
-
-            // Generate scenarios from test cases
-            for (const testCase of testData.testCases) {
-                const steps: KarateStep[] = [];
-
-                // Convert test case steps to Karate steps
-                for (let i = 0; i < testCase.steps.length; i++) {
-                    steps.push({
-                        keyword: i === 0 ? 'Given' : 'And',
-                        text: `# ${testCase.steps[i]}`
-                    });
-                }
-
-                // Add placeholder for actual API call
-                steps.push({
-                    keyword: 'When',
-                    text: 'method get # TODO: Replace with actual API call'
-                });
-
-                // Add expected result
-                if (testCase.expectedResult) {
-                    steps.push({
-                        keyword: 'Then',
-                        text: `# Expected: ${testCase.expectedResult}`
-                    });
-                }
-
-                scenarios.push({
-                    name: testCase.name,
-                    description: testCase.description,
-                    steps
-                });
-            }
-
-            // Generate scenarios from flow steps
-            if (testData.flowSteps.length > 0 && scenarios.length === 0) {
-                const steps: KarateStep[] = testData.flowSteps.map((step, i) => ({
-                    keyword: i === 0 ? 'Given' : 'And',
-                    text: `# ${step}`
-                }));
-
-                scenarios.push({
-                    name: 'Flow from Confluence',
-                    steps
-                });
-            }
-
-            if (scenarios.length === 0) {
-                vscode.window.showWarningMessage('No test cases or flows found in Confluence page');
+            const { build, run } = await runRequirementsGeneration({
+                context, workspaceRoot, items, contract,
+                name: slug(page.title) || `page-${pageId}`,
+                mode: 'confluence', sourceRef: `Confluence page ${pageId}`,
+                useAi: vscode.workspace.getConfiguration('karateDsl').get<boolean>('useCopilot', false),
+                evidenceLabel: `Confluence: ${page.title}`, evidenceText: pageContent,
+                progress: toIncrementalProgress(progress, { from: 50, to: 100 })
+            });
+            if (!run) {
+                vscode.window.showWarningMessage(`No test cases or flows found in Confluence page. ${build.warnings.join('; ')}`.trim());
                 return;
             }
-
-            // Create feature
-            const generator = new KarateGenerator();
-            const sharedStyle = SharedStyleService.loadSharedStyle();
-            if (sharedStyle) {
-                generator.setStyle(sharedStyle);
-            }
-            const feature = {
-                name: page.title,
-                description: `Test scenarios from Confluence page ${pageId}`,
-                scenarios
-            };
-
-            let featureContent = generator.featureToString(feature);
-
-            // Optionally enhance with Copilot
-            const config = vscode.workspace.getConfiguration('karateDsl');
-            const useCopilot = config.get<boolean>('useCopilot', false);
-
-            if (useCopilot) {
-                progress.report({ increment: 5, message: 'Enhancing with GitHub Copilot...' });
-
-                const { CopilotService } = await import('../services/copilotService');
-                const isAvailable = await CopilotService.isCopilotAvailable();
-
-                if (isAvailable) {
-                    let tempUri: vscode.Uri | null = null;
-
-                    try {
-                        const context = `Generate comprehensive Karate API tests from Confluence documentation: ${page.title} with ${scenarios.length} scenarios.
-
-STRICT REQUIREMENTS:
-- Use ONLY information present in the attached Confluence page
-- NO hallucinations or invented test data
-- Extract API endpoints, parameters, and expected responses from documentation
-- Generate positive, negative, and edge case scenarios
-- Include proper schema validation
-- Add comprehensive assertions based on documented behavior
-- Map test steps from Confluence to executable Karate DSL`;
-
-                        // NEW: Create temp file for Confluence HTML content
-                        const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
-                        tempUri = await CopilotService.createTempFile(confluenceContent, '.html');
-
-                        featureContent = await CopilotService.enhanceTestWithFileContext(
-                            featureContent,
-                            context,
-                            'confluence',
-                            [tempUri]  // ~10 tokens instead of 1000s!
-                        );
-
-                        logger.info('Enhanced tests with Copilot using file-based Confluence context');
-                    } catch (error) {
-                        logger.warn('Copilot enhancement failed, using original tests', error as Error);
-                    } finally {
-                        // Always cleanup temp files
-                        if (tempUri) {
-                            await CopilotService.cleanupTempFiles();
-                        }
-                    }
-                }
-            }
-
-            // Save file
-            progress.report({ increment: 10, message: 'Saving feature file...' });
-            const outputPath = FileUtils.resolveOutputPath();
-            const sanitizedTitle = page.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-            const outputFile = path.join(outputPath, `${sanitizedTitle}.feature`);
-            const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-
-            FileUtils.writeFile(uniqueFile, featureContent);
-
-            // Show success
-            const openFile = 'Open File';
-            const result = await vscode.window.showInformationMessage(
-                `Generated Karate tests: ${path.basename(uniqueFile)} (${scenarios.length} scenarios)`,
-                openFile
-            );
-
-            if (result === openFile) {
-                const doc = await vscode.workspace.openTextDocument(uniqueFile);
-                await vscode.window.showTextDocument(doc);
-            }
-
-            logger.info(`Successfully generated tests from Confluence: ${uniqueFile}`);
+            logger.info(`Generated Confluence tests: ${run.createdPaths.join(', ') || '(none)'}`);
+            void reportSummary(run.summary, `Confluence: ${page.title}`, run.createdPaths[0]);
         });
 
     } catch (error) {
-        logger.error('Failed to generate tests from Confluence', error as Error);
-        vscode.window.showErrorMessage(`Failed to generate tests: ${(error as Error).message}`);
+        // HTTP client errors can carry the base URL or token; mask both before logging or showing the message.
+        const message = safeMessage(error, [secretToken, ConfigManager.getConfluenceBaseUrl()]);
+        logger.error('Failed to generate tests from Confluence', new Error(message));
+        vscode.window.showErrorMessage(`Failed to generate tests: ${message}`);
     }
 }
