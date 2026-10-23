@@ -1,5 +1,5 @@
 /** Pure quality-gate integration for Karate Scout suites. No vscode. */
-import { runGate } from '../quality/QualityGate';
+import { parseFeature, runGate } from '../quality/QualityGate';
 import type { Finding } from '../quality/QualityGate';
 
 export interface ScoutSuiteLike {
@@ -47,7 +47,11 @@ export function demoteGateFailures<T extends ScoutSuiteLike>(suite: T): { suite:
             const lines = files['journey.feature'].split('\n');
             const scenarioStarts = lines.map((l, i) => SCENARIO_RE.test(l) ? i : -1).filter(i => i >= 0);
             const first = errors[0].finding;
+            const parsed = parseFeature(files['journey.feature']);
+            if (parsed.tags.some(t => t.name === '@ignore')) { break; }
             const startIndex = [...scenarioStarts].reverse().find(i => i + 1 <= first.line);
+            const owner = startIndex === undefined ? undefined : parsed.scenarios.find(sc => sc.startLine === startIndex + 1);
+            if (owner?.ignored) { break; }
             if (startIndex === undefined) {
                 lines.unshift('@ignore', `# Draft: Quality gate: ${first.ruleId}`);
                 demoted.push(`Feature: ${first.ruleId}`);
@@ -59,9 +63,9 @@ export function demoteGateFailures<T extends ScoutSuiteLike>(suite: T): { suite:
             files = { ...files, 'journey.feature': lines.join('\n') };
         }
         if (!demoted.length) { return { suite, demoted }; }
-        const runnable = (files['journey.feature'].match(/^\s*Scenario(?: Outline)?:/gm) ?? []).length - (files['journey.feature'].match(/^\s*@ignore\s*$/gm) ?? []).length;
+        const runnable = parseFeature(files['journey.feature']).scenarios.filter(sc => !sc.ignored).length;
         const reasons = [...suite.draftReasons, ...demoted.map(d => `Quality gate demoted ${d}`)];
-        return { suite: { ...suite, files, runnableScenarios: Math.max(0, Math.min(suite.runnableScenarios, runnable)), draftReasons: reasons }, demoted };
+        return { suite: { ...suite, files, runnableScenarios: Math.min(suite.runnableScenarios, runnable), draftReasons: reasons }, demoted };
     } catch {
         return { suite, demoted: [] };
     }

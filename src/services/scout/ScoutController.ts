@@ -9,7 +9,7 @@ import { CompanionBrowserAdapter } from './CompanionBrowserAdapter';
 import { inferDependencies, isScoutCommand, journeyDocument, loadJourney, validExpectation } from './JourneyModel';
 import { generateScoutSuite } from './ScoutGenerator';
 import type { ScoutSuite } from './ScoutGenerator';
-import { saveScoutSuite } from './saveSuite';
+import { demotedMessage, saveScoutSuite } from './saveSuite';
 import type { ScoutSaveResult } from './saveSuite';
 import { nodeFs } from '../../generation/vscode/NodeFs';
 import { WorkspaceHashStore } from '../../generation/vscode/WorkspaceHashStore';
@@ -24,6 +24,7 @@ export class ScoutController implements vscode.Disposable {
     readonly session = new ScoutSession();
     private demo?: ScoutDemo;
     private mutationBusy = false;
+    private demotedAtSave?: { path: string; demoted: string[] };
     private verificationCancellation?: vscode.CancellationTokenSource;
     private emission?: NodeJS.Timeout;
     private subscriptions: vscode.Disposable[] = [];
@@ -149,6 +150,7 @@ export class ScoutController implements vscode.Disposable {
         const suite = saved.suite;
         writeSummaryDetails(saved.summary, 'Karate Scout');
         this.session.snapshot.suitePath = path.join(folder, 'journey.feature');
+        this.demotedAtSave = { path: this.session.snapshot.suitePath, demoted: saved.demoted };
         journey.verification.karate = undefined;
         const gateNote = saved.demoted.length ? ` Quality gate demoted ${saved.demoted.length} scenario(s) to @ignore drafts (see the Karate Generation output).` : saved.errors ? ' Quality gate errors are listed in the Karate Generation output.' : '';
         this.session.changed(`Saved ${suite.runnableScenarios} enabled scenario(s). Quality gate: ${saved.errors} errors / ${saved.warnings} warnings. ${suite.draftReasons.length ? 'Draft scenarios are tagged @ignore; review the generated README.' : 'Run in Karate to establish independent verification.'}${gateNote}${saved.report.sideBySide.length ? ` ${saved.report.sideBySide.length} edited file(s) kept; new versions saved side by side.` : ''}`);
@@ -158,6 +160,7 @@ export class ScoutController implements vscode.Disposable {
     private async verify(): Promise<void> {
         const journey = this.session.requireJourney(); const featurePath = this.session.snapshot.suitePath;
         if (!featurePath || !fs.existsSync(featurePath)) throw new Error('Save a Karate suite first.');
+        if (this.demotedAtSave?.path === featurePath && this.demotedAtSave.demoted.length) throw new Error(demotedMessage(this.demotedAtSave.demoted));
         const suite = generateScoutSuite(journey);
         if (suite.draftReasons.length || suite.runnableScenarios !== 1 + journey.variants.filter(item => item.kind !== 'baseline').length) throw new Error('Confirm every exported scenario and resolve draft requirements before verifying the complete suite.');
         const config = vscode.workspace.getConfiguration('karateDsl.scout');

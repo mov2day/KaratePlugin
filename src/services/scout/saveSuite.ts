@@ -38,3 +38,8 @@ export function saveScoutSuite<T extends ScoutSuiteLike>(suite: T, folder: strin
     const headline = `Saved ${final.runnableScenarios} enabled scenario(s). Quality gate: ${errors} errors / ${warnings} warnings.`;
     return { suite: final, report, findings, demoted, errors, warnings, summary: { headline, details, level: errors || demoted.length || report.sideBySide.length ? 'warning' : 'info' } };
 }
+
+/** Error shown when verification is attempted on a suite the gate demoted at save time. */
+export function demotedMessage(demoted: string[]): string {
+    return `Quality gate demoted ${demoted.join('; ')}; fix or remove and re-save before verifying.`;
+}

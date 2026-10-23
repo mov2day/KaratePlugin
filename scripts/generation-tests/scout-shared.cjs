@@ -110,5 +110,41 @@ module.exports = [
             const again = saveScoutSuite(generateScoutSuite(confirmedJourney()), dir, 'Fixture', fsApi, hist, '2.0.3');
             assert.equal(again.report.sideBySide.length, 1); assert.equal(again.summary.level, 'warning');
         }
+    },
+    {
+        name: 'scout shared: V2-ASSERT-002 is allowed for Scout (raw gate warns, scout gate and save do not)',
+        run() {
+            const { runGate } = require('../../out/generation/quality/QualityGate');
+            const { saveScoutSuite } = require('../../out/services/scout/saveSuite');
+            const suite = generateScoutSuite(confirmedJourney({ expectations: confirmedJourney().requests.map(r => ({ requestId: r.id, statuses: [200], assertions: [], confirmed: true })) }));
+            const raw = runGate(suite.files['journey.feature'], { knownFiles: new Set(Object.keys(suite.files)) });
+            assert.ok(raw.findings.some(f => f.ruleId === 'V2-ASSERT-002' && f.severity === 'warning'), JSON.stringify(raw.findings));
+            assert.deepEqual(gate().gateScoutSuite(suite).findings, []);
+            const r = saveScoutSuite(suite, '/w/a2', 'Fixture', memFs(), history(), '2.0.3');
+            assert.match(r.summary.headline, /Quality gate: 0 errors \/ 0 warnings/);
+        }
+    },
+    {
+        name: 'scout shared: whole-Feature demotion recounts runnable as 0; stuck errors terminate without stacked tags',
+        run() {
+            const mk = text => ({ files: { 'journey.feature': text }, runnableScenarios: 2, draftReasons: [] });
+            const bg = mk("Feature: x\n  Background:\n    Given url 'http://x'\n  Scenario: a\n    * def r = 1\n  Scenario: b\n    * def r = 2\n");
+            const out = gate().demoteGateFailures(bg);
+            assert.equal(out.suite.runnableScenarios, 0);
+            assert.equal((out.suite.files['journey.feature'].match(/@ignore/g) || []).length, 1);
+            // already-ignored scenario that still errors: no tag stacking, loop terminates
+            const stuck = mk("Feature: x\n  @ignore\n  Scenario: a\n    * def r = karate.properties['p']\n  Scenario: b\n    Given url 'http://x'\n    When method get\n");
+            const o2 = gate().demoteGateFailures(stuck);
+            assert.ok(!/@ignore\n\s*(# [^\n]*\n\s*)?@ignore/.test(o2.suite.files['journey.feature']));
+            assert.ok((o2.suite.files['journey.feature'].match(/@ignore/g) || []).length <= 2);
+            assert.equal(o2.suite.runnableScenarios, 0);
+        }
+    },
+    {
+        name: 'scout shared: demotedMessage names the demoted scenarios',
+        run() {
+            const { demotedMessage } = require('../../out/services/scout/saveSuite');
+            assert.match(demotedMessage(['Scenario: a (V2-CFG-001)']), /^Quality gate demoted Scenario: a \(V2-CFG-001\); fix or remove and re-save before verifying\.$/);
+        }
     }
 ];
