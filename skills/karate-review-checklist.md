@@ -13,6 +13,10 @@ Before returning a feature, check it against every rule below. A failed rule is 
 - V2-SEC-001 (error): no literal password, token, secret or API key in steps or docstrings; use `karate.sysenv`, `karate.sysprop` or config.
 - V2-ASSERT-001 (error): every scenario with `method` asserts the status (`status` or a match on `responseStatus`).
 - V2-ASSERT-002 (warning): a 2xx scenario also asserts the body (`match response ...`).
+- V2-ASSERT-003 (warning): a 2xx scenario that asserts more than the status also checks content, not only timing or media type.
+- V2-ASSERT-004 (warning): a 2xx body assertion is more than a bare `'#object'` or `'#[]'` marker.
+- V2-ASSERT-005 (warning): a 4xx scenario (other than 401/403) also asserts the error body or a header.
+- V2-ASSERT-006 (warning): a 2xx POST scenario checks the created resource (`response.id`, an echoed field or `match header Location`).
 - V2-DRAFT-001 (error): no TODO or placeholder step or comment outside `@ignore`.
 - V2-DUP-001 (error): scenario names are unique within the feature.
 - V2-API-001 (error): no `karate.stop` call; it hangs CI until a socket connects.

@@ -15,6 +15,7 @@ import type { GeneratorConfig } from '../config/GeneratorConfig';
 import type { FsLike, ProjectInfo } from '../config/ProjectDiscovery';
 import type { GenerationModel, SourceKind } from '../model/TestModel';
 import { refine } from '../ai/AiRefiner';
+import { buildBusinessContext } from '../ai/BusinessContext';
 import type { AiCall, RefineResult, SkillSource } from '../ai/AiRefiner';
 import { planOpenApi } from '../plan/OpenApiPlanner';
 import { applyLayout } from '../layout/LayoutStage';
@@ -243,6 +244,9 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
     let gateErrors = 0;
     let gateWarnings = 0;
     const useAi = Boolean(i.ai) && config.ai.refine;
+    // opt-in: business context as extra evidence and the enrich task instead of the plain enhance task
+    const businessContext = useAi && config.ai.enrich === 'business' ? buildBusinessContext(model) : [];
+    const aiTask = businessContext.length ? 'enrich-business' : 'enhance-feature';
     const failOnError = config.gate.failOn === 'error';
     const outputRootSafe = safeRelative(config.layout.outputRoot);
     if (!outputRootSafe) {
@@ -271,7 +275,7 @@ export async function runPipeline(i: PipelineInput): Promise<PipelineResult> {
                 progress(`Refining ${pf.relativePath}`, 25 + Math.floor((n / Math.max(1, planned.length)) * 45));
                 try {
                     const res = await refine({
-                        feature: deterministic, mode: i.mode, task: 'enhance-feature', evidence: i.evidence ?? [], request: i.request,
+                        feature: deterministic, mode: i.mode, task: aiTask, evidence: [...(i.evidence ?? []), ...businessContext], request: i.request,
                         skills: i.skills ?? NO_SKILLS, ai: i.ai, knownFiles, config
                     });
                     r.refinement = res;

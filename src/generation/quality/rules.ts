@@ -166,6 +166,90 @@ const assert002: Rule = {
     }
 };
 
+// ASSERT-003..006 are stricter, scenario-level companions of ASSERT-002. They never repeat an ASSERT-002 finding,
+// and they skip drafts and exploratory scenarios (those are speculative by design).
+const SKIP_TAGS = new Set(['@ignore', '@draft', '@exploratory']);
+const checked = (p: ParsedFeature): ParsedScenario[] => active(p).filter(s => !s.tags.some(t => SKIP_TAGS.has(t.name.toLowerCase())));
+const expectsStatus = (s: ParsedScenario, family: string): boolean => {
+    const re = new RegExp(`\\b${family}\\d\\d\\b`);
+    return s.steps.some(x => re.test(x.text) && (/^status\s/.test(x.text) || refsStatus(x)));
+};
+const isAssertion = (x: Step): boolean => /^(assert|match)\b/.test(x.text);
+/** Assertions that say nothing about the content: status, timing, media type. */
+const isSignalOnly = (x: Step): boolean => /\b(responseStatus|responseTime|responseType)\b/.test(x.text) && !/\bresponse\b/.test(x.text.replace(/\bresponse(?:Status|Time|Type)\b/g, ''));
+/** Content assertions: anything that asserts and is not a status/timing/type signal. */
+const contentAsserts = (s: ParsedScenario): Step[] => s.steps.filter(x => isAssertion(x) && !isSignalOnly(x));
+const BARE_MARKER = /^match\s+response\s*==\s*(['"])#(?:object|array|\[\])\1\s*$/;
+
+const assert003: Rule = {
+    id: 'V2-ASSERT-003', severity: 'warning',
+    check: p => {
+        const f = finder(assert003);
+        const out: Finding[] = [];
+        for (const s of checked(p)) {
+            const m = s.steps.find(isMethod);
+            if (!m || !expectsStatus(s, '2')) {continue;}
+            // a scenario with no assertion at all is already reported by ASSERT-002
+            if (contentAsserts(s).length === 0 && s.steps.some(x => isAssertion(x) && !refsStatus(x))) {
+                out.push(f(m.line, '2xx scenario checks only the status and timing, not the response content', "Add a 'match response ...' or 'match header ...' step"));
+            }
+        }
+        return out;
+    }
+};
+
+const assert004: Rule = {
+    id: 'V2-ASSERT-004', severity: 'warning',
+    check: p => {
+        const f = finder(assert004);
+        const out: Finding[] = [];
+        for (const s of checked(p)) {
+            const m = s.steps.find(isMethod);
+            if (!m || !expectsStatus(s, '2')) {continue;}
+            const content = contentAsserts(s);
+            if (content.length > 0 && content.every(x => BARE_MARKER.test(x.text))) {
+                out.push(f(content[0].line, "2xx scenario's only body assertion is a bare type marker", 'Match the fields or a schema instead of a bare #object / #[] marker'));
+            }
+        }
+        return out;
+    }
+};
+
+const assert005: Rule = {
+    id: 'V2-ASSERT-005', severity: 'warning',
+    check: p => {
+        const f = finder(assert005);
+        const out: Finding[] = [];
+        for (const s of checked(p)) {
+            const m = s.steps.find(isMethod);
+            if (!m || !expectsStatus(s, '4') || s.tags.some(t => t.name.toLowerCase() === '@security')) {continue;}
+            // auth failures (401/403) usually carry a framework-defined body, so they are not flagged
+            if (s.steps.some(x => /\b40[13]\b/.test(x.text) && (/^status\s/.test(x.text) || refsStatus(x)))) {continue;}
+            if (contentAsserts(s).length === 0) {
+                out.push(f(m.line, '4xx scenario asserts only the status, not the error body or headers', "Add a 'match response ...' step for the error shape"));
+            }
+        }
+        return out;
+    }
+};
+
+const assert006: Rule = {
+    id: 'V2-ASSERT-006', severity: 'warning',
+    check: p => {
+        const f = finder(assert006);
+        const out: Finding[] = [];
+        for (const s of checked(p)) {
+            const m = s.steps.find(x => /^method\s+post\b/i.test(x.text));
+            if (!m || !expectsStatus(s, '2')) {continue;}
+            // ASSERT-002 already covers a scenario with no assertions at all
+            if (!s.steps.some(x => isAssertion(x) && !refsStatus(x))) {continue;}
+            const looksAtResult = s.steps.some(x => /\bresponse\b/.test(x.text) || /\bresponseHeaders\b/.test(x.text) || /^match\s+header\s+Location\b/i.test(x.text));
+            if (!looksAtResult) {out.push(f(m.line, 'POST scenario never checks the created resource (id, echoed field or Location header)', "Capture or match 'response.id', or match header Location"));}
+        }
+        return out;
+    }
+};
+
 const draft001: Rule = {
     id: 'V2-DRAFT-001', severity: 'error',
     check: p => {
@@ -288,6 +372,6 @@ const reuse001: Rule = {
 };
 
 export const RULES: Rule[] = [
-    gherkin001, gherkin002, lock001, cfg001, cfg002, sec001, assert001, assert002,
+    gherkin001, gherkin002, lock001, cfg001, cfg002, sec001, assert001, assert002, assert003, assert004, assert005, assert006,
     draft001, dup001, api001, api002, num001, ref001, tag001, reuse001
 ];

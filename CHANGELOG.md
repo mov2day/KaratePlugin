@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `V2-SEC-001` | Step contains a literal credential or secret. |
 | `V2-ASSERT-001` | Request scenario does not assert status. |
 | `V2-ASSERT-002` | Successful 2xx scenario lacks a body assertion. |
+| `V2-ASSERT-003` | 2xx scenario checks only status and timing, not content (warning). |
+| `V2-ASSERT-004` | 2xx scenario's only body assertion is a bare `#object` / `#[]` marker (warning). |
+| `V2-ASSERT-005` | 4xx scenario (not 401/403) asserts only the status (warning). |
+| `V2-ASSERT-006` | 2xx POST scenario never checks the created resource (warning). |
 | `V2-DRAFT-001` | Runnable scenario still contains `TODO`. |
 | `V2-DUP-001` | Scenario name is duplicated. |
 | `V2-API-001` | `karate.stop(` would hang CI. |
@@ -59,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `V2-AI-004` | AI output is not the requested Karate shape. |
 | `V2-AI-005` | AI output has an unterminated docstring. |
 | `V2-AI-006` | AI made an input `@ignore` Feature or Scenario runnable. |
+| `V2-AI-007` | AI enrich-business added a scenario without `# AI-proposed: <reason>` or with gate errors. |
 
 - **AI skill pack and output contracts.** Bundled Karate v2 guidance now lives in `skills/`, selected through `skills/manifest.json`; workspace `.github/skills` remains extra, lower-priority guidance. `PromptBuilder` centralizes task focus and the pure-Karate output contract, sanitizes evidence boundaries, and also supplies a plain-text completion path for non-feature requests. Feature refinement cleans fences/prose, rejects invalid, invented, dropped, shape-invalid, docstring-invalid, or undrafted output, then allows one repair round and reports rejections.
 - **Safety and robustness.** Source adapters share secret redaction; raw bodies with credential-like fields are omitted, body scanning is capped at 100k where it cannot be safely scanned, and credential/JWT detection uses bounded regular expressions. Protected writes reject absolute paths, `..` traversal, and unsafe symlink targets. Generated headers carry a SHA-256 body hash; edited files gain `.generated.feature` siblings, including the unique `.generated.generated.feature` chain. Dry-run failures are evaluated before protected writes and become draft siblings.

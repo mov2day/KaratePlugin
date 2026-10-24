@@ -5,6 +5,7 @@ export type ScenarioCategory = 'positive' | 'negative' | 'edge' | 'boundary' | '
 
 export type ResponseChecks = 'basic' | 'contract';
 export type BusinessScenarios = 'off' | 'on';
+export type AiEnrich = 'off' | 'business';
 
 export type LayoutSplit = 'none' | 'category' | 'tag' | 'path';
 
@@ -16,7 +17,7 @@ export interface GeneratorConfig {
     tags: { auto: boolean; taxonomy: Record<TagCategory, string> };
     scenarios: { categories: ScenarioCategory[]; exploratory: boolean; crud: boolean; outlineThreshold: number; responseChecks: ResponseChecks; responseTimeMs: number; business: BusinessScenarios };
     data: { smart: boolean; externalize: boolean };
-    ai: { refine: boolean; maxRetries: 1; chunk: 'feature' | 'scenario' };
+    ai: { refine: boolean; maxRetries: 1; chunk: 'feature' | 'scenario'; enrich: AiEnrich };
     gate: { dryRun: 'auto' | 'off'; failOn: 'error' | 'never' };
 }
 
@@ -46,7 +47,7 @@ export const DEFAULT_GENERATOR_CONFIG: GeneratorConfig = {
         business: 'off'
     },
     data: { smart: true, externalize: true },
-    ai: { refine: true, maxRetries: 1, chunk: 'feature' },
+    ai: { refine: true, maxRetries: 1, chunk: 'feature', enrich: 'off' },
     gate: { dryRun: 'auto', failOn: 'error' }
 };
 
@@ -64,6 +65,7 @@ const ENUMS: Record<string, readonly string[]> = {
     'scenarios.responseChecks': ['basic', 'contract'],
     'scenarios.business': ['off', 'on'],
     'ai.chunk': ['feature', 'scenario'],
+    'ai.enrich': ['off', 'business'],
     'gate.dryRun': ['auto', 'off'],
     'gate.failOn': ['error', 'never']
 };

@@ -18,6 +18,7 @@ export const TASK_FOCUS: Record<AITask, string> = {
     'analyze-coverage': 'Compare only the supplied specification and explicit Karate feature scope. Report evidence and gaps without inventing coverage.',
     'generate-missing-test': 'Generate a focused test for the identified coverage gap using only supplied contract evidence.',
     'analyze-flakiness': 'Focus on deterministic setup, asynchronous behavior, shared state, isolation, retries, and parallel safety.',
+    'enrich-business': 'Add business-level scenarios and assertions only when the supplied business context directly justifies them; mark each addition with an "# AI-proposed: <reason>" comment.',
     'suggest-reusability': 'Focus on shallow, useful reuse with Background, call (config helpers), callonce (cached data only), callSingle, explicit helper inputs, and @ignore helpers.'
 };
 
@@ -38,6 +39,14 @@ const SCENARIOS_BULLET = '- Return only the new Scenario or Scenario Outline blo
 
 const STEPS_BULLET = '- Return only Karate step lines, one per line: no Feature or Scenario headers, no markdown fences, no prose.';
 
+/** Extra contract for the opt-in business-enrich task; every other task keeps its prompt unchanged. */
+const ENRICH_BULLETS = [
+    '- You may add scenarios or assertions only when the <evidence> business context directly justifies them: business invariants, response-quality checks, and state or permission rules the descriptions state.',
+    '- Put a `# AI-proposed: <reason>` comment line directly above every scenario you add and every assertion you add to an existing scenario. A new scenario without that comment is rejected.',
+    '- Never assert exact message text or volatile values (timestamps, generated ids, counts that depend on other data).',
+    '- Never remove or un-ignore existing scenarios, `@ignore` drafts or assertions; add alongside them.'
+];
+
 export type OutputShape = 'feature' | 'scenarios' | 'steps' | 'text';
 
 export function outputContract(task: AITask, shape: OutputShape = task === 'generate-missing-test' ? 'scenarios' : 'feature'): string {
@@ -48,7 +57,8 @@ export function outputContract(task: AITask, shape: OutputShape = task === 'gene
         "- Preserve every `# source:` comment and every `read('classpath:...')` target exactly as written.",
         '- Never invent endpoints, fields, files or schemas that are not in the evidence or the current feature.',
         '- Never hard-code URLs or credentials; use the configured base URL variable and environment variables.',
-        '- Never weaken, remove or loosen existing assertions; keep every existing scenario.'
+        '- Never weaken, remove or loosen existing assertions; keep every existing scenario.',
+        ...(task === 'enrich-business' ? ENRICH_BULLETS : [])
     ].join('\n');
 }
 

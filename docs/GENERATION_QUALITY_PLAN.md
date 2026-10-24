@@ -119,3 +119,19 @@ Done, OpenAPI planner only, behind `scenarios.business: 'on'` (default `off`, ou
 Verified against a local mock server with the Karate 1.5.0.RC3 jar after replacing the v2-only `karate.copy`/`karate.uuid` calls: all business and lifecycle scenarios passed. Remaining failures were existing ones (empty list vs `each`/`#[] #object` on a fresh mock, the hardcoded-id action path).
 
 Deferred: Postman, HAR (chains already exist), GraphQL and Scout have no spec-derived relationships between operations, so they get none of this; requirements mapping (`scenarioFor`) keeps the sample id; action sub-path scenarios keep the sample id; state-transition drafts do not guess the legal transitions; the AI business-enrich mode (3e) and the quality-gate rules (3f) are separate.
+
+## Phase 3e/3f notes
+
+Done:
+
+- 3e: `ai.enrich: 'off' | 'business'` (default `off`). With `business` and AI on, `runPipeline` appends a `business-context` evidence item (`ai/BusinessContext.ts`) and refines with the new `enrich-business` task (extra contract bullets in `PromptBuilder`, skill `karate-business-invariants`, also added to the openapi source, assertions and checklist skills for that task only). New guard `V2-AI-007` runs only for that task: every scenario in the output that matches no input scenario needs a `# AI-proposed: <reason>` comment and must have no gate errors in its own lines. AI-002/003/006 are unchanged. With `off` the prompts and results are identical.
+- 3f: `V2-ASSERT-003` to `006`, warnings only, skipping `@ignore`/`@draft`/`@exploratory`. On the petstore fixtures under basic, contract and business modes only `petstore-secured` draws warnings (`V2-ASSERT-005`: 1, 1 and 2). No golden changed.
+
+Decisions to check:
+
+- ASSERT-003 and 006 never repeat an ASSERT-002 finding (a scenario with no assertion at all). So 003 means status plus timing/media-type only, and 006 needs some other assertion present. A literal reading would double-report the common status-only case.
+- ASSERT-005 skips 401/403 and `@security` scenarios (framework-defined bodies) and covers 4xx only, not 5xx.
+- The proposal comment may sit in the scenario or directly above its tags/header (the parser files a comment above a header under the previous scenario).
+
+Left undone: no guard compares existing assertions one by one (the prompt forbids weakening them); assertions added inside existing scenarios are not required to carry the comment; business context is built from the model only, so Postman/HAR/GraphQL get little (no descriptions or enums); `ai.enrich` has no VS Code setting.
+

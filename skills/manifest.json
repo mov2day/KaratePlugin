@@ -57,7 +57,8 @@
           "generate-missing-test",
           "enhance-feature",
           "refine-feature",
-          "analyze-coverage"
+          "analyze-coverage",
+          "enrich-business"
         ]
       },
       "priority": 20,
@@ -197,7 +198,8 @@
           "generate-missing-test",
           "enhance-feature",
           "refine-feature",
-          "repair-scenario"
+          "repair-scenario",
+          "enrich-business"
         ]
       },
       "priority": 30,
@@ -296,17 +298,22 @@
         "tasks": [
           "enhance-feature",
           "refine-feature",
-          "repair-scenario"
+          "repair-scenario",
+          "enrich-business"
         ]
       },
       "priority": 35,
-      "budgetChars": 3000,
+      "budgetChars": 3600,
       "verifiedAgainst": "2.1.4",
       "rules": [
         "V2-API-001",
         "V2-API-002",
         "V2-ASSERT-001",
         "V2-ASSERT-002",
+        "V2-ASSERT-003",
+        "V2-ASSERT-004",
+        "V2-ASSERT-005",
+        "V2-ASSERT-006",
         "V2-CFG-001",
         "V2-CFG-002",
         "V2-DRAFT-001",
@@ -320,6 +327,20 @@
         "V2-SEC-001",
         "V2-TAG-001"
       ]
+    },
+    {
+      "id": "karate-business-invariants",
+      "file": "karate-business-invariants.md",
+      "appliesTo": {
+        "modes": "*",
+        "tasks": [
+          "enrich-business"
+        ]
+      },
+      "priority": 25,
+      "budgetChars": 3000,
+      "verifiedAgainst": "2.1.4",
+      "rules": []
     }
   ]
 }

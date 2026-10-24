@@ -43,7 +43,8 @@ const AI_RULES = {
     invented: 'V2-AI-003',
     shape: 'V2-AI-004',
     docstring: 'V2-AI-005',
-    undrafted: 'V2-AI-006'
+    undrafted: 'V2-AI-006',
+    unmarked: 'V2-AI-007'
 } as const;
 
 const err = (ruleId: string, line: number, message: string): Finding => ({ ruleId, severity: 'error', line, message });
@@ -136,6 +137,44 @@ function missingScenarios(input: ParsedFeature, output: ParsedFeature): Finding[
         else {missing.push(err(AI_RULES.dropped, s.startLine, `Scenario "${s.name}" from the input is missing from the output`));}
     }
     return missing;
+}
+
+const AI_PROPOSED = /^#\s*AI-proposed:\s*\S/i;
+
+/** The comment may sit in the scenario body or directly above its tags/header (the parser files that one under the previous scenario). */
+function hasProposalComment(output: ParsedFeature, s: ParsedFeature['scenarios'][number]): boolean {
+    if (s.comments.some(c => AI_PROPOSED.test(c.text))) {return true;}
+    for (let n = s.startLine - 1; n > 0 && /^\s*(@|#)/.test(output.lines[n - 1]); n--) {
+        if (AI_PROPOSED.test(output.lines[n - 1].trim())) {return true;}
+    }
+    return false;
+}
+
+/**
+ * Enrich mode only: scenarios in the output that match no input scenario are AI proposals. Each must say why
+ * (`# AI-proposed: <reason>`) and must not carry gate errors of its own.
+ */
+function proposalFindings(input: ParsedFeature, output: ParsedFeature, outputText: string, i: RefineInput): Finding[] {
+    const pool = input.scenarios.map(s => ({ name: s.name, src: sourceOf(s), used: false }));
+    const fresh = output.scenarios.filter(o => {
+        const src = sourceOf(o);
+        const hit = pool.find(p => !p.used && (p.name === o.name || (src !== undefined && p.src === src)));
+        if (hit) {hit.used = true;}
+        return !hit;
+    });
+    if (!fresh.length) {return [];}
+    const gate = runGate(outputText, { knownFiles: i.knownFiles.size ? i.knownFiles : undefined, config: i.config });
+    const out: Finding[] = [];
+    for (const s of fresh) {
+        if (!hasProposalComment(output, s)) {
+            out.push(err(AI_RULES.unmarked, s.startLine, `New scenario "${s.name}" has no "# AI-proposed: <reason>" comment`));
+        }
+        const bad = gate.findings.filter(f => f.severity === 'error' && f.line >= s.startLine && f.line <= s.endLine);
+        if (bad.length) {
+            out.push(err(AI_RULES.unmarked, s.startLine, `New scenario "${s.name}" fails the quality gate: ${[...new Set(bad.map(f => f.ruleId))].join(', ')}`));
+        }
+    }
+    return out;
 }
 
 /** An AI must not turn a deliberately ignored feature or scenario back into a runnable test. */
@@ -235,6 +274,7 @@ function check(raw: string, i: RefineInput, inputParsed: ParsedFeature, known: s
         ...missingScenarios(inputParsed, parsed),
         ...ignoredFindings(inputParsed, parsed),
         ...inventedFindings(i.mode, parsed, text, known, i.knownFiles, i.evidence.length > 0),
+        ...(i.task === 'enrich-business' ? proposalFindings(inputParsed, parsed, text, i) : []),
         ...gate.errors
     ];
     return { text, problems, warnings: gate.warnings, empty: false };

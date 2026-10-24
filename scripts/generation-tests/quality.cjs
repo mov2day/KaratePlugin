@@ -20,7 +20,7 @@ const cases = [
     ['V2-SEC-001 map', join(...HEAD, 'Scenario: s', "  * configure headers = { Authorization: 'Bearer abcdef0123456789abcdef' }", '  When method get', '  Then status 200', '  And match response == {}'), ['V2-SEC-001@7']],
     ['V2-ASSERT-001', join(...HEAD, 'Scenario: s', '  When method get'), ['V2-ASSERT-001@7']],
     ['V2-ASSERT-002', join(...HEAD, 'Scenario: s', '  When method get', '  Then status 200'), ['V2-ASSERT-002@7']],
-    ['V2-DRAFT-001', join(...HEAD, 'Scenario: s', '  * def a = 1', '  # TODO fill in', '  When method get', '  Then status 404'), ['V2-DRAFT-001@8']],
+    ['V2-DRAFT-001', join(...HEAD, 'Scenario: s', '  * def a = 1', '  # TODO fill in', '  When method get', '  Then status 404'), ['V2-DRAFT-001@8', 'V2-ASSERT-005@9']],
     ['V2-DUP-001', join(...HEAD, 'Scenario: same', '  * def a = 1', 'Scenario: same', '  * def b = 2'), ['V2-DUP-001@8']],
     ['V2-API-001', join(...HEAD, 'Scenario: s', '  * karate.stop(9000)'), ['V2-API-001@7']],
     ['V2-API-002', join(...HEAD, 'Scenario: s', '  * def j = karate.toJava(x)'), ['V2-API-002@7']],
@@ -111,8 +111,9 @@ tests.push(
         name: 'quality: url set in scenario or Background satisfies CFG-002; status via responseStatus ok',
         run() {
             const t = join('Feature: x', 'Scenario: s', '  Given url baseUrl', '  When method get', '  Then match responseStatus == 404');
-            assert.deepEqual(found(t), []);
-            assert.deepEqual(found(join('Feature: x', 'Scenario: s', '  * configure url baseUrl', '  When method get', '  Then status 400')), []);
+            // these status-only 4xx scenarios also draw the ASSERT-005 warning; CFG-002 must stay quiet
+            assert.deepEqual(found(t), ['V2-ASSERT-005@4']);
+            assert.deepEqual(found(join('Feature: x', 'Scenario: s', '  * configure url baseUrl', '  When method get', '  Then status 400')), ['V2-ASSERT-005@4']);
         }
     },
     {
@@ -153,7 +154,7 @@ tests.push(
             assert.equal(p.scenarios[0].steps[0].line, 7);
             assert.equal(p.background.steps[0].text, 'url x');
             const ids = rules().RULES.map(r => r.id).sort();
-            assert.equal(ids.length, 16);
+            assert.equal(ids.length, 20);
             assert.ok(ids.includes('V2-REF-001') && ids.includes('V2-TAG-001') && ids.includes('V2-REUSE-001'));
         }
     },
@@ -183,9 +184,9 @@ tests.push(
         name: 'quality: docstring bodies scanned for secrets/numbers/API but are not steps',
         run() {
             const t = join(...HEAD, 'Scenario: s', '  Given request', '  """', '  {', '    "name": "Fido",', '    "password": "hunter2",', '    "ref": "#(token)",', '    "t": "<access_token>",', '    "id": 9007199254740993', '  }', '  """', '  When method post', '  Then status 400');
-            assert.deepEqual(found(t), ['V2-SEC-001@11', 'V2-NUM-001@14']);
+            assert.deepEqual(found(t), ['V2-SEC-001@11', 'V2-NUM-001@14', 'V2-ASSERT-005@17']);
             const t2 = join(...HEAD, 'Scenario: s', '  Given request', '  """', '  * def a = 1', '  # TODO later', '  Given url x', '  """', '  When method post', '  Then status 400');
-            assert.deepEqual(found(t2), []);
+            assert.deepEqual(found(t2), ['V2-ASSERT-005@13']);
         }
     },
     {

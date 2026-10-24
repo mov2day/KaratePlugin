@@ -31,7 +31,8 @@ export type AITask =
     | 'analyze-coverage'
     | 'generate-missing-test'
     | 'analyze-flakiness'
-    | 'suggest-reusability';
+    | 'suggest-reusability'
+    | 'enrich-business';
 
 export interface AIModelDescriptor {
     id: string;

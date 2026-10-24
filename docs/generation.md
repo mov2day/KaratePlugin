@@ -40,7 +40,7 @@ All keys are optional. Defaults shown.
     "outlineThreshold": 3
   },
   "data": { "smart": true, "externalize": true },
-  "ai": { "refine": true, "maxRetries": 1, "chunk": "feature" },
+  "ai": { "refine": true, "maxRetries": 1, "chunk": "feature", "enrich": "off" },
   "gate": { "dryRun": "auto", "failOn": "error" }
 }
 ```
@@ -69,6 +69,7 @@ All keys are optional. Defaults shown.
 | `ai.refine` | boolean | Allow AI refinement when AI is enabled for the run |
 | `ai.maxRetries` | `1` only | One repair round after a rejected AI answer |
 | `ai.chunk` | `feature`, `scenario` | Unit sent to the model |
+| `ai.enrich` | `off` \| `business` | `business` (needs `ai.refine` and AI on) sends each feature to the model with a compact business context built from the spec (descriptions, enums, examples, status fields, declared errors, resource links; capped at 6,000 characters) and lets it add justified scenarios and assertions. See [AI business enrich](#ai-business-enrich). Default `off` leaves AI behavior unchanged |
 | `gate.dryRun` | `auto`, `off` | Run a Karate v2 dry-run when a v2 CLI is found |
 | `gate.failOn` | `error`, `never` | Whether gate errors reject a generated file |
 
@@ -157,6 +158,10 @@ Every generated file passes the gate before it is written. The same rules run in
 | `V2-SEC-001` | error | Literal secret (Authorization, API key, password, token) in a step |
 | `V2-ASSERT-001` | error | A request scenario never asserts the status |
 | `V2-ASSERT-002` | warning | A 2xx scenario has no body assertion |
+| `V2-ASSERT-003` | warning | A 2xx scenario with only status and timing/media-type checks (no content assertion); scenarios with no assertion at all stay with `V2-ASSERT-002` |
+| `V2-ASSERT-004` | warning | A 2xx scenario whose only body assertion is a bare `'#object'`, `'#[]'` or `'#array'` marker |
+| `V2-ASSERT-005` | warning | A 4xx scenario (not 401/403, not `@security`) that asserts only the status, with no error body or header check |
+| `V2-ASSERT-006` | warning | A 2xx POST scenario with other assertions that never touches `response` or `match header Location` (no id capture, echo or Location) |
 | `V2-DRAFT-001` | error | `TODO` left in a scenario that is not `@ignore` |
 | `V2-DUP-001` | error | Duplicate scenario name |
 | `V2-API-001` | error | `karate.stop(` (hangs CI) |
@@ -172,8 +177,15 @@ Every generated file passes the gate before it is written. The same rules run in
 | `V2-AI-004` | error | AI output is not the requested Karate shape |
 | `V2-AI-005` | error | AI output has an unterminated docstring |
 | `V2-AI-006` | error | AI refinement made an input `@ignore` Feature or Scenario runnable |
+| `V2-AI-007` | error | Enrich mode only: a new scenario has no `# AI-proposed: <reason>` comment (in its body or directly above it) or has gate errors |
+
+`V2-ASSERT-003` to `006` skip `@ignore`, `@draft` and `@exploratory` scenarios, are always warnings (they never reject a file or change the summary level), and can be switched off with `karate.linter.enabledRules`.
 
 AI-refined output is also checked for non-feature content, unterminated docstrings, and invented paths before the gate. A rejected refinement keeps the deterministic output and the run summary says why. When a Karate v2 CLI is found (`karate` on `PATH` reporting v2, or `karateDsl.execution.jarPath` pointing at a v2 jar with Java 21+), the gate also runs a dry-run. The bundled Karate 1.5.0.RC3 jar is never used for this and nothing is downloaded automatically.
+
+## AI business enrich
+
+With `ai.enrich: "business"`, AI refinement of each feature uses the `enrich-business` task instead of `enhance-feature`. The model receives an extra `business-context` evidence block (`src/generation/ai/BusinessContext.ts`, deterministic, sorted by path and method, secret-looking example fields redacted, truncated to a prefix of operations with an "omitted" note) and the `karate-business-invariants` skill. It may add scenarios and assertions the evidence justifies, each marked with a `# AI-proposed: <reason>` comment. The usual guards stay on: `V2-AI-002` (dropped scenario), `V2-AI-003` (invented path or file) and `V2-AI-006` (un-ignored draft); `V2-AI-007` adds that every new scenario carries the comment and passes the quality gate. A rejected answer keeps the deterministic output, as for any refinement. The mode is off by default; it only runs when AI is enabled for the run and `ai.refine` is true.
 
 ## Adding a skill
 
@@ -182,7 +194,7 @@ The AI prompts are grounded by the skill pack in `skills/`, selected by `skills/
 1. Create `skills/<id>.md` with frontmatter `name: <id>` and a `description:`. Put short rules under a `## Rules` heading; other `## ` sections are dropped whole when a budget is tight.
 2. Add an entry to `skills/manifest.json`:
    - `id`, `file`
-   - `appliesTo.modes` (`"*"` or source kinds such as `openapi`, `postman`, `har`) and `appliesTo.tasks` (`"*"` or AI task names)
+   - `appliesTo.modes` (`"*"` or source kinds such as `openapi`, `postman`, `har`) and `appliesTo.tasks` (`"*"` or AI task names, for example `enrich-business`)
    - `priority` (lower renders first and is dropped last), `budgetChars`, `verifiedAgainst` (the Karate version you checked)
    - `rules`: the `V2-*` ids the skill cites
 3. Keep the file under 5,000 characters and within its own `budgetChars`. Only mention rule ids that exist in `src/generation/quality/rules.ts`, and mention every rule id in at least one skill.

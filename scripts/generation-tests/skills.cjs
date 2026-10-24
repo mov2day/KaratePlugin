@@ -44,13 +44,13 @@ function onlyInLabelledBad(text, needle) {
 
 module.exports = [
     {
-        name: 'skills: manifest lists 12 skills whose files exist with name/description frontmatter',
+        name: 'skills: manifest lists 13 skills whose files exist with name/description frontmatter',
         run() {
             const m = manifest();
-            assert.equal(m.skills.length, 12);
+            assert.equal(m.skills.length, 13);
             const ids = m.skills.map(s => s.id).sort();
             assert.deepEqual(ids, [
-                'karate-assertions-schemas', 'karate-data-driven', 'karate-project-config', 'karate-repair',
+                'karate-assertions-schemas', 'karate-business-invariants', 'karate-data-driven', 'karate-project-config', 'karate-repair',
                 'karate-reuse-isolation', 'karate-review-checklist', 'karate-source-graphql', 'karate-source-har-session',
                 'karate-source-openapi', 'karate-source-postman', 'karate-source-requirements', 'karate-v2-core'
             ]);
@@ -127,6 +127,19 @@ module.exports = [
             assert.ok(!r.included.includes('karate-source-graphql'));
             assert.ok(!r.included.includes('karate-source-openapi'));
             assert.ok(r.text.length <= 16000, `len ${r.text.length}`);
+        }
+    },
+    {
+        name: 'skills: karate-business-invariants is selected only for the enrich-business task',
+        run() {
+            const p = pack().loadSkillPack(SKILLS_DIR, fsApi);
+            const r = p.select({ mode: 'openapi', task: 'enrich-business' });
+            assert.ok(r.included.includes('karate-business-invariants'));
+            assert.ok(r.included.includes('karate-v2-core') && r.included.includes('karate-source-openapi'));
+            assert.ok(r.text.length <= 16000, `len ${r.text.length}`);
+            for (const task of ['enhance-feature', 'refine-feature', 'generate-openapi', 'repair-scenario']) {
+                assert.ok(!p.select({ mode: 'openapi', task }).included.includes('karate-business-invariants'), task);
+            }
         }
     },
     {
