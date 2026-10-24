@@ -3,7 +3,9 @@
 import type { KarateScenario, KarateStep } from '../../types';
 import type { PostmanAuth, PostmanBody, PostmanCollection, PostmanEnvironment, PostmanItem, PostmanRequest } from '../../services/postmanParser';
 import type { GeneratorConfig, ScenarioCategory } from '../config/GeneratorConfig';
-import type { GenerationModel, OperationModel, SecurityScheme } from '../model/TestModel';
+import type { GenerationModel, OperationModel, ResponseModel, SecurityScheme } from '../model/TestModel';
+import { observedResponse } from './observedResponse';
+import { responseChecksFor } from '../plan/ResponseChecks';
 import { planAuth, unsupportedReason } from '../plan/AuthSchemes';
 import type { PlannedFeature } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
@@ -53,6 +55,8 @@ interface Entry {
     method: string;
     pathLabel: string;
     sourceRef: string;
+    /** Saved response examples (`item.response[]`), one per status. */
+    saved: ResponseModel[];
 }
 
 type UrlSplit =
@@ -102,11 +106,25 @@ interface Member {
     test: ScriptAnalysis | null;
 }
 
+/** Saved Postman examples as response models (status, headers, content type, JSON body). */
+function savedResponses(item: PostmanItem): ResponseModel[] {
+    const out: ResponseModel[] = [];
+    for (const r of Array.isArray(item.response) ? item.response : []) {
+        if (!r || typeof r !== 'object' || !Number.isInteger(r.code)) {continue;}
+        const headers = (Array.isArray(r.header) ? r.header : []).filter(h => h && typeof h.key === 'string' && typeof h.value === 'string' && !h.disabled);
+        const model = observedResponse(String(r.code), headers, r.body);
+        if (!out.some(o => o.status === model.status)) {out.push(model);}
+    }
+    return out;
+}
+
 export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEnvironment | null, opts?: PostmanModelOptions): PostmanBuild {
     if (!opts?.config) {throw new Error('buildPostmanModel: "opts.config" is required');}
     const config = opts.config;
     const collectionName = opts.collectionName || collection.info?.name || 'collection';
     const urlVar = config.config.urlVariable;
+    const checkOpts = { mode: config.scenarios.responseChecks ?? 'basic', responseTimeMs: config.scenarios.responseTimeMs ?? 0 } as const;
+    const stubOp = (e: Entry): OperationModel => ({ id: '', method: e.method, path: e.pathLabel, tags: [], pathParams: [], queryParams: [], headerParams: [], responses: [], security: 'none', sourceRef: e.sourceRef });
     const warnings: string[] = [];
     const warned = new Set<string>();
     const warnOnce = (m: string): void => { if (!warned.has(m)) { warned.add(m); warnings.push(m); } };
@@ -147,7 +165,7 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
             entries.push({
                 name: item.name, folders, request, auth: request.auth ?? inherited,
                 pre: execText(item, 'prerequest'), test: execText(item, 'test'),
-                method, pathLabel, sourceRef: `${method} ${pathLabel}`
+                method, pathLabel, sourceRef: `${method} ${pathLabel}`, saved: savedResponses(item)
             });
         }
     };
@@ -539,7 +557,11 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                     if (!parsed) {return;}
                     emit(parsed[1] === '*' ? '*' : i === 0 ? 'Then' : 'And', parsed[2]);
                     const sm = /^status (\d+)$/.exec(parsed[2]);
-                    if (sm) {statuses.push(sm[1]);}
+                    if (sm) {
+                        statuses.push(sm[1]);
+                        const checks = responseChecksFor(stubOp(e), e.saved.find(r => r.status === sm[1]) ?? { status: sm[1] }, checkOpts);
+                        for (const c of checks) {emit('And', c);}
+                    }
                     const def = /^def (\w+) =/.exec(parsed[2]);
                     if (parsed[1] === '*' && def) {local.add(def[1]);}
                 });
@@ -564,7 +586,7 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                 operations.push({
                     id: `${e.method.toLowerCase()}-${slug(e.name) || 'request'}`, method: e.method, path: e.pathLabel, summary: e.name,
                     tags: e.folders.map(f => slug(f)).filter(Boolean).slice(-1), pathParams: [], queryParams: [], headerParams: [],
-                    responses: statuses.map(s => ({ status: s })), security: opSec, sourceRef: e.sourceRef
+                    responses: [...statuses.map(s => e.saved.find(r => r.status === s) ?? { status: s }), ...e.saved.filter(r => !statuses.includes(r.status))], security: opSec, sourceRef: e.sourceRef
                 });
             });
 

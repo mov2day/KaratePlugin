@@ -3,6 +3,8 @@ import type { KarateStyle } from '../../types';
 export type TagCategory = 'positive' | 'negative' | 'edge' | 'boundary' | 'security' | 'exploratory';
 export type ScenarioCategory = 'positive' | 'negative' | 'edge' | 'boundary' | 'security';
 
+export type ResponseChecks = 'basic' | 'contract';
+
 export type LayoutSplit = 'none' | 'category' | 'tag' | 'path';
 
 export interface GeneratorConfig {
@@ -11,7 +13,7 @@ export interface GeneratorConfig {
     config: { mode: 'standard' | 'env-json'; urlVariable: string; envs: string[] };
     style: KarateStyle;
     tags: { auto: boolean; taxonomy: Record<TagCategory, string> };
-    scenarios: { categories: ScenarioCategory[]; exploratory: boolean; crud: boolean; outlineThreshold: number };
+    scenarios: { categories: ScenarioCategory[]; exploratory: boolean; crud: boolean; outlineThreshold: number; responseChecks: ResponseChecks; responseTimeMs: number };
     data: { smart: boolean; externalize: boolean };
     ai: { refine: boolean; maxRetries: 1; chunk: 'feature' | 'scenario' };
     gate: { dryRun: 'auto' | 'off'; failOn: 'error' | 'never' };
@@ -37,7 +39,9 @@ export const DEFAULT_GENERATOR_CONFIG: GeneratorConfig = {
         categories: ['positive', 'negative', 'edge', 'boundary', 'security'],
         exploratory: false,
         crud: true,
-        outlineThreshold: 3
+        outlineThreshold: 3,
+        responseChecks: 'basic',
+        responseTimeMs: 0
     },
     data: { smart: true, externalize: true },
     ai: { refine: true, maxRetries: 1, chunk: 'feature' },
@@ -55,6 +59,7 @@ const ENUMS: Record<string, readonly string[]> = {
     'config.mode': ['standard', 'env-json'],
     'style.variableCase': ['camelCase', 'snake_case'],
     'style.commentStyle': ['hash', 'doubleSlash'],
+    'scenarios.responseChecks': ['basic', 'contract'],
     'ai.chunk': ['feature', 'scenario'],
     'gate.dryRun': ['auto', 'off'],
     'gate.failOn': ['error', 'never']
@@ -102,7 +107,7 @@ function sanitize(layer: Plain, schema: Plain, path: string, origin: string, war
                 continue;
             }
         }
-        if (keyPath === 'layout.maxScenariosPerFile' && (!Number.isInteger(value) || (value as number) < 0)) {
+        if ((keyPath === 'layout.maxScenariosPerFile' || keyPath === 'scenarios.responseTimeMs') && (!Number.isInteger(value) || (value as number) < 0)) {
             warnings.push(`${origin}: "${keyPath}" must be a non-negative integer; using default`);
             continue;
         }

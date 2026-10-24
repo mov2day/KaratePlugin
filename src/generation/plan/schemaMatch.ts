@@ -6,6 +6,27 @@ import { numericBounds } from './dataFactory';
 export interface KarateSchemaOptions {
     /** Mark non-required properties as optional (`##marker`). When false they stay strict. */
     optionalAsDoubleHash: boolean;
+    /** Contract mode: string formats become `#regex` markers and `minItems`/`maxItems` become array length markers. */
+    contract?: boolean;
+}
+
+/** Format regexes without backslashes, so they survive JSON and Karate string escaping unchanged. */
+const FORMAT_REGEX: Record<string, string> = {
+    email: '[^@]+@[^@]+[.][^@]+',
+    date: '[0-9]{4}-[0-9]{2}-[0-9]{2}',
+    // eslint-disable-next-line @typescript-eslint/naming-convention
+    'date-time': '[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}.*',
+    uri: '[A-Za-z][A-Za-z0-9+.-]*:.+',
+    hostname: '[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?',
+    ipv4: '[0-9]{1,3}([.][0-9]{1,3}){3}'
+};
+
+/** Karate array length condition (`_` is the length), or undefined when the schema declares no bounds. */
+export function arrayLengthCondition(s: JsonSchema): string | undefined {
+    const parts: string[] = [];
+    if (typeof s.minItems === 'number' && s.minItems > 0) {parts.push(`_ >= ${s.minItems}`);}
+    if (typeof s.maxItems === 'number') {parts.push(`_ <= ${s.maxItems}`);}
+    return parts.length > 0 ? parts.join(' && ') : undefined;
 }
 
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
@@ -34,11 +55,12 @@ function anchored(pattern: string): string {
     return pattern.startsWith('^') && pattern.endsWith('$') && !pattern.endsWith('\\$') ? pattern : `.*(?:${pattern}).*`;
 }
 
-function scalar(s: JsonSchema, type: string): string {
+function scalar(s: JsonSchema, type: string, opts: KarateSchemaOptions): string {
     if (type === 'string') {
         if (Array.isArray(s.enum) && s.enum.length > 0) {return `#string? ${jsList(s.enum)}.includes(_)`;}
         if (s.format === 'uuid') {return '#uuid';}
         if (typeof s.pattern === 'string' && s.pattern !== '') {return `#regex ${anchored(s.pattern)}`;}
+        if (opts.contract && typeof s.format === 'string' && FORMAT_REGEX[s.format]) {return `#regex ${FORMAT_REGEX[s.format]}`;}
         const parts: string[] = [];
         if (typeof s.minLength === 'number' && s.minLength > 0) {parts.push(`_.length >= ${s.minLength}`);}
         if (typeof s.maxLength === 'number') {parts.push(`_.length <= ${s.maxLength}`);}
@@ -80,9 +102,11 @@ function convert(s: JsonSchema | undefined, opts: KarateSchemaOptions): unknown 
         }
     } else if (type === 'array') {
         const item = convert(s.items, opts);
-        result = typeof item === 'string' ? `#[] ${item}` : '#[] #object';
+        const bounds = opts.contract ? arrayLengthCondition(s) : undefined;
+        const marker = bounds ? `#[${bounds}]` : '#[]';
+        result = typeof item === 'string' ? `${marker} ${item}` : `${marker} #object`;
     } else if (type === 'string' || type === 'integer' || type === 'number' || type === 'boolean') {
-        result = scalar(s, type);
+        result = scalar(s, type, opts);
     } else {
         result = IGNORE;
     }

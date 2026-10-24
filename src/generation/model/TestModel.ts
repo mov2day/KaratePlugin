@@ -33,11 +33,23 @@ export interface BodyModel {
     example?: unknown;
 }
 
+export interface HeaderModel {
+    name: string;
+    required: boolean;
+    schema?: JsonSchema;
+    example?: unknown;
+}
+
 export interface ResponseModel {
     status: string;
     schema?: JsonSchema;
     contentType?: string;
     example?: unknown;
+    /** Response headers declared by the spec (OpenAPI) or observed/saved (Postman, HAR). */
+    headers?: HeaderModel[];
+    description?: string;
+    /** First example per media type. `example` stays the example of `contentType`. */
+    examples?: Record<string, unknown>;
 }
 
 export interface OperationModel {
@@ -45,6 +57,7 @@ export interface OperationModel {
     method: string;
     path: string;
     summary?: string;
+    description?: string;
     tags: string[];
     pathParams: ParamModel[];
     queryParams: ParamModel[];

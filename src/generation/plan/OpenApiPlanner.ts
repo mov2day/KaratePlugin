@@ -7,6 +7,7 @@ import { jsLiteral, numericBounds, unsatisfiablePattern, validExtreme, valueFor,
 import { slug } from './slug';
 import { planAuth } from './AuthSchemes';
 import type { AuthPlan } from './AuthSchemes';
+import { responseChecksFor } from './ResponseChecks';
 import { toKarateSchema } from './schemaMatch';
 
 export interface PlannedFeature {
@@ -380,20 +381,20 @@ class Planner {
         let draft: string | undefined;
         if (/^2\d\d$/.test(want)) {
             const resp = this.responseSteps(op, res, `${op.id}-${want}`);
-            steps = [...this.requestSteps(op), st('Then', `status ${want}`), ...resp.steps];
+            steps = [...this.requestSteps(op), st('Then', `status ${want}`), ...this.contractSteps(op, res, this.defaultParams(op)), ...resp.steps];
             draft = resp.draft;
             if (op.pathParams.length > 0) {note = 'Assumes a resource with this id exists in the target environment';}
         } else if (want === '400' || want === '422') {
             const m = this.invalidMutation(op);
             if (!m) {return { reason: `No invalid request can be derived from the contract of ${op.method} ${op.path} to trigger ${want}`, secured };}
             const resp = this.responseSteps(op, res, `${op.id}-${want}`);
-            steps = [...this.requestSteps(op, m.opts), st('Then', `status ${want}`), ...(resp.draft ? [] : resp.steps)];
+            steps = [...this.requestSteps(op, m.opts), st('Then', `status ${want}`), ...this.contractSteps(op, res), ...(resp.draft ? [] : resp.steps)];
             category = 'negative';
             note = `Contract case: rejects ${m.label}`;
         } else if (want === '404') {
             if (op.pathParams.length === 0) {return { reason: `${op.method} ${op.path} has no path parameter to point at an unknown resource`, secured };}
             const resp = this.responseSteps(op, res, `${op.id}-404`);
-            steps = [...this.requestSteps(op, { pathExprs: { ...unknownIds(op) } }), st('Then', 'status 404'), ...(resp.draft ? [] : resp.steps)];
+            steps = [...this.requestSteps(op, { pathExprs: { ...unknownIds(op) } }), st('Then', 'status 404'), ...this.contractSteps(op, res), ...(resp.draft ? [] : resp.steps)];
             category = 'negative';
             note = 'Contract case: unknown resource id';
         } else if (want === '401') {
@@ -539,6 +540,26 @@ class Planner {
         return name;
     }
 
+    private contract(): boolean {
+        return this.config.scenarios.responseChecks === 'contract';
+    }
+
+    /** Query parameters the default request step sends, with their literal values. */
+    private defaultParams(op: OperationModel): Record<string, unknown> {
+        const out: Record<string, unknown> = {};
+        for (const q of op.queryParams) {
+            if (q.required || q.schema.default !== undefined || q.example !== undefined) {out[q.name] = q.example ?? valueFor(q.schema, q.name);}
+        }
+        return out;
+    }
+
+    /** Contract checks (headers, content type, list bounds, response-time budget) placed between the status line and the schema match. */
+    private contractSteps(op: OperationModel, res: ResponseModel | undefined, requestParams?: Record<string, unknown>): KarateStep[] {
+        if (!res) {return [];}
+        const { responseChecks, responseTimeMs } = this.config.scenarios;
+        return responseChecksFor(op, res, { mode: responseChecks ?? 'basic', responseTimeMs: responseTimeMs ?? 0, requestParams }).map(t => st('And', t));
+    }
+
     /** Assertion steps for a response. `draft` is set when the schema cannot be used. */
     private responseSteps(op: OperationModel, res: ResponseModel | undefined, hint: string): { steps: KarateStep[]; comments: string[]; draft?: string } {
         if (!res || !isObj(res.schema)) {return { steps: [], comments: ['no response body schema declared'] };}
@@ -546,7 +567,7 @@ class Planner {
         const rs = withoutFlagged(res.schema, 'writeOnly') as JsonSchema;
         const isArray = rs.type === 'array';
         if (isArray && !isObj(rs.items)) {return { steps: [st('And', "match response == '#[]'")], comments: [] };}
-        const ks = toKarateSchema(isArray ? (rs.items as JsonSchema) : rs, { optionalAsDoubleHash: true });
+        const ks = toKarateSchema(isArray ? (rs.items as JsonSchema) : rs, { optionalAsDoubleHash: true, contract: this.contract() });
         if (this.opts.inlineSchemas) {
             return { steps: [st('And', `match ${isArray ? 'each ' : ''}response ==`, { docString: JSON.stringify(ks, null, 2) })], comments: [] };
         }
@@ -559,7 +580,7 @@ class Planner {
     private planPositive(op: OperationModel, ok: ResponseModel[]): void {
         const lowest = ok[0];
         const resp = this.responseSteps(op, lowest, op.id);
-        const steps = [...this.requestSteps(op), st('Then', `status ${lowest.status}`), ...resp.steps];
+        const steps = [...this.requestSteps(op), st('Then', `status ${lowest.status}`), ...this.contractSteps(op, lowest, this.defaultParams(op)), ...resp.steps];
         const comments: string[] = [];
         if (ok.length > 1) {comments.push(`declared success statuses: ${ok.map(r => r.status).join(', ')}`);}
         comments.push(...resp.comments);
@@ -608,8 +629,9 @@ class Planner {
     private planInvalidRequest(op: OperationModel, status: string): void {
         const m = this.invalidMutation(op);
         if (!m) {return;}
-        const resp = this.responseSteps(op, declared(op, status), `${op.id}-${status}`);
-        const steps = [...this.requestSteps(op, m.opts), st('Then', `status ${status}`), ...(resp.draft ? [] : resp.steps)];
+        const res = declared(op, status);
+        const resp = this.responseSteps(op, res, `${op.id}-${status}`);
+        const steps = [...this.requestSteps(op, m.opts), st('Then', `status ${status}`), ...this.contractSteps(op, res), ...(resp.draft ? [] : resp.steps)];
         this.push(op, 'main', this.scenario(op, 'negative', `${this.label(op)} - rejects ${m.label} with ${status}`, steps));
     }
 
@@ -617,8 +639,9 @@ class Planner {
         if (op.pathParams.length === 0) {return;}
         const pathExprs: Record<string, string> = {};
         Object.assign(pathExprs, unknownIds(op));
-        const resp = this.responseSteps(op, declared(op, '404'), `${op.id}-404`);
-        const steps = [...this.requestSteps(op, { pathExprs }), st('Then', 'status 404'), ...(resp.draft ? [] : resp.steps)];
+        const res = declared(op, '404');
+        const resp = this.responseSteps(op, res, `${op.id}-404`);
+        const steps = [...this.requestSteps(op, { pathExprs }), st('Then', 'status 404'), ...this.contractSteps(op, res), ...(resp.draft ? [] : resp.steps)];
         this.push(op, 'main', this.scenario(op, 'negative', `${this.label(op)} - returns 404 for an unknown id`, steps));
     }
 
@@ -679,7 +702,7 @@ class Planner {
             if (cells.some(v => /[|\n\r]/.test(v.cell) || v.cell === '')) {continue;}
             const column = `${varName(t.field, this.style)}Value`;
             const apply = (expr: string): ReqOpts => (t.kind === 'body' ? { mutate: [st('*', `set payload.${t.field} = ${expr}`)] } : { query: { [t.field]: expr } });
-            const tail = [st('Then', `status ${ok.status}`), ...(resp.draft ? [] : resp.steps)];
+            const tail = [st('Then', `status ${ok.status}`), ...this.contractSteps(op, ok), ...(resp.draft ? [] : resp.steps)];
             const typed = cases.typed;
             const assume: Partial<KarateScenario> = op.pathParams.length > 0 ? { comments: ['Assumes a resource with this id exists in the target environment'] } : {};
             if (cells.length >= this.config.scenarios.outlineThreshold) {

@@ -23,6 +23,16 @@ export interface PostmanItem {
     item?: PostmanItem[]; // Nested folders
     request?: PostmanRequest;
     event?: PostmanEvent[];
+    /** Saved response examples. */
+    response?: PostmanSavedResponse[];
+}
+
+export interface PostmanSavedResponse {
+    name?: string;
+    code?: number;
+    status?: string;
+    header?: PostmanHeader[] | null;
+    body?: string;
 }
 
 export interface PostmanRequest {

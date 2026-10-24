@@ -5,6 +5,7 @@
 import {
     BodyModel,
     GenerationModel,
+    HeaderModel,
     JsonSchema,
     OperationModel,
     ParamModel,
@@ -301,6 +302,51 @@ function slug(method: string, path: string): string {
     return `${method}_${s}`;
 }
 
+/** Response headers (OAS3 `schema`, Swagger 2 inline typing). */
+function buildHeaders(raw: any, ctx: Ctx): HeaderModel[] {
+    const out: HeaderModel[] = [];
+    if (!isObject(raw)) {
+        return out;
+    }
+    for (const [name, rawHeader] of Object.entries(raw)) {
+        const h = follow(rawHeader, ctx);
+        if (!isObject(h)) {
+            continue;
+        }
+        const model: HeaderModel = { name, required: h.required === true };
+        const schema = paramSchema(h, ctx);
+        if (Object.keys(schema).length > 0) {
+            model.schema = schema;
+        }
+        const example = firstExample(h);
+        if (example !== undefined) {
+            model.example = example;
+        }
+        out.push(model);
+    }
+    return out;
+}
+
+/** First example of every media type (OAS3 `content`, Swagger 2 `examples`). */
+function mediaExamples(resp: any): Record<string, unknown> | undefined {
+    const out: Record<string, unknown> = {};
+    if (isObject(resp.content)) {
+        for (const [ct, media] of Object.entries(resp.content)) {
+            const ex = firstExample(media);
+            if (ex !== undefined) {
+                out[ct] = ex;
+            }
+        }
+    } else if (isObject(resp.examples)) {
+        for (const [ct, ex] of Object.entries(resp.examples)) {
+            if (ex !== undefined) {
+                out[ct] = ex;
+            }
+        }
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function buildResponses(operation: any, api: any, ctx: Ctx): ResponseModel[] {
     const out: ResponseModel[] = [];
     const produces: string[] = operation.produces ?? api.produces ?? [];
@@ -311,6 +357,17 @@ function buildResponses(operation: any, api: any, ctx: Ctx): ResponseModel[] {
         const resp = follow(rawResp, ctx);
         const model: ResponseModel = { status };
         if (isObject(resp)) {
+            if (typeof resp.description === 'string' && resp.description !== '') {
+                model.description = resp.description;
+            }
+            const headers = buildHeaders(resp.headers, ctx);
+            if (headers.length > 0) {
+                model.headers = headers;
+            }
+            const examples = mediaExamples(resp);
+            if (examples) {
+                model.examples = examples;
+            }
             if (isObject(resp.content)) {
                 const ct = Object.keys(resp.content).find(isJsonType);
                 if (ct) {
@@ -501,6 +558,9 @@ export function buildOpenApiModel(api: any, sourceName: string): GenerationModel
             };
             if (operation.summary) {
                 op.summary = operation.summary;
+            }
+            if (typeof operation.description === 'string' && operation.description !== '') {
+                op.description = operation.description;
             }
             if (body) {
                 op.body = body;

@@ -61,6 +61,8 @@ All keys are optional. Defaults shown.
 | `scenarios.exploratory` | boolean | Opt in to speculative `@exploratory` scenarios (off by default) |
 | `scenarios.crud` | boolean | Chain create/read/update/delete scenarios |
 | `scenarios.outlineThreshold` | integer | Required-field count that triggers Scenario Outline generation |
+| `scenarios.responseChecks` | `basic` \| `contract` | `basic` asserts status and a type-level schema match. `contract` adds Content-Type, declared Location/ETag/Retry-After/pagination headers, string formats, array bounds and list size limits |
+| `scenarios.responseTimeMs` | integer | Response-time budget in ms (`assert responseTime < N`); `0` disables it |
 | `data.smart` | boolean | Generate realistic values from names and formats |
 | `data.externalize` | boolean | Write request data to `data/*.json` instead of inline bodies |
 | `ai.refine` | boolean | Allow AI refinement when AI is enabled for the run |

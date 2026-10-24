@@ -5,6 +5,8 @@ import type { KarateScenario, KarateStep } from '../../types';
 import type { CapturedRequest } from '../../services/session/CapturedRequest';
 import type { GeneratorConfig } from '../config/GeneratorConfig';
 import type { GenerationModel, OperationModel, SecurityScheme } from '../model/TestModel';
+import { observedResponse } from './observedResponse';
+import { responseChecksFor } from '../plan/ResponseChecks';
 import { planAuth, requiredSecrets, unsupportedReason } from '../plan/AuthSchemes';
 import type { PlannedFeature } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
@@ -515,6 +517,9 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
             const afterIds: Candidate[] = [];
             steps.push(st('Then', `status ${call.status}`));
             const respText = call.req.response?.body;
+            const observed = observedResponse(String(call.status), Object.entries(call.req.response?.headers ?? {}).map(([key, value]) => ({ key, value: String(value) })), typeof respText === 'string' ? respText : undefined);
+            const opLike: OperationModel = { id: '', method: call.method, path: '', tags: [], pathParams: [], queryParams: [], headerParams: [], responses: [], security: 'none', sourceRef: '' };
+            for (const c of responseChecksFor(opLike, observed, { mode: config.scenarios.responseChecks ?? 'basic', responseTimeMs: config.scenarios.responseTimeMs ?? 0 })) {steps.push(st('And', c));}
             const rctype = (header(call.req.response?.headers, 'content-type') ?? '').toLowerCase();
             const parsedResp = call.method !== 'HEAD' && typeof respText === 'string' && respText.trim() !== ''
                 && (/json/.test(rctype) || /^\s*[{[]/.test(respText)) ? parseJson(respText) : { ok: false as const };
@@ -552,7 +557,7 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
             opIds.add(opId);
             operations.push({
                 id: opId, method: call.method, path: `/${labelSegs.join('/')}`, summary: label, tags: [], pathParams: [], queryParams: [], headerParams: [],
-                responses: [{ status: String(call.status) }], security: securityOf(call).length > 0 ? securityOf(call) : 'none', sourceRef: label
+                responses: [observed], security: securityOf(call).length > 0 ? securityOf(call) : 'none', sourceRef: label
             });
         });
 
