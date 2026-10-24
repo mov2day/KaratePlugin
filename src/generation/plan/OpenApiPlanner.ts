@@ -55,6 +55,8 @@ interface ReqOpts {
     auth?: boolean;
     noBody?: boolean;
     payloadVar?: string;
+    /** Send `payloadVar` as already built (no data load or unique-field steps); used to repeat a request. */
+    reuseBody?: boolean;
 }
 
 interface Chain {
@@ -67,10 +69,35 @@ interface Chain {
     idParam: string;
 }
 
+/** An item (`/x/{id}`) plus the sibling operations business scenarios need. Built only when `scenarios.business` is 'on'. */
+interface Resource {
+    domain: string;
+    create: OperationModel;
+    /** Status of the create operation's lowest 2xx response. */
+    ok: string;
+    items: RegExp;
+    read?: OperationModel;
+    put?: OperationModel;
+    update?: OperationModel;
+    del?: OperationModel;
+    list?: { op: OperationModel; accessor: string; items: JsonSchema };
+    idField?: string;
+    idVar: string;
+    /** Sub-path actions (`/x/{id}/<verb>`) that change the resource. */
+    actions: OperationModel[];
+}
+
 const EXPLORATORY_NOTE = 'Exploratory: expectation is not declared in the contract';
 const SAMPLE_UUID_ZERO = '00000000-0000-0000-0000-000000000000';
 const UNIQUE_FIELD = /(name|title|email|username|sku|code)$/i;
 const INJECTION = "' OR '1'='1";
+const IDENT = /^[A-Za-z_$][\w$]*$/;
+// Echo checks skip fields the server owns or legitimately transforms.
+const SERVER_FIELD = /^(id|uuid|_id|(created|updated|modified|deleted)(_?(at|on|date|time))?)$/i;
+const SECRET_FIELD = /(password|passwd|secret|token|credential|cvv|ssn)|^pin$/i;
+const STATE_FIELD = /^(status|state)$|(Status|State|_status|_state)$/;
+const ERROR_FIELDS = ['message', 'code', 'error'];
+const SETUP_NOTE = 'Creates the resource it works on first';
 
 const st = (keyword: KarateStep['keyword'], text: string, extra: Partial<KarateStep> = {}): KarateStep => ({ keyword, text, ...extra });
 const isObj = (v: unknown): v is JsonSchema => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -121,6 +148,7 @@ const bodyRequired = (op: OperationModel): string[] => {
     const s = requestSchema(op);
     return Array.isArray(s?.required) ? (s!.required as string[]) : [];
 };
+const idsFor = (op: OperationModel, idVar: string): Record<string, string> => ({ [/\{([^}]+)\}/.exec(op.path)![1]]: idVar });
 const isEmailField = (name: string, p: JsonSchema): boolean => p.format === 'email' || /email$/i.test(name);
 
 class Planner {
@@ -134,6 +162,8 @@ class Planner {
     private readonly mismatchWarned = new Set<string>();
     private readonly unsupported: Map<string, string>;
     private readonly ops: OperationModel[];
+    private resources: Resource[] = [];
+    private chainCreates = new Set<OperationModel>();
 
     private readonly dir: string;
 
@@ -150,15 +180,22 @@ class Planner {
     plan(): PlanResult {
         const chains = this.config.scenarios.crud ? this.findChains() : [];
         const chained = new Set(chains.map(c => c.del.id));
+        this.chainCreates = new Set(chains.map(c => c.create));
+        this.resources = this.business() ? this.findResources() : [];
         this.warnSchemes();
         for (const op of this.ops) {this.planOperation(op, chained);}
         for (const chain of chains) {this.planChain(chain);}
+        this.planBusiness();
         if (this.config.scenarios.exploratory) {this.planPathExploratory();}
         return { features: this.assemble(), files: this.collectFiles(), warnings: this.warningList };
     }
 
     private warn(message: string): void {
         if (!this.warningList.includes(message)) {this.warningList.push(message);}
+    }
+
+    private business(): boolean {
+        return this.config.scenarios.business === 'on';
     }
 
     private enabled(category: Category): boolean {
@@ -490,7 +527,7 @@ class Planner {
             if (expr !== v) {defs.push(st('*', `def ${v} = ${expr}`));}
         }
         const hasBody = !o.noBody && op.body !== undefined;
-        const body: KarateStep[] = hasBody ? [...this.payloadSteps(op, pv), ...(o.mutate ?? [])] : [];
+        const body: KarateStep[] = hasBody && !o.reuseBody ? [...this.payloadSteps(op, pv), ...(o.mutate ?? [])] : [];
 
         const request: Array<[string]> = [];
         const segments = op.path.split('/').filter(Boolean);
@@ -580,11 +617,16 @@ class Planner {
     private planPositive(op: OperationModel, ok: ResponseModel[]): void {
         const lowest = ok[0];
         const resp = this.responseSteps(op, lowest, op.id);
-        const steps = [...this.requestSteps(op), st('Then', `status ${lowest.status}`), ...this.contractSteps(op, lowest, this.defaultParams(op)), ...resp.steps];
+        const setup = this.setupFor(op);
+        const steps = [
+            ...(setup?.pre ?? []), ...this.requestSteps(op, setup ? { pathExprs: setup.pathExprs } : {}), st('Then', `status ${lowest.status}`),
+            ...this.contractSteps(op, lowest, this.defaultParams(op)), ...resp.steps, ...(setup?.post ?? [])
+        ];
         const comments: string[] = [];
         if (ok.length > 1) {comments.push(`declared success statuses: ${ok.map(r => r.status).join(', ')}`);}
         comments.push(...resp.comments);
-        if (op.pathParams.length > 0) {comments.push('Assumes a resource with this id exists in the target environment');}
+        if (setup) {comments.push(SETUP_NOTE);}
+        else if (op.pathParams.length > 0) {comments.push('Assumes a resource with this id exists in the target environment');}
         const destructive = op.method === 'DELETE';
         if (destructive) {comments.push('Destructive: removes the resource with this id');}
         const s = this.scenario(op, 'positive', `${this.label(op)} - returns ${lowest.status}`, steps, comments.length ? { comments } : {}, destructive ? [`@lock=${domainOf(op)}`] : []);
@@ -631,7 +673,7 @@ class Planner {
         if (!m) {return;}
         const res = declared(op, status);
         const resp = this.responseSteps(op, res, `${op.id}-${status}`);
-        const steps = [...this.requestSteps(op, m.opts), st('Then', `status ${status}`), ...this.contractSteps(op, res), ...(resp.draft ? [] : resp.steps)];
+        const steps = [...this.requestSteps(op, m.opts), st('Then', `status ${status}`), ...this.contractSteps(op, res), ...(resp.draft ? [] : resp.steps), ...this.errorFieldSteps(res)];
         this.push(op, 'main', this.scenario(op, 'negative', `${this.label(op)} - rejects ${m.label} with ${status}`, steps));
     }
 
@@ -704,16 +746,20 @@ class Planner {
             const apply = (expr: string): ReqOpts => (t.kind === 'body' ? { mutate: [st('*', `set payload.${t.field} = ${expr}`)] } : { query: { [t.field]: expr } });
             const tail = [st('Then', `status ${ok.status}`), ...this.contractSteps(op, ok), ...(resp.draft ? [] : resp.steps)];
             const typed = cases.typed;
-            const assume: Partial<KarateScenario> = op.pathParams.length > 0 ? { comments: ['Assumes a resource with this id exists in the target environment'] } : {};
+            const setup = this.setupFor(op);
+            const assume: Partial<KarateScenario> = setup ? { comments: [SETUP_NOTE] } : op.pathParams.length > 0 ? { comments: ['Assumes a resource with this id exists in the target environment'] } : {};
+            const request = (expr: string): KarateStep[] => [
+                ...(setup?.pre ?? []), ...this.requestSteps(op, { ...apply(expr), ...(setup ? { pathExprs: setup.pathExprs } : {}) }), ...tail, ...(setup?.post ?? [])
+            ];
             if (cells.length >= this.config.scenarios.outlineThreshold) {
-                const s = this.scenario(op, cases.category, `${this.label(op)} - ${cases.phrase(t.field)}`, [...this.requestSteps(op, apply(column)), ...tail], {
+                const s = this.scenario(op, cases.category, `${this.label(op)} - ${cases.phrase(t.field)}`, request(column), {
                     examples: { columns: [typed ? `${column}!` : column], rows: cells.map(v => [v.cell]) },
                     ...assume
                 });
                 this.push(op, 'main', s);
             } else {
                 for (const v of cells) {
-                    this.push(op, 'main', this.scenario(op, cases.category, `${this.label(op)} - ${cases.single(t.field, v.desc)}`, [...this.requestSteps(op, apply(typed ? v.cell : jsLiteral(v.cell))), ...tail], assume));
+                    this.push(op, 'main', this.scenario(op, cases.category, `${this.label(op)} - ${cases.single(t.field, v.desc)}`, request(typed ? v.cell : jsLiteral(v.cell)), assume));
                 }
             }
         }
@@ -802,18 +848,23 @@ class Planner {
             const props = successResponses(update)[0]?.schema?.properties;
             return isObj(props) && f in props;
         });
-        const idsFor = (op: OperationModel): Record<string, string> => ({ [/\{([^}]+)\}/.exec(op.path)![1]]: idVar });
+        const ids = (op: OperationModel): Record<string, string> => idsFor(op, idVar);
+        // Business mode: contract checks on every call and a full-payload echo instead of one unique field.
+        const biz = this.business();
+        const checks = (op: OperationModel): KarateStep[] => (biz ? this.contractSteps(op, successResponses(op)[0], this.defaultParams(op)) : []);
+        const echo = (body: OperationModel, payloadVar: string, from: OperationModel): KarateStep[] => (biz ? this.echoSteps(body, payloadVar, successResponses(from)[0]) : []);
 
         const steps: KarateStep[] = [
-            ...this.requestSteps(create), st('Then', `status ${okOf(create)}`), ...asserts(create),
+            ...this.requestSteps(create), st('Then', `status ${okOf(create)}`), ...checks(create), ...asserts(create), ...echo(create, 'payload', create),
             st('*', `def ${idVar} = response.${chain.idField}`),
-            ...this.requestSteps(read, { pathExprs: idsFor(read) }), st('Then', `status ${okOf(read)}`), ...asserts(read),
-            ...(field ? [st('And', `match response.${field} == payload.${field}`)] : []),
-            ...this.requestSteps(update, { pathExprs: idsFor(update), payloadVar: 'updatePayload' }), st('Then', `status ${okOf(update)}`), ...asserts(update),
-            ...(updateField ? [st('And', `match response.${updateField} == updatePayload.${updateField}`)] : []),
-            ...this.requestSteps(del, { pathExprs: idsFor(del) }), st('Then', `status ${okOf(del)}`)
+            ...this.requestSteps(read, { pathExprs: ids(read) }), st('Then', `status ${okOf(read)}`), ...checks(read), ...asserts(read),
+            ...(biz ? echo(create, 'payload', read) : field ? [st('And', `match response.${field} == payload.${field}`)] : []),
+            ...this.requestSteps(update, { pathExprs: ids(update), payloadVar: 'updatePayload' }), st('Then', `status ${okOf(update)}`), ...checks(update), ...asserts(update),
+            ...(biz ? echo(update, 'updatePayload', update) : updateField ? [st('And', `match response.${updateField} == updatePayload.${updateField}`)] : []),
+            ...(biz ? [...this.requestSteps(read, { pathExprs: ids(read) }), st('Then', `status ${okOf(read)}`), ...echo(update, 'updatePayload', read)] : []),
+            ...this.requestSteps(del, { pathExprs: ids(del) }), st('Then', `status ${okOf(del)}`), ...checks(del)
         ];
-        if (declared(read, '404')) {steps.push(...this.requestSteps(read, { pathExprs: idsFor(read) }), st('Then', 'status 404'));}
+        if (declared(read, '404')) {steps.push(...this.requestSteps(read, { pathExprs: ids(read) }), st('Then', 'status 404'));}
 
         const resource = domainOf(create);
         const s = this.scenario(create, 'positive', `${titleCase(resource)} lifecycle - create, read, update, delete`, steps, {
@@ -827,6 +878,234 @@ class Planner {
             if (reason && s.draftReason === undefined) {s.draftReason = `${o.sourceRef}: ${reason}`;}
         }
         this.items.push({ base: this.baseFor(create, 'crud'), kind: 'crud', secured, domain: resource, scenario: s });
+    }
+
+    // ---- business (scenarios.business = 'on')
+
+    private findResources(): Resource[] {
+        const out: Resource[] = [];
+        for (const create of this.ops) {
+            if (create.method !== 'POST' || create.path.includes('{') || this.unsupported.has(create.sourceRef)) {continue;}
+            const created = successResponses(create)[0];
+            if (!created || truncated(create.body?.schema) || this.unsatisfiable(create)) {continue;}
+            const base = create.path.replace(/\/+$/, '');
+            const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const items = new RegExp(`^${escaped}/\\{([^}/]+)\\}$`);
+            const actionPath = new RegExp(`^${escaped}/\\{[^}/]+\\}/[^/{}]+$`);
+            const usable = (o: OperationModel): boolean => !this.unsupported.has(o.sourceRef) && !truncated(o.body?.schema);
+            const pick = (method: string): OperationModel | undefined => this.ops.find(o => o.method === method && items.test(o.path) && usable(o));
+            const read = pick('GET');
+            const put = pick('PUT');
+            const update = put ?? pick('PATCH');
+            const del = pick('DELETE');
+            const props = isObj(created.schema?.properties) ? Object.keys(created.schema!.properties as object) : [];
+            const idField = props.includes('id') ? 'id' : props.find(p => /Id$|_id$/i.test(p));
+            const idParam = [read, update, del].map(o => (o ? items.exec(o.path)?.[1] : undefined)).find(Boolean);
+            let list: Resource['list'];
+            const listOp = this.ops.find(o => o.method === 'GET' && o.path.replace(/\/+$/, '') === base && o.pathParams.length === 0 && usable(o));
+            const listSchema = listOp ? successResponses(listOp)[0]?.schema : undefined;
+            if (listOp && isObj(listSchema) && !truncated(listSchema)) {
+                const arrays = isObj(listSchema.properties) ? Object.entries(listSchema.properties as Record<string, JsonSchema>).filter(([, p]) => isObj(p) && p.type === 'array') : [];
+                if (listSchema.type === 'array' && isObj(listSchema.items)) {list = { op: listOp, accessor: 'response', items: listSchema.items };}
+                else if (arrays.length === 1 && IDENT.test(arrays[0][0]) && isObj(arrays[0][1].items)) {list = { op: listOp, accessor: `response.${arrays[0][0]}`, items: arrays[0][1].items };}
+            }
+            const actions = this.ops.filter(o => ['POST', 'PUT', 'PATCH'].includes(o.method) && actionPath.test(o.path) && usable(o) && successResponses(o).length > 0);
+            out.push({ domain: domainOf(create), create, ok: created.status, items, read, put, update, del, list, idField, idVar: varName(idParam ?? idField ?? 'id', this.style), actions });
+        }
+        return out;
+    }
+
+    /** Create steps that leave the new id in the resource's id variable (when the response has an id). */
+    private createSteps(r: Resource, payloadVar = 'payload'): KarateStep[] {
+        return [
+            ...this.requestSteps(r.create, { payloadVar }), st('Then', `status ${r.ok}`),
+            ...(r.idField ? [st('*', `def ${r.idVar} = response.${r.idField}`)] : [])
+        ];
+    }
+
+    private deleteSteps(r: Resource): KarateStep[] {
+        if (!r.del || !r.idField) {return [];}
+        return [...this.requestSteps(r.del, { pathExprs: idsFor(r.del, r.idVar) }), st('Then', `status ${successResponses(r.del)[0]?.status ?? '200'}`)];
+    }
+
+    /** Standalone by-id scenarios create their own resource when the spec has a create operation for it; otherwise the sample id stays. */
+    private setupFor(op: OperationModel): { pre: KarateStep[]; post: KarateStep[]; pathExprs: Record<string, string> } | undefined {
+        if (!this.business() || op.pathParams.length !== 1) {return undefined;}
+        const r = this.resources.find(x => x.idField && x.items.test(op.path));
+        if (!r) {return undefined;}
+        return {
+            pre: this.createSteps(r, 'createPayload'),
+            post: op.method === 'DELETE' ? [] : this.deleteSteps(r),
+            pathExprs: { [r.items.exec(op.path)![1]]: r.idVar }
+        };
+    }
+
+    /** `match response.f == <var>.f` for every plain field the request sent that the response schema also returns. */
+    private echoSteps(source: OperationModel, payloadVar: string, response: ResponseModel | undefined): KarateStep[] {
+        const sent = this.payloadValue(source);
+        const req = bodyProps(source);
+        const got = isObj(response?.schema?.properties) ? (response!.schema!.properties as Record<string, JsonSchema>) : {};
+        if (!isObj(sent) || truncated(response?.schema)) {return [];}
+        const out: KarateStep[] = [];
+        for (const [k, v] of Object.entries(sent)) {
+            const a = req[k];
+            const b = got[k];
+            if (!IDENT.test(k) || SERVER_FIELD.test(k) || SECRET_FIELD.test(k) || !isObj(a) || !isObj(b)) {continue;}
+            if (a.writeOnly === true || a.readOnly === true || b.writeOnly === true || b.readOnly === true) {continue;}
+            if (!['string', 'number', 'boolean'].includes(typeof v)) {continue;}
+            // Servers normalise dates and timestamps, so a round trip is not guaranteed to keep them verbatim.
+            if (['date', 'date-time', 'time'].includes(String(a.format)) || ['date', 'date-time', 'time'].includes(String(b.format))) {continue;}
+            const numeric = (t: unknown): boolean => t === 'integer' || t === 'number';
+            if (a.type !== b.type && !(numeric(a.type) && numeric(b.type))) {continue;}
+            if (!['string', 'integer', 'number', 'boolean'].includes(a.type)) {continue;}
+            out.push(st('And', `match response.${k} == ${payloadVar}.${k}`));
+        }
+        return out;
+    }
+
+    /** Structural check of an error body: the declared message/code/error string fields are present. Never asserts text. */
+    private errorFieldSteps(res: ResponseModel | undefined): KarateStep[] {
+        if (!this.business() || !res) {return [];}
+        const props = isObj(res.schema?.properties) ? (res.schema!.properties as Record<string, JsonSchema>) : undefined;
+        const strings = (name: string): boolean => (props ? isObj(props[name]) && props[name].type === 'string' && props[name].nullable !== true : isObj(res.example) && typeof res.example[name] === 'string');
+        return ERROR_FIELDS.filter(strings).map(f => st('And', `match response.${f} == '#string'`));
+    }
+
+    private pushBusiness(r: Resource, category: Category, name: string, steps: KarateStep[], ops: OperationModel[], comments: string[] = []): void {
+        const s = this.scenario(r.create, category, name, steps, comments.length ? { comments } : {}, ['@business', `@lock=${r.domain}`]);
+        for (const o of ops) {
+            if (!this.secured(o)) {continue;}
+            this.warnSchemeMismatch(o);
+            const reason = this.mismatchReason(o);
+            if (reason && s.draftReason === undefined) {s.draftReason = `${o.sourceRef}: ${reason}`;}
+        }
+        this.items.push({ base: this.baseFor(r.create, 'crud'), kind: 'crud', secured: ops.some(o => this.secured(o)), domain: r.domain, scenario: s });
+    }
+
+    private planBusiness(): void {
+        for (const r of this.resources) {
+            if (this.enabled('positive')) {
+                this.planListContains(r);
+                this.planDeleteGone(r);
+                this.planPutRetry(r);
+                this.planDeleteRetry(r);
+                this.planTransitions(r);
+            }
+            if (this.enabled('negative')) {this.planDuplicate(r);}
+        }
+    }
+
+    /**
+     * Step text asserting the created item is (`contains`) or is not (`!contains`) in the list. It identifies the item by its id,
+     * else by a unique field of the create payload. Karate compares whole elements for `contains` on a list of objects, so the
+     * key is projected with a JSONPath first.
+     */
+    private listCheck(r: Resource, op: 'contains' | '!contains'): string | undefined {
+        const props = isObj(r.list?.items.properties) ? (r.list!.items.properties as Record<string, JsonSchema>) : {};
+        const unique = this.uniqueFields(r.create).find(f => f in props && IDENT.test(f));
+        const [key, value] = r.idField && r.idField in props ? [r.idField, r.idVar] : unique ? [unique, `payload.${unique}`] : [];
+        return key ? `match karate.jsonPath(${r.list!.accessor}, '$[*].${key}') ${op} ${value}` : undefined;
+    }
+
+    private listNote(r: Resource): string[] {
+        return r.list!.op.queryParams.some(q => /^(limit|size|page|page_?size|per_?page|offset|cursor|top|skip)$/i.test(q.name)) ? ['The created item is expected on the first page of the list'] : [];
+    }
+
+    private planListContains(r: Resource): void {
+        const check = r.list ? this.listCheck(r, 'contains') : undefined;
+        if (!r.list || !check) {return;}
+        const listOk = successResponses(r.list.op)[0].status;
+        const steps = [
+            ...this.createSteps(r),
+            ...this.requestSteps(r.list.op), st('Then', `status ${listOk}`),
+            st('And', check),
+            ...this.deleteSteps(r)
+        ];
+        this.pushBusiness(r, 'positive', `${titleCase(r.domain)} - created item appears in the list`, steps, [r.create, r.list.op, ...(r.del ? [r.del] : [])], [`Covers: ${r.list.op.sourceRef}`, ...this.listNote(r)]);
+    }
+
+    private planDeleteGone(r: Resource): void {
+        const del = r.del;
+        if (!del || !r.idField) {return;}
+        const gone = r.list ? this.listCheck(r, '!contains') : undefined;
+        const repeat = declared(del, '404');
+        if (!gone && !repeat) {return;}
+        const steps = [...this.createSteps(r), ...this.deleteSteps(r)];
+        if (r.list && gone) {steps.push(...this.requestSteps(r.list.op), st('Then', `status ${successResponses(r.list.op)[0].status}`), st('And', gone));}
+        if (repeat) {
+            const resp = this.responseSteps(del, repeat, `${del.id}-404`);
+            steps.push(...this.requestSteps(del, { pathExprs: idsFor(del, r.idVar) }), st('Then', 'status 404'), ...this.contractSteps(del, repeat), ...(resp.draft ? [] : resp.steps), ...this.errorFieldSteps(repeat));
+        }
+        const what = gone && repeat ? 'item leaves the list and a repeat delete returns 404' : gone ? 'item leaves the list' : 'a repeat delete returns 404';
+        this.pushBusiness(r, 'positive', `${titleCase(r.domain)} delete - ${what}`, steps, [r.create, del, ...(r.list ? [r.list.op] : [])], [`Covers: ${del.sourceRef}`, ...(gone && r.list ? this.listNote(r) : [])]);
+    }
+
+    private planDuplicate(r: Resource): void {
+        const dup = declared(r.create, '409');
+        if (!dup) {return;}
+        const resp = this.responseSteps(r.create, dup, `${r.create.id}-409`);
+        const second = this.requestSteps(r.create, { reuseBody: true });
+        const steps = [
+            ...this.createSteps(r), ...second, st('Then', 'status 409'),
+            ...this.contractSteps(r.create, dup), ...(resp.draft ? [] : resp.steps), ...this.errorFieldSteps(dup), ...this.deleteSteps(r)
+        ];
+        this.pushBusiness(r, 'negative', `${titleCase(r.domain)} - duplicate create returns 409`, steps, [r.create, ...(r.del ? [r.del] : [])], ['The same payload is sent twice; the second create must be rejected']);
+    }
+
+    /** PUT repeated with the same body: same status and the same echoed fields. Needs the full chain, like the lifecycle scenario. */
+    private planPutRetry(r: Resource): void {
+        const { put, read, del } = r;
+        if (!put || !read || !del || !r.idField || !this.chainCreates.has(r.create)) {return;}
+        const res = successResponses(put)[0];
+        const ids = idsFor(put, r.idVar);
+        const again = this.requestSteps(put, { pathExprs: ids, payloadVar: 'updatePayload', reuseBody: true });
+        const echo = this.echoSteps(put, 'updatePayload', res);
+        const resp = this.responseSteps(put, res, put.id);
+        const status = `status ${res.status}`;
+        const steps = [
+            ...this.createSteps(r),
+            ...this.requestSteps(put, { pathExprs: ids, payloadVar: 'updatePayload' }), st('Then', status), ...(resp.draft ? [] : resp.steps), ...echo,
+            ...again, st('Then', status), ...(resp.draft ? [] : resp.steps), ...echo,
+            ...this.deleteSteps(r)
+        ];
+        this.pushBusiness(r, 'positive', `${titleCase(r.domain)} - repeating PUT with the same body gives the same result`, steps, [r.create, put, del], [`Covers: ${put.sourceRef}`]);
+    }
+
+    /** DELETE repeated: only when the spec declares a 204 and no 404 (the 404 case is covered by the delete scenario). */
+    private planDeleteRetry(r: Resource): void {
+        const { del, read } = r;
+        const gone = read ? declared(read, '404') : undefined;
+        if (!del || !read || !gone || !r.idField || declared(del, '404') || !declared(del, '204')) {return;}
+        const resp = this.responseSteps(read, gone, `${read.id}-404`);
+        const steps = [
+            ...this.createSteps(r), ...this.deleteSteps(r), ...this.deleteSteps(r),
+            ...this.requestSteps(read, { pathExprs: idsFor(read, r.idVar) }), st('Then', 'status 404'), ...(resp.draft ? [] : resp.steps)
+        ];
+        this.pushBusiness(r, 'positive', `${titleCase(r.domain)} - repeating DELETE is idempotent`, steps, [r.create, del, read], [`Covers: ${del.sourceRef}`, 'The second delete is declared to succeed with the same status']);
+    }
+
+    /** Draft only: the contract names the states but not which transitions are legal, so the expected target state is left to the author. */
+    private planTransitions(r: Resource): void {
+        const read = r.read ? successResponses(r.read)[0] : undefined;
+        const schema = successResponses(r.create)[0].schema ?? read?.schema;
+        const props = isObj(schema?.properties) ? (schema!.properties as Record<string, JsonSchema>) : {};
+        const field = Object.keys(props).find(k => STATE_FIELD.test(k) && Array.isArray(props[k].enum) && props[k].enum.length >= 3);
+        if (!field || !r.idField) {return;}
+        const values = (props[field].enum as unknown[]).map(String).join(', ');
+        const subjects: Array<{ op: OperationModel; verb: string; opts: ReqOpts }> = r.actions.map(op => ({ op, verb: slug(op.path.split('/').pop() ?? 'action') || 'action', opts: { pathExprs: idsFor(op, r.idVar) } }));
+        if (r.update && field in bodyProps(r.update)) {subjects.push({ op: r.update, verb: 'update', opts: { pathExprs: idsFor(r.update, r.idVar), payloadVar: 'updatePayload' } });}
+        for (const { op, verb, opts } of subjects) {
+            const steps = [...this.createSteps(r), ...this.requestSteps(op, opts), st('Then', `status ${successResponses(op)[0]?.status ?? '200'}`), ...this.deleteSteps(r)];
+            const s = this.scenario(r.create, 'positive', `${titleCase(r.domain)} - ${field} transitions: complete the ${verb} transition`, steps, {
+                comments: [
+                    `The '${field}' field accepts: ${values}.`,
+                    `${op.sourceRef} is expected to move the resource between these states; the contract does not say which transitions are legal.`,
+                    `Assert the state the resource ends in (match response.${field} == '<state>') and the transitions that must be rejected.`
+                ],
+                draftReason: `State transitions of '${field}' are not declared in the contract; assert the expected state after ${op.sourceRef}`
+            }, ['@business', `@lock=${r.domain}`]);
+            this.items.push({ base: this.baseFor(r.create, 'crud'), kind: 'crud', secured: [r.create, op].some(o => this.secured(o)), domain: r.domain, scenario: s });
+        }
     }
 
     // ---- exploratory

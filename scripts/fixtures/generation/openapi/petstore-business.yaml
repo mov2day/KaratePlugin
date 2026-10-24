@@ -1,0 +1,274 @@
+openapi: 3.0.3
+info:
+  title: Business Pet Store
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080/api/v1
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [id, name, status]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        status:
+          type: string
+          enum: [available, pending, sold]
+        tag:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+    NewPet:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [available, pending, sold]
+        tag:
+          type: string
+        secret:
+          type: string
+          writeOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+        error:
+          type: integer
+    Toy:
+      type: object
+      required: [toyId, label]
+      properties:
+        toyId:
+          type: integer
+        label:
+          type: string
+    NewToy:
+      type: object
+      required: [label]
+      properties:
+        label:
+          type: string
+    ToyPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Toy'
+        total:
+          type: integer
+paths:
+  /pets:
+    get:
+      summary: List pets
+      operationId: listPets
+      tags: [pets]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Pets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pet'
+    post:
+      summary: Create a pet
+      operationId: createPet
+      tags: [pets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPet'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '400':
+          description: Invalid pet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Pet already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pets/{petId}:
+    parameters:
+      - name: petId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get a pet
+      operationId: getPet
+      tags: [pets]
+      responses:
+        '200':
+          description: The pet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Replace a pet
+      operationId: updatePet
+      tags: [pets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPet'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a pet
+      operationId: deletePet
+      tags: [pets]
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pets/{petId}/approve:
+    post:
+      summary: Approve a pet
+      operationId: approvePet
+      tags: [pets]
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+  /toys:
+    get:
+      summary: List toys
+      operationId: listToys
+      tags: [toys]
+      responses:
+        '200':
+          description: Toys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToyPage'
+    post:
+      summary: Create a toy
+      operationId: createToy
+      tags: [toys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewToy'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Toy'
+  /toys/{toyId}:
+    parameters:
+      - name: toyId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get a toy
+      operationId: getToy
+      tags: [toys]
+      responses:
+        '200':
+          description: The toy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Toy'
+  /owners/{ownerId}:
+    get:
+      summary: Get an owner
+      operationId: getOwner
+      tags: [owners]
+      parameters:
+        - name: ownerId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The owner
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ownerId]
+                properties:
+                  ownerId:
+                    type: integer

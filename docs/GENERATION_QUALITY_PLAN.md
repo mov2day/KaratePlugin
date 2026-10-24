@@ -108,3 +108,14 @@ Deferred:
 - Scout stays on its own path: one `journey.feature`. Section markers or category naming were not added; baseline and variant scenarios carry no category today, so it needs more than a renderer flag.
 - The `tag` split uses a fixed category taxonomy, not the configured one.
 - HAR split does not consider the `layout.strategy` or run per-resource files itself; use `splitBy: 'path'` for that.
+
+## Phase 3c/3d notes
+
+Done, OpenAPI planner only, behind `scenarios.business: 'on'` (default `off`, output unchanged):
+
+- 3c: the CRUD chain compares every plain request field (not readOnly/writeOnly, not id/timestamp/secret-like, not date formats, absent-from-response fields skipped) with `match response.f == payload.f` after create, read and update, then re-reads after update. The chain also gets the contract checks (Content-Type, Location) under `responseChecks: 'contract'`.
+- 3d: `@business` scenarios in the `-crud` file: create then list contains the item (`karate.jsonPath(response, '$[*].id') contains id`; a plain `contains { id: .. }` compares whole list elements in Karate, so it is not used), delete then list `!contains` plus a repeat DELETE 404, duplicate create 409, PUT repeated (same status and echoed fields), DELETE repeated (only when 204 is declared, 404 is not, and the read declares 404), error-body structure for 400/422/409 (`message`/`code`/`error` string fields), and `@ignore` drafts for status/state enums with 3 or more values that have an action sub-path or a PUT/PATCH carrying the field. Standalone by-id scenarios (positive and boundary) create their resource first and clean it up; resources without a create operation keep id `1`.
+
+Verified against a local mock server with the Karate 1.5.0.RC3 jar after replacing the v2-only `karate.copy`/`karate.uuid` calls: all business and lifecycle scenarios passed. Remaining failures were existing ones (empty list vs `each`/`#[] #object` on a fresh mock, the hardcoded-id action path).
+
+Deferred: Postman, HAR (chains already exist), GraphQL and Scout have no spec-derived relationships between operations, so they get none of this; requirements mapping (`scenarioFor`) keeps the sample id; action sub-path scenarios keep the sample id; state-transition drafts do not guess the legal transitions; the AI business-enrich mode (3e) and the quality-gate rules (3f) are separate.

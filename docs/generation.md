@@ -63,6 +63,7 @@ All keys are optional. Defaults shown.
 | `scenarios.outlineThreshold` | integer | Required-field count that triggers Scenario Outline generation |
 | `scenarios.responseChecks` | `basic` \| `contract` | `basic` asserts status and a type-level schema match. `contract` adds Content-Type, declared Location/ETag/Retry-After/pagination headers, string formats, array bounds and list size limits |
 | `scenarios.responseTimeMs` | integer | Response-time budget in ms (`assert responseTime < N`); `0` disables it |
+| `scenarios.business` | `off` \| `on` | OpenAPI only. `on` adds business checks: the CRUD lifecycle echoes every plain request field after create, read and update, re-reads after the update and (with `responseChecks: contract`) checks Content-Type/Location on each call. It also adds `@business` workflow scenarios to the `-crud` file: create then list contains the item, delete then list no longer contains it plus a repeat delete 404, duplicate create 409 (when declared), repeated PUT/DELETE, and `@ignore` drafts for status/state transitions. Standalone get/put/delete-by-id scenarios create their own resource when a create operation exists, and 400/422 scenarios assert the declared `message`/`code`/`error` string fields. Default `off` leaves output unchanged |
 | `data.smart` | boolean | Generate realistic values from names and formats |
 | `data.externalize` | boolean | Write request data to `data/*.json` instead of inline bodies |
 | `ai.refine` | boolean | Allow AI refinement when AI is enabled for the run |
