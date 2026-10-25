@@ -58,7 +58,7 @@ Each `pm.test` title becomes the comment directly above its `match`; it is the f
 - V2-SEC-001: no literal secrets from the collection.
 ```gherkin
 # BAD
-* header X-API-Key = 'sk_live_51Habcdefgh'
+* header X-API-Key = '<literal-key-from-collection>'
 # GOOD
 * header X-API-Key = karate.sysenv('API_KEY')
 ```
