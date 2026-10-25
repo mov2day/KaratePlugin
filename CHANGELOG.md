@@ -5,11 +5,9 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [Unreleased]
 
 - **No bundled Karate jar.** The ~68 MB Karate jar is no longer packaged; it is downloaded from GitHub Releases after an explicit prompt, SHA-256 verified for known versions, and cached in global storage. Set `karateDsl.execution.jarPath` for offline use. Also: untrusted workspaces are declared unsupported and the Java probe no longer uses a shell.
-
-## [Unreleased]
 
 ### Changed
 - **Business enrich follows AI use.** `ai.enrich` now defaults to `business`: when AI generation is enabled (`karateDsl.useCopilot`, via the provider you selected) the model also gets the business context and may add marked `# AI-proposed` scenarios. Without AI nothing changes. Set `ai.enrich: "off"` in the config file to opt out.
