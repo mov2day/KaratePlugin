@@ -764,6 +764,16 @@
           "default": false,
           "description": "Opt in to generating additional @exploratory scenarios (speculative edge cases beyond the spec)"
         },
+        "karateDsl.generation.aiEnrich": {
+          "type": "string",
+          "default": "off",
+          "enum": ["off", "business"],
+          "enumDescriptions": [
+            "AI only reviews the generated scenarios",
+            "AI may also propose business-rule scenarios, each marked # AI-proposed and checked by the quality gate"
+          ],
+          "description": "Business-rule enrichment by the AI provider you selected. Applies only when karateDsl.useCopilot is on. The config file key ai.enrich overrides this."
+        },
         "karateDsl.generation.configMode": {
           "type": "string",
           "default": "standard",

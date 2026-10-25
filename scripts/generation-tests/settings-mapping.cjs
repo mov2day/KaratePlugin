@@ -56,5 +56,17 @@ module.exports = [
             assert.equal(resolve(undefined, { indentation: '    ' }, { indentation: '\t' }).indentation, '    ', 'shared beats learned');
             assert.equal(resolve({ style: { indentation: '   ' } }, { indentation: '    ' }, { indentation: '\t' }).indentation, '   ', 'file beats both');
         }
+    },
+    {
+        name: 'settings-mapping: aiEnrich lands in ai.enrich and is validated by the resolver',
+        run() {
+            const { resolveGeneratorConfig } = require('../../out/generation/config/GeneratorConfig');
+            assert.deepEqual(map({ aiEnrich: 'business' }), { ai: { enrich: 'business' } });
+            assert.equal(resolveGeneratorConfig(undefined, map({ aiEnrich: 'business' })).config.ai.enrich, 'business');
+            assert.equal(resolveGeneratorConfig({ ai: { enrich: 'off' } }, map({ aiEnrich: 'business' })).config.ai.enrich, 'off', 'file beats setting');
+            const bad = resolveGeneratorConfig(undefined, map({ aiEnrich: 'bogus' }));
+            assert.equal(bad.config.ai.enrich, 'off');
+            assert.ok(bad.warnings.length > 0);
+        }
     }
 ];

@@ -36,7 +36,8 @@ export class GeneratorConfigLoader {
             scenarioOutlineThreshold: read<number>('generation.scenarioOutlineThreshold'),
             smartTestData: read<boolean>('generation.smartTestData'),
             exploratory: read<boolean>('generation.exploratory'),
-            configMode: read<string>('generation.configMode')
+            configMode: read<string>('generation.configMode'),
+            aiEnrich: read<string>('generation.aiEnrich')
         };
 
         let sharedStyle: unknown;

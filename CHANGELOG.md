@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`karateDsl.generation.aiEnrich` setting** (`off` | `business`) maps to `ai.enrich`, so business-rule enrichment can be switched on from VS Code. It applies only when `karateDsl.useCopilot` is on and the AI provider you selected is used; the config file key still wins.
+
 ### Changed
 - **AI business enrich covers GraphQL, Postman and HAR.** GraphQL generation now honors `karateDsl.useCopilot` (it was always off) and its model carries field, argument and type descriptions plus enum values. Postman models carry folder names, request descriptions, `pm.test` titles and saved example names; HAR models carry the resource tag and observed id flows. Descriptions are model-only and credential-redacted; generated features are unchanged.
 
