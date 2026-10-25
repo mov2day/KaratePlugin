@@ -135,10 +135,13 @@ export class JiraParser {
 
         // Check for custom acceptance_criteria field
         const customField = issue.fields.acceptance_criteria ||
+            issue.fields.acceptanceCriteria ||
             issue.fields.customfield_10001 || // Common custom field IDs
             issue.fields.customfield_10020;
 
-        if (customField) {
+        if (Array.isArray(customField) && customField.every(c => typeof c === 'string')) {
+            criteria.push(...customField.map(c => String(c).trim()).filter(Boolean));
+        } else if (customField) {
             const customText = typeof customField === 'string'
                 ? customField
                 : this.adfToText(customField);

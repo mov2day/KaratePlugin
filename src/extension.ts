@@ -56,6 +56,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Initialize Agent Skills with extension path for bundled skills
     AgentSkillsService.setExtensionPath(context.extensionPath);
+    KarateCliExecutor.configureStorage(path.join(context.globalStorageUri.fsPath, 'karate'));
 
     // Initialize Services
     const linter = new KarateLinter();
@@ -497,53 +498,27 @@ export async function activate(context: vscode.ExtensionContext) {
                     title: "Generating Karate tests...",
                     cancellable: false
                 }, async (progress) => {
-                    progress.report({ increment: 20, message: "Parsing OpenAPI..." });
+                    progress.report({ increment: 10, message: "Parsing OpenAPI..." });
 
-                    // Import services directly
                     const { OpenAPIParser } = await import('./services/openApiParser');
-                    const { KarateGenerator } = await import('./services/karateGenerator');
                     const { FileUtils } = await import('./utils/fileUtils');
-                    const { SharedStyleService } = await import('./services/SharedStyleService');
+                    const { runGenerationForModel, toIncrementalProgress } = await import('./generation/vscode/runGeneration');
+                    const { reportSummary } = await import('./generation/vscode/reportSummary');
 
-                    const parser = new OpenAPIParser();
-                    const generator = new KarateGenerator();
-                    const sharedStyle = SharedStyleService.loadSharedStyle();
-                    if (sharedStyle) {
-                        generator.setStyle(sharedStyle);
+                    const workspaceRoot = FileUtils.getWorkspaceRoot();
+                    if (!workspaceRoot) {
+                        throw new Error('No workspace folder is open');
                     }
+                    const model = await new OpenAPIParser().parseModel(uri.fsPath);
+                    const useAi = vscode.workspace.getConfiguration('karateDsl').get<boolean>('useCopilot', false);
 
-                    // Parse spec
-                    const endpoints = await parser.parseSpec(uri.fsPath);
+                    const run = await runGenerationForModel({
+                        context, workspaceRoot, model, sourceRef: path.basename(uri.fsPath), mode: 'openapi', useAi,
+                        progress: toIncrementalProgress(progress, { from: 10, to: 100 })
+                    });
 
-                    progress.report({ increment: 50, message: "Generating tests..." });
-
-                    // Generate tests
-                    const specFileName = path.basename(uri.fsPath, path.extname(uri.fsPath));
-                    const feature = generator.generateFromOpenAPI(endpoints, specFileName);
-                    feature.background = generator.generateBackground();
-                    const featureContent = generator.featureToString(feature);
-
-                    // Save file
-                    const outputPath = FileUtils.resolveOutputPath();
-                    const outputFile = path.join(outputPath, `${specFileName}.feature`);
-                    const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-                    FileUtils.writeFile(uniqueFile, featureContent);
-
-                    progress.report({ increment: 100 });
-
-                    logger.info(`Direct generation: ${uniqueFile}`);
-
-                    // Show success with option to open file
-                    const action = await vscode.window.showInformationMessage(
-                        `✅ Generated ${endpoints.length} test scenarios`,
-                        'Open File',
-                        'Dismiss'
-                    );
-
-                    if (action === 'Open File') {
-                        const doc = await vscode.workspace.openTextDocument(uniqueFile);
-                        await vscode.window.showTextDocument(doc);
-                    }
+                    logger.info(`Direct generation: ${run.createdPaths.join(', ') || '(none)'}`);
+                    void reportSummary(run.summary, `OpenAPI: ${path.basename(uri.fsPath)}`, run.createdPaths[0]);
 
                     // Try to update history (if webview is ready)
                     try {
@@ -715,6 +690,38 @@ export async function activate(context: vscode.ExtensionContext) {
                     progress.report({ increment: 20 });
                     const diff = await diffService.compareSpecs(oldFile[0].fsPath, newFile[0].fsPath);
 
+                    // Scenarios for added/modified endpoints come from the generation pipeline planner (scenarios only,
+                    // no Feature/Background header, so they merge into existing files). Endpoints the planner cannot
+                    // match fall back to the legacy generator.
+                    const { renderScenariosForOperations, operationSourceRef } = await import('./generation/plan/ScenarioSnippets');
+                    const { GeneratorConfigLoader } = await import('./generation/vscode/GeneratorConfigLoader');
+                    const { OpenAPIParser } = await import('./services/openApiParser');
+                    let snippetModel: Awaited<ReturnType<InstanceType<typeof OpenAPIParser>['parseModel']>> | undefined;
+                    let snippetConfig: Awaited<ReturnType<typeof GeneratorConfigLoader.load>>['config'] | undefined;
+                    try {
+                        const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                        snippetModel = await new OpenAPIParser().parseModel(newFile[0].fsPath);
+                        snippetConfig = wsRoot ? (await GeneratorConfigLoader.load(wsRoot)).config : undefined;
+                        if (!snippetConfig) {
+                            const { DEFAULT_GENERATOR_CONFIG } = await import('./generation/config/GeneratorConfig');
+                            snippetConfig = DEFAULT_GENERATOR_CONFIG;
+                        }
+                    } catch (error) {
+                        logger.warn('Spec diff: could not build generation model; using legacy generator', error as Error);
+                    }
+                    const scenariosFor = (endpoint: any): string => {
+                        if (snippetModel && snippetConfig) {
+                            const text = renderScenariosForOperations(snippetModel, [operationSourceRef(endpoint.method, endpoint.path)], snippetConfig);
+                            if (text) { return text; }
+                        }
+                        logger.info(`Spec diff: no pipeline operation for ${endpoint.method} ${endpoint.path}; using legacy generator`);
+                        const legacy = generator.featureToString(generator.generateFromOpenAPI([endpoint], 'temp'));
+                        const { runGate } = require('./generation/quality/QualityGate') as typeof import('./generation/quality/QualityGate');
+                        const gate = runGate(legacy);
+                        if (!gate.ok) {throw new Error(`Legacy scenario rejected by quality gate: ${gate.findings.filter(f => f.severity === 'error').map(f => f.ruleId).join(', ')}`);}
+                        return legacy;
+                    };
+
                     progress.report({ increment: 40 });
                     const featureFiles = await diffService.findFeatureFiles();
 
@@ -735,10 +742,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
                     for (const endpoint of diff.added) {
                         const target = diffService.matchEndpointToFeatureFile(endpoint, featureFiles);
-                        const feature = generator.generateFromOpenAPI([endpoint], 'temp');
-                        const content = generator.featureToString(feature);
-
                         if (target) {
+                            const content = scenariosFor(endpoint);
                             await diffService.updateFeatureFile(target, endpoint, content);
                             added++;
                         }
@@ -747,8 +752,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     for (const endpoint of diff.modified) {
                         const target = diffService.matchEndpointToFeatureFile(endpoint, featureFiles);
                         if (target) {
-                            const feature = generator.generateFromOpenAPI([endpoint], 'temp');
-                            const content = generator.featureToString(feature);
+                            const content = scenariosFor(endpoint);
                             await diffService.updateFeatureFile(target, endpoint, content);
                             updated++;
                         }
@@ -839,9 +843,10 @@ export async function activate(context: vscode.ExtensionContext) {
                     progress.report({ increment: 20, message: 'Parsing collection...' });
 
                     const { PostmanImportService } = await import('./services/postmanImportService');
-                    const importService = new PostmanImportService();
+                    const { toIncrementalProgress } = await import('./generation/vscode/runGeneration');
+                    const importService = new PostmanImportService(context);
 
-                    progress.report({ increment: 40, message: 'Converting to Karate...' });
+                    progress.report({ increment: 20, message: 'Converting to Karate...' });
 
                     const result = await importService.importCollection(collectionPath, outputDir, {
                         preserveFolders: true,
@@ -849,9 +854,7 @@ export async function activate(context: vscode.ExtensionContext) {
                         includeAuth: true,
                         useCopilot,
                         environmentFile: environmentPath
-                    }, token);
-
-                    progress.report({ increment: 100 });
+                    }, token, toIncrementalProgress(progress, { from: 40, to: 100 }));
 
                     if (result.success) {
                         const message = `✅ Successfully imported ${result.featuresCreated} feature file(s)!`;
@@ -868,9 +871,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
                         // Show warnings if any
                         if (result.warnings.length > 0) {
-                            vscode.window.showWarningMessage(
-                                `Import completed with warnings: ${result.warnings.join(', ')}`
-                            );
+                            // Full list goes to the output channel; the toast shows the first few only.
+                            const { generationChannel } = await import('./generation/vscode/reportSummary');
+                            generationChannel().appendLine(`Postman import warnings:\n${result.warnings.map(w => `  ${w}`).join('\n')}`);
+                            const shown = result.warnings.slice(0, 3).join(', ');
+                            const more = result.warnings.length > 3 ? ` (+${result.warnings.length - 3} more, see Karate Generation output)` : '';
+                            vscode.window.showWarningMessage(`Import completed with warnings: ${shown}${more}`);
                         }
 
                         // Show unsupported features if any
@@ -1245,11 +1251,11 @@ export async function activate(context: vscode.ExtensionContext) {
         async (options?: GenerationCommandOptions) => {
             try {
                 const { SessionRecorderService } = await import('./services/session/SessionRecorderService');
-                const { ResourceLifecycleAnalyzer } = await import('./services/synthesis/ResourceLifecycleAnalyzer');
-                const { CopilotService } = await import('./services/copilotService');
-                const { FileUtils } = await import('./utils/fileUtils');
+                const { SessionSynthesisService } = await import('./services/session/SessionSynthesisService');
+                const { toIncrementalProgress } = await import('./generation/vscode/runGeneration');
 
                 const recorder = SessionRecorderService.getInstance();
+                const session = recorder.getCurrentSession();
                 const requests = recorder.getSessionRequests();
 
                 if (requests.length === 0) {
@@ -1262,8 +1268,8 @@ export async function activate(context: vscode.ExtensionContext) {
                 const useCopilot = isGenerationCommandOptions(options)
                     ? { label: options.useCopilot ? 'AI enhancement' : 'Basic generation', value: options.useCopilot }
                     : await vscode.window.showQuickPick([
-                        { label: '$(sparkle) Enhance with AI (Copilot)', value: true, description: 'Add validations, assertions, and comprehensive tests' },
-                        { label: '$(file-code) Basic Generation', value: false, description: 'Generate simple request/response tests' }
+                        { label: '$(sparkle) Enhance with AI (Copilot)', value: true, description: 'Refine assertions with the skill pack; credentials are removed first' },
+                        { label: '$(file-code) Basic Generation', value: false, description: 'Deterministic request/response scenario' }
                     ], {
                         placeHolder: `Generate Karate tests from ${requests.length} requests`
                     });
@@ -1272,85 +1278,36 @@ export async function activate(context: vscode.ExtensionContext) {
                     return;
                 }
 
+                const imported = session?.origin === 'har';
+                const stamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+                const name = imported && session?.label ? session.label : `recorded-session-${stamp}`;
+
                 await vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
                     title: 'Synthesizing Karate tests...',
                     cancellable: true
                 }, async (progress, token) => {
-                    progress.report({ increment: 20, message: 'Analyzing resource lifecycles...' });
+                    progress.report({ increment: 10, message: 'Selecting API requests...' });
+                    const service = new SessionSynthesisService(context);
+                    const result = await service.synthesize(requests, {
+                        name, mode: imported ? 'har' : 'session', useCopilot: useCopilot.value, sourceRef: imported ? `${name}.har` : name
+                    }, token, toIncrementalProgress(progress, { from: 20, to: 100 }));
 
-                    // Analyze for chained scenarios
-                    const lifecycles = ResourceLifecycleAnalyzer.analyze(requests);
-
-                    progress.report({ increment: 40, message: 'Generating base Karate DSL...' });
-
-                    // Generate base Karate feature
-                    let karateContent = ResourceLifecycleAnalyzer.generateKarate(requests, lifecycles);
-
-                    // Enhance with Copilot if selected
-                    if (useCopilot.value) {
-                        progress.report({ increment: 60, message: 'Enhancing with AI validations...' });
-
-                        // Build request summary for Copilot context
-                        const requestSummary = requests.map(r => {
-                            const respPreview = r.response?.body?.substring(0, 500) || '';
-                            return `${r.method} ${r.path}\nStatus: ${r.response?.status}\nRequest Body: ${r.body?.substring(0, 200) || 'none'}\nResponse: ${respPreview}`;
-                        }).join('\n---\n');
-
-                        const enhancementPrompt = `
-The following is a Karate feature file generated from recorded HTTP requests.
-
-CAPTURED REQUESTS SUMMARY:
-${requestSummary}
-
-REQUIREMENTS - Add comprehensive enhancements:
-1. **Status Code Validations**: Verify correct status codes
-2. **Response Schema Validation**: Match response structure using Karate's 'match' syntax
-3. **Field Type Checks**: Add #string, #number, #boolean, #array, #object checks
-4. **Required Field Validation**: Use #present for mandatory fields
-5. **Business Logic**: Add assertions for relationships between requests (e.g., created ID used in subsequent GET)
-6. **Error Scenarios**: Add commented suggestions for negative tests
-7. **Performance Assertions**: Add reasonable responseTime checks
-
-OUTPUT: Return the COMPLETE enhanced Karate feature file.
-Do NOT add markdown code blocks. Pure Karate DSL only.`;
-
-                        try {
-                            karateContent = await CopilotService.enhanceKarateTest(
-                                karateContent,
-                                'Session recording synthesis',
-                                {
-                                    type: 'postman', // Closest match for request/response data
-                                    postmanCollection: requestSummary
-                                }
-                            );
-                            logger.info('Successfully enhanced session with Copilot');
-                        } catch (copilotError) {
-                            logger.warn('Copilot enhancement failed, using basic generation', copilotError as Error);
-                            vscode.window.showWarningMessage('AI enhancement failed. Using basic generation.');
-                        }
+                    if (!result.success) {
+                        vscode.window.showWarningMessage(`No feature was generated from the session: ${result.warnings.slice(-1)[0] ?? 'unknown reason'}`);
+                        return;
                     }
-
-                    progress.report({ increment: 80, message: 'Saving feature file...' });
-
-                    // Save to file
-                    const outputPath = FileUtils.resolveOutputPath();
-                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-                    const outputFile = path.join(outputPath, `recorded-session-${timestamp}.feature`);
-                    FileUtils.writeFile(outputFile, karateContent);
-
-                    progress.report({ increment: 100 });
-
-                    // Open the generated file
-                    const doc = await vscode.workspace.openTextDocument(outputFile);
-                    await vscode.window.showTextDocument(doc);
-
-                    const enhancedLabel = useCopilot.value ? ' (AI Enhanced)' : '';
+                    if (result.createdFiles.length > 0) {
+                        const doc = await vscode.workspace.openTextDocument(result.createdFiles[0]);
+                        await vscode.window.showTextDocument(doc);
+                    }
+                    const enhancedLabel = useCopilot.value ? ' (AI requested)' : '';
                     vscode.window.showInformationMessage(
-                        `✅ Generated Karate feature from ${requests.length} requests (${lifecycles.length} resource lifecycles)${enhancedLabel}`
+                        `✅ Generated ${result.featuresCreated} Karate feature(s) from ${requests.length} captured requests${enhancedLabel}. ${imported ? 'HAR imports' : 'Recorded sessions'} are inferred API sequences; review them before relying on them.`
                     );
                 });
             } catch (error) {
+                if (error instanceof vscode.CancellationError) {return;}
                 logger.error('Failed to synthesize session', error as Error);
                 vscode.window.showErrorMessage(`Failed to synthesize session: ${error}`);
             }
@@ -1451,7 +1408,7 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
         async () => {
             try {
                 const { generateFromGraphQL } = await import('./commands/generateFromGraphQL');
-                await generateFromGraphQL();
+                await generateFromGraphQL(context);
             } catch (error) {
                 logger.error('GraphQL generation failed', error as Error);
                 vscode.window.showErrorMessage(`Failed to generate from GraphQL: ${error}`);
@@ -1475,7 +1432,7 @@ Do NOT add markdown code blocks. Pure Karate DSL only.`;
                 }
 
                 const { generateFromDirectory } = await import('./commands/generateFromDirectory');
-                await generateFromDirectory(folderUri);
+                await generateFromDirectory(folderUri, context);
             } catch (error) {
                 logger.error('Directory generation failed', error as Error);
                 vscode.window.showErrorMessage(`Failed to generate from directory: ${error}`);

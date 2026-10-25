@@ -1,0 +1,155 @@
+openapi: 3.0.3
+info:
+  title: Contract Pet Store
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080/api/v1
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  headers:
+    TotalCount:
+      description: Total number of pets
+      schema:
+        type: integer
+  schemas:
+    Pet:
+      type: object
+      required: [id, name, kind, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [pet]
+        owner:
+          type: string
+          format: email
+        homepage:
+          type: string
+          format: uri
+        createdAt:
+          type: string
+          format: date-time
+        birthday:
+          type: string
+          format: date
+        tags:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items:
+            type: string
+    NewPet:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+paths:
+  /pets:
+    get:
+      summary: List pets
+      description: Returns a page of pets.
+      operationId: listPets
+      tags: [pets]
+      parameters:
+        - name: limit
+          in: query
+          required: true
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: A page of pets
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/TotalCount'
+            ETag:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                minItems: 0
+                maxItems: 100
+                uniqueItems: true
+                items:
+                  $ref: '#/components/schemas/Pet'
+    post:
+      summary: Create a pet
+      operationId: createPet
+      tags: [pets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPet'
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+              example:
+                id: 1
+                name: Rex
+                kind: pet
+                createdAt: '2024-01-01T00:00:00Z'
+        '400':
+          description: Invalid pet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pets/{petId}:
+    get:
+      summary: Get a pet
+      operationId: getPet
+      tags: [pets]
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The pet
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

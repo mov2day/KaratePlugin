@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as https from 'https';
 import { spawn } from 'child_process';
 import { TestExecutionOptions } from '../../types';
 import { logger } from '../../utils/logger';
 import { buildKarateArguments } from './ExecutionArguments';
 import { ExecutionRuntimeSettings, readExecutionSettings } from './ExecutionSettings';
+import { KNOWN_JAR_SHA256, downloadVerified, isSafeVersion, karateJarUrl } from './KarateJarDownloader';
 import { ProcessResult, ProcessRunner } from './ProcessRunner';
 import { ResolvedExecutionProject } from './ProjectExecutionResolver';
 
@@ -26,11 +26,18 @@ export class KarateCliExecutor {
     /**
      * Get path to Karate standalone JAR
      */
-    private static getJarPath(extensionPath: string, version: string): string {
-        return path.join(extensionPath, 'lib', `karate-${version}.jar`);
+    private static cacheDir: string | undefined;
+
+    /** Where downloaded jars live (the extension's global storage); unset falls back to <extension>/lib for dev runs. */
+    static configureStorage(dir: string): void {
+        this.cacheDir = dir;
     }
 
-    private static resolveJar(extensionPath: string, settings?: ExecutionRuntimeSettings, projectRoot?: string): KarateJarResolution {
+    private static getJarPath(extensionPath: string, version: string): string {
+        return path.join(this.cacheDir ?? path.join(extensionPath, 'lib'), `karate-${version}.jar`);
+    }
+
+    static resolveJar(extensionPath: string, settings?: ExecutionRuntimeSettings, projectRoot?: string): KarateJarResolution {
         const scope = projectRoot || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || extensionPath;
         const resolvedSettings = settings || readExecutionSettings(scope);
         const configuredPath = (resolvedSettings.jarPath || '').trim();
@@ -74,16 +81,12 @@ export class KarateCliExecutor {
             return selected;
         }
 
-        const libDir = path.dirname(selected.jarPath);
-
-        // Create lib directory if it doesn't exist
-        if (!fs.existsSync(libDir)) {
-            fs.mkdirSync(libDir, { recursive: true });
+        if (!isSafeVersion(selected.version)) {
+            throw new Error(`Invalid Karate version: ${selected.version}`);
         }
+        fs.mkdirSync(path.dirname(selected.jarPath), { recursive: true });
 
-        // Download if not exists
         if (!fs.existsSync(selected.jarPath)) {
-            logger.info(`Karate JAR not found, downloading version ${selected.version}...`);
             await this.downloadKarateJar(selected.jarPath, selected.version);
         }
 
@@ -107,125 +110,35 @@ export class KarateCliExecutor {
     }
 
     /**
-     * Download Karate standalone JAR with progress notification
+     * Download Karate standalone JAR from GitHub Releases after explicit consent, verifying its SHA-256 when pinned
      */
     private static async downloadKarateJar(jarPath: string, version: string): Promise<void> {
-        // Karate standalone JARs are distributed via GitHub Releases, not Maven Central
-        const url = `https://github.com/karatelabs/karate/releases/download/v${version}/karate-${version}.jar`;
-
-        return vscode.window.withProgress({
+        const url = karateJarUrl(version);
+        const choice = await vscode.window.showInformationMessage(
+            `Karate Test Management needs Karate ${version} to run tests. Download it from GitHub Releases (about 70 MB)? Alternatively set karateDsl.execution.jarPath to your own jar.`,
+            { modal: true },
+            'Download'
+        );
+        if (choice !== 'Download') {
+            throw new Error(`Karate ${version} is required. Set karateDsl.execution.jarPath or allow the download.`);
+        }
+        logger.info(`Downloading Karate JAR ${version} from ${url}`);
+        const sha256 = KNOWN_JAR_SHA256[version];
+        if (!sha256) {
+            logger.warn(`No pinned checksum for Karate ${version}; downloading unverified.`);
+        }
+        await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: `Downloading Karate JAR v${version}...`,
             cancellable: false
         }, async (progress) => {
-            progress.report({ increment: 10, message: 'Connecting to GitHub Releases...' });
-
-            return new Promise<void>((resolve, reject) => {
-                https.get(url, (response) => {
-                    // Check for redirect
-                    if (response.statusCode === 301 || response.statusCode === 302) {
-                        const redirectUrl = response.headers.location;
-                        if (!redirectUrl) {
-                            reject(new Error('Redirect without location header'));
-                            return;
-                        }
-
-                        // Follow redirect
-                        https.get(redirectUrl, (redirectResponse) => {
-                            this.handleDownloadResponse(redirectResponse, jarPath, progress, resolve, reject);
-                        }).on('error', (err) => {
-                            logger.error('Failed to follow redirect', err);
-                            reject(new Error(`Failed to download JAR: ${err.message}`));
-                        });
-                    } else if (response.statusCode === 200) {
-                        this.handleDownloadResponse(response, jarPath, progress, resolve, reject);
-                    } else {
-                        reject(new Error(`HTTP ${response.statusCode}: Failed to download JAR`));
-                    }
-                }).on('error', (err) => {
-                    logger.error('Failed to download Karate JAR', err);
-                    vscode.window.showErrorMessage(`Failed to download Karate JAR: ${err.message}. Please check your internet connection.`);
-                    reject(new Error(`Failed to download Karate JAR: ${err.message}`));
-                });
+            let last = 0;
+            await downloadVerified(url, jarPath, sha256, (done, total) => {
+                const pct = total > 0 ? Math.floor((done / total) * 100) : 0;
+                if (pct > last) { progress.report({ increment: pct - last, message: `${(done / 1048576).toFixed(1)} MB` }); last = pct; }
             });
         });
-    }
-
-    /**
-     * Handle download response and save to file
-     */
-    private static handleDownloadResponse(
-        response: any,
-        jarPath: string,
-        progress: vscode.Progress<{ message?: string; increment?: number }>,
-        resolve: () => void,
-        reject: (error: Error) => void
-    ): void {
-        const file = fs.createWriteStream(jarPath);
-        const totalBytes = parseInt(response.headers['content-length'] || '0', 10);
-        let downloadedBytes = 0;
-
-        response.on('data', (chunk: Buffer) => {
-            downloadedBytes += chunk.length;
-            if (totalBytes > 0) {
-                const percent = Math.floor((downloadedBytes / totalBytes) * 80);
-                const mb = (downloadedBytes / 1024 / 1024).toFixed(1);
-                const totalMb = (totalBytes / 1024 / 1024).toFixed(1);
-                progress.report({ message: `Downloading... ${mb}MB / ${totalMb}MB` });
-            }
-        });
-
-        response.pipe(file);
-
-        file.on('finish', () => {
-            file.close((err) => {
-                if (err) {
-                    logger.error('Error closing file after download', err);
-                    if (fs.existsSync(jarPath)) {
-                        fs.unlinkSync(jarPath);
-                    }
-                    reject(new Error(`Failed to save JAR: ${err.message}`));
-                    return;
-                }
-
-                // Verify file exists and has content
-                if (!fs.existsSync(jarPath)) {
-                    reject(new Error('Downloaded file does not exist'));
-                    return;
-                }
-
-                const stats = fs.statSync(jarPath);
-                if (stats.size === 0) {
-                    logger.error('Downloaded JAR is empty');
-                    fs.unlinkSync(jarPath);
-                    reject(new Error('Downloaded JAR file is empty'));
-                    return;
-                }
-
-                progress.report({ increment: 100, message: 'Download complete!' });
-                logger.info(`Karate JAR downloaded successfully (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
-                vscode.window.showInformationMessage('Karate JAR downloaded successfully');
-                resolve();
-            });
-        });
-
-        file.on('error', (err) => {
-            logger.error('Error writing JAR file', err);
-            if (fs.existsSync(jarPath)) {
-                fs.unlinkSync(jarPath);
-            }
-            reject(new Error(`Failed to write JAR file: ${err.message}`));
-        });
-
-        response.on('error', (err: Error) => {
-            logger.error('Error during download', err);
-            file.close(() => {
-                if (fs.existsSync(jarPath)) {
-                    fs.unlinkSync(jarPath);
-                }
-            });
-            reject(new Error(`Download failed: ${err.message}`));
-        });
+        logger.info('Karate JAR downloaded and verified');
     }
 
     private static async ensureJavaVersion(version: string): Promise<void> {
@@ -242,7 +155,7 @@ export class KarateCliExecutor {
     private static async getJavaMajorVersion(): Promise<number | undefined> {
         return new Promise((resolve) => {
             let output = '';
-            const process = spawn('java', ['-version'], { shell: true });
+            const process = spawn('java', ['-version'], { shell: false, windowsHide: true });
             process.stdout?.on('data', data => output += data.toString());
             process.stderr?.on('data', data => output += data.toString());
             process.on('close', () => {

@@ -27,3 +27,15 @@ design-qa.md
 **/.DS_Store
 .DS_Store
 *.vsix
+.agent-harness/**
+.opencode/**
+.codex/**
+.planning/**
+.superpowers/**
+docs/**
+!docs/PRIVACY.md
+DEVELOPMENT.md
+SETUP.md
+CONTRIBUTING.md
+setup.sh
+lib/*.jar

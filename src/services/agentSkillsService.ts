@@ -2,6 +2,28 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../utils/logger';
+import { appendUserSkills, DEFAULT_TOTAL_BUDGET, loadSkillPack, SkillPack, USER_SKILL_ALLOWANCE } from '../generation/ai/SkillPack';
+import type { UserSkill } from '../generation/ai/SkillPack';
+import type { FsLike } from '../generation/config/ProjectDiscovery';
+import type { SourceKind } from '../generation/model/TestModel';
+import type { AITask } from './ai/AIProvider';
+
+export type SkillContextType = 'openapi' | 'postman' | 'confluence' | 'combined' | 'coverage' | 'general';
+
+const CONTEXT_TO_QUERY: Record<SkillContextType, { mode: SourceKind; task: AITask }> = {
+    openapi: { mode: 'openapi', task: 'generate-openapi' },
+    postman: { mode: 'postman', task: 'generate-postman' },
+    confluence: { mode: 'confluence', task: 'generate-requirements' },
+    combined: { mode: 'combined', task: 'generate-requirements' },
+    coverage: { mode: 'openapi', task: 'analyze-coverage' },
+    general: { mode: 'openapi', task: 'general' }
+};
+
+const nodeFs: FsLike = {
+    exists: p => fs.existsSync(p),
+    read: p => fs.readFileSync(p, 'utf-8'),
+    list: d => fs.readdirSync(d)
+};
 
 export interface SkillMetadata {
     name: string;
@@ -18,7 +40,8 @@ export class AgentSkillsService {
     private static skillContentCache: Map<string, string> = new Map();
     private static isSupported: boolean | null = null;
     private static extensionPath: string = '';
-    private static readonly MAX_PROMPT_CONTEXT_CHARS = 8_000;
+    /** Pack skills use DEFAULT_TOTAL_BUDGET; the user's workspace skills get a separate USER_SKILL_ALLOWANCE after them. */
+    private static pack: SkillPack | null | undefined;
 
     /**
      * Set the extension path (called once during activation)
@@ -217,62 +240,84 @@ export class AgentSkillsService {
     }
 
     /**
-     * Get relevant skills based on operation context
+     * Load (once) the bundled, manifest-driven Karate v2 skill pack. Returns null when it is unavailable.
      */
-    static async suggestRelevantSkills(context: {
-        type: 'openapi' | 'postman' | 'confluence' | 'combined' | 'coverage' | 'general';
-        hasSpec?: boolean;
-        hasCollection?: boolean;
-    }): Promise<string[]> {
-        const skills = await this.getAvailableSkills();
-        const skillsByContext: Record<typeof context.type, string[]> = {
-            openapi: ['karate-anti-patterns', 'karate-dsl-reference'],
-            postman: ['karate-dsl-reference', 'karate-anti-patterns'],
-            confluence: ['karate-anti-patterns', 'karate-test-patterns'],
-            combined: ['karate-anti-patterns', 'karate-dsl-reference'],
-            coverage: ['karate-anti-patterns'],
-            general: ['karate-dsl-reference']
-        };
-
-        // Filter to only include skills that actually exist
-        const existingSkills = skills.map(s => s.name);
-        return skillsByContext[context.type].filter(name => existingSkills.includes(name));
+    static getPack(): SkillPack | null {
+        if (this.pack) {
+            return this.pack;
+        }
+        // Only a loaded pack is cached: a null result before setExtensionPath() must not stick.
+        if (this.extensionPath) {
+            try {
+                this.pack = loadSkillPack(path.join(this.extensionPath, 'skills'), nodeFs);
+            } catch (error) {
+                logger.error('Failed to load the Karate skill pack', error as Error);
+            }
+        }
+        return this.pack ?? null;
     }
 
     /**
-     * Build comprehensive skill context string for Copilot prompts
-     * Includes actual skill content for precise, grounded generation
+     * Get the names of the pack skills relevant to an operation context
      */
-    static async buildSkillContextForPrompt(contextType: 'openapi' | 'postman' | 'confluence' | 'combined' | 'coverage' | 'general'): Promise<string> {
-        const skills = await this.getAvailableSkills();
-        if (skills.length === 0) {
+    static async suggestRelevantSkills(context: {
+        type: SkillContextType;
+        hasSpec?: boolean;
+        hasCollection?: boolean;
+    }): Promise<string[]> {
+        const pack = this.getPack();
+        if (!pack) {
+            return [];
+        }
+        return pack.select(CONTEXT_TO_QUERY[context.type]).included;
+    }
+
+    /**
+     * The user's own workspace skills (.github/skills). They never replace pack skills.
+     */
+    private static async loadUserSkills(packNames: Set<string>): Promise<UserSkill[]> {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+            return [];
+        }
+        const dir = path.join(workspaceFolders[0].uri.fsPath, '.github', 'skills');
+        if (!fs.existsSync(dir)) {
+            return [];
+        }
+        const found = await this.loadSkillsFromDirectory(dir);
+        return found
+            .filter(skill => !packNames.has(skill.name))
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map(skill => ({ name: skill.name, content: this.readSkillContent(skill.path) }))
+            .filter(skill => skill.content.length > 0);
+    }
+
+    /**
+     * Build the skill context string for AI prompts: the selected Karate v2 pack skills, followed by the
+     * user's workspace skills within their own small allowance.
+     */
+    static async buildSkillContextForPrompt(contextType: SkillContextType): Promise<string> {
+        const pack = this.getPack();
+        if (!pack) {
             return '';
         }
 
-        const relevantSkillNames = await this.suggestRelevantSkills({ type: contextType });
-        const relevantSkills = skills.filter(s => relevantSkillNames.includes(s.name));
-
-        if (relevantSkills.length === 0) {
+        const selection = pack.select(CONTEXT_TO_QUERY[contextType], { budgetChars: DEFAULT_TOTAL_BUDGET });
+        if (!selection.text) {
             return '';
         }
 
-        let context = '\n\nKARATE TASK GUIDANCE\n';
-        context += 'Apply only the relevant rules below; preserve established workspace conventions.\n\n';
-
-        for (const skill of relevantSkills) {
-            const content = this.readSkillContent(skill.path);
-            if (content) {
-                const remaining = this.MAX_PROMPT_CONTEXT_CHARS - context.length;
-                if (remaining <= 0) {
-                    break;
-                }
-                context += `${skill.name}\n`;
-                context += content.slice(0, remaining) + '\n\n';
-            }
+        let body = selection.text;
+        try {
+            body = appendUserSkills(body, await this.loadUserSkills(new Set(pack.skillIds())), USER_SKILL_ALLOWANCE);
+        } catch (error) {
+            logger.error('Error loading workspace skills', error as Error);
         }
 
-        context += 'END KARATE TASK GUIDANCE\n';
-        return context;
+        return '\n\nKARATE TASK GUIDANCE\n'
+            + 'Apply only the relevant rules below; preserve established workspace conventions.\n\n'
+            + body
+            + '\n\nEND KARATE TASK GUIDANCE\n';
     }
 
     /**
@@ -307,6 +352,7 @@ Use these skills to generate accurate, best-practice Karate tests.
         this.skillsCache = null;
         this.skillContentCache.clear();
         this.isSupported = null;
+        this.pack = undefined;
         logger.info('Agent Skills cache cleared');
     }
 

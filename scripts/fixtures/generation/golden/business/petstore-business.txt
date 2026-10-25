@@ -1,0 +1,503 @@
+### owners/owners.feature
+Feature: Owners API
+  Generated from petstore (openapi)
+
+  Background:
+    * url baseUrl
+
+  @positive @op=getOwner @domain=owners
+  Scenario: Get an owner - returns 200
+    # source: GET /owners/{ownerId}
+    # Assumes a resource with this id exists in the target environment
+    * def ownerId = 1
+    Given path 'owners', ownerId
+    When method get
+    Then status 200
+    And match response == read('classpath:schemas/owners.json')
+
+### pets/pets.feature
+Feature: Pets API
+  Generated from petstore (openapi)
+
+  Background:
+    * url baseUrl
+
+  @positive @op=listPets @domain=pets
+  Scenario: List pets - returns 200
+    # source: GET /pets
+    Given path 'pets'
+    And param limit = 20
+    When method get
+    Then status 200
+    And match each response == read('classpath:schemas/pets.json')
+
+  @positive @op=createPet @domain=pets
+  Scenario: Create a pet - returns 201
+    # source: POST /pets
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    And match response == read('classpath:schemas/pets.json')
+
+  @edge @op=createPet @domain=pets
+  Scenario Outline: Create a pet - accepts every allowed value of 'status'
+    # source: POST /pets
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    * set payload.status = statusValue
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    And match response == read('classpath:schemas/pets.json')
+
+    Examples:
+      | statusValue |
+      | available   |
+      | pending     |
+      | sold        |
+
+  @negative @op=createPet @domain=pets
+  Scenario: Create a pet - rejects missing required field 'name' with 400
+    # source: POST /pets
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    * remove payload.name
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 400
+    And match response == read('classpath:schemas/pets-create-pet-400.json')
+    And match response.message == '#string'
+    And match response.code == '#string'
+
+  @negative @op=deletePet @domain=pets
+  Scenario: Delete a pet - returns 404 for an unknown id
+    # source: DELETE /pets/{petId}
+    * def petId = 999999999
+    Given path 'pets', petId
+    When method delete
+    Then status 404
+    And match response == read('classpath:schemas/pets-create-pet-400.json')
+
+  @positive @op=getPet @domain=pets
+  Scenario: Get a pet - returns 200
+    # source: GET /pets/{petId}
+    # Creates the resource it works on first
+    * def createPayload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set createPayload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets'
+    And request createPayload
+    When method post
+    Then status 201
+    * def petId = response.id
+    Given path 'pets', petId
+    When method get
+    Then status 200
+    And match response == read('classpath:schemas/pets.json')
+    Given path 'pets', petId
+    When method delete
+    Then status 204
+
+  @negative @op=getPet @domain=pets
+  Scenario: Get a pet - returns 404 for an unknown id
+    # source: GET /pets/{petId}
+    * def petId = 999999999
+    Given path 'pets', petId
+    When method get
+    Then status 404
+    And match response == read('classpath:schemas/pets-create-pet-400.json')
+
+  @positive @op=updatePet @domain=pets
+  Scenario: Replace a pet - returns 200
+    # source: PUT /pets/{petId}
+    # Creates the resource it works on first
+    * def createPayload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set createPayload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets'
+    And request createPayload
+    When method post
+    Then status 201
+    * def petId = response.id
+    * def payload = karate.copy(read('classpath:data/pets.json')['updatePet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets', petId
+    And request payload
+    When method put
+    Then status 200
+    And match response == read('classpath:schemas/pets.json')
+    Given path 'pets', petId
+    When method delete
+    Then status 204
+
+  @edge @op=updatePet @domain=pets
+  Scenario Outline: Replace a pet - accepts every allowed value of 'status'
+    # source: PUT /pets/{petId}
+    # Creates the resource it works on first
+    * def createPayload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set createPayload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets'
+    And request createPayload
+    When method post
+    Then status 201
+    * def petId = response.id
+    * def payload = karate.copy(read('classpath:data/pets.json')['updatePet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    * set payload.status = statusValue
+    Given path 'pets', petId
+    And request payload
+    When method put
+    Then status 200
+    And match response == read('classpath:schemas/pets.json')
+    Given path 'pets', petId
+    When method delete
+    Then status 204
+
+    Examples:
+      | statusValue |
+      | available   |
+      | pending     |
+      | sold        |
+
+  @negative @op=updatePet @domain=pets
+  Scenario: Replace a pet - returns 404 for an unknown id
+    # source: PUT /pets/{petId}
+    * def petId = 999999999
+    * def payload = karate.copy(read('classpath:data/pets.json')['updatePet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets', petId
+    And request payload
+    When method put
+    Then status 404
+    And match response == read('classpath:schemas/pets-create-pet-400.json')
+
+  @positive @op=approvePet @domain=pets
+  Scenario: Approve a pet - returns 200
+    # source: POST /pets/{petId}/approve
+    # Assumes a resource with this id exists in the target environment
+    * def petId = 1
+    Given path 'pets', petId, 'approve'
+    When method post
+    Then status 200
+    And match response == read('classpath:schemas/pets.json')
+
+### pets/pets-crud.feature
+Feature: Pets API - CRUD lifecycle
+  Generated from petstore (openapi)
+
+  Background:
+    * url baseUrl
+
+  @positive @op=createPet @domain=pets @crud @lock=pets
+  Scenario: Pets lifecycle - create, read, update, delete
+    # source: POST /pets
+    # Covers: GET /pets/{petId}, PUT /pets/{petId}, DELETE /pets/{petId}
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    And match response == read('classpath:schemas/pets.json')
+    And match response.name == payload.name
+    And match response.status == payload.status
+    And match response.tag == payload.tag
+    * def petId = response.id
+    Given path 'pets', petId
+    When method get
+    Then status 200
+    And match response == read('classpath:schemas/pets.json')
+    And match response.name == payload.name
+    And match response.status == payload.status
+    And match response.tag == payload.tag
+    * def updatePayload = karate.copy(read('classpath:data/pets.json')['updatePet'])
+    * set updatePayload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets', petId
+    And request updatePayload
+    When method put
+    Then status 200
+    And match response == read('classpath:schemas/pets.json')
+    And match response.name == updatePayload.name
+    And match response.status == updatePayload.status
+    And match response.tag == updatePayload.tag
+    Given path 'pets', petId
+    When method get
+    Then status 200
+    And match response.name == updatePayload.name
+    And match response.status == updatePayload.status
+    And match response.tag == updatePayload.tag
+    Given path 'pets', petId
+    When method delete
+    Then status 204
+    Given path 'pets', petId
+    When method get
+    Then status 404
+
+  @positive @op=createPet @domain=pets @business @lock=pets
+  Scenario: Pets - created item appears in the list
+    # source: POST /pets
+    # Covers: GET /pets
+    # The created item is expected on the first page of the list
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    * def petId = response.id
+    Given path 'pets'
+    And param limit = 20
+    When method get
+    Then status 200
+    And match karate.jsonPath(response, '$[*].id') contains petId
+    Given path 'pets', petId
+    When method delete
+    Then status 204
+
+  @positive @op=createPet @domain=pets @business @lock=pets
+  Scenario: Pets delete - item leaves the list and a repeat delete returns 404
+    # source: POST /pets
+    # Covers: DELETE /pets/{petId}
+    # The created item is expected on the first page of the list
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    * def petId = response.id
+    Given path 'pets', petId
+    When method delete
+    Then status 204
+    Given path 'pets'
+    And param limit = 20
+    When method get
+    Then status 200
+    And match karate.jsonPath(response, '$[*].id') !contains petId
+    Given path 'pets', petId
+    When method delete
+    Then status 404
+    And match response == read('classpath:schemas/pets-create-pet-400.json')
+    And match response.message == '#string'
+    And match response.code == '#string'
+
+  @positive @op=createPet @domain=pets @business @lock=pets
+  Scenario: Pets - repeating PUT with the same body gives the same result
+    # source: POST /pets
+    # Covers: PUT /pets/{petId}
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    * def petId = response.id
+    * def updatePayload = karate.copy(read('classpath:data/pets.json')['updatePet'])
+    * set updatePayload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets', petId
+    And request updatePayload
+    When method put
+    Then status 200
+    And match response == read('classpath:schemas/pets.json')
+    And match response.name == updatePayload.name
+    And match response.status == updatePayload.status
+    And match response.tag == updatePayload.tag
+    Given path 'pets', petId
+    And request updatePayload
+    When method put
+    Then status 200
+    And match response == read('classpath:schemas/pets.json')
+    And match response.name == updatePayload.name
+    And match response.status == updatePayload.status
+    And match response.tag == updatePayload.tag
+    Given path 'pets', petId
+    When method delete
+    Then status 204
+
+  @ignore @positive @op=createPet @domain=pets @business @lock=pets
+  Scenario: Pets - status transitions: complete the approve transition
+    # Draft: State transitions of 'status' are not declared in the contract; assert the expected state after POST /pets/{petId}/approve
+    # source: POST /pets
+    # The 'status' field accepts: available, pending, sold.
+    # POST /pets/{petId}/approve is expected to move the resource between these states; the contract does not say which transitions are legal.
+    # Assert the state the resource ends in (match response.status == '<state>') and the transitions that must be rejected.
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    * def petId = response.id
+    Given path 'pets', petId, 'approve'
+    When method post
+    Then status 200
+    Given path 'pets', petId
+    When method delete
+    Then status 204
+
+  @ignore @positive @op=createPet @domain=pets @business @lock=pets
+  Scenario: Pets - status transitions: complete the update transition
+    # Draft: State transitions of 'status' are not declared in the contract; assert the expected state after PUT /pets/{petId}
+    # source: POST /pets
+    # The 'status' field accepts: available, pending, sold.
+    # PUT /pets/{petId} is expected to move the resource between these states; the contract does not say which transitions are legal.
+    # Assert the state the resource ends in (match response.status == '<state>') and the transitions that must be rejected.
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    * def petId = response.id
+    * def updatePayload = karate.copy(read('classpath:data/pets.json')['updatePet'])
+    * set updatePayload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets', petId
+    And request updatePayload
+    When method put
+    Then status 200
+    Given path 'pets', petId
+    When method delete
+    Then status 204
+
+  @negative @op=createPet @domain=pets @business @lock=pets
+  Scenario: Pets - duplicate create returns 409
+    # source: POST /pets
+    # The same payload is sent twice; the second create must be rejected
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Sample name-' + karate.uuid()
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    * def petId = response.id
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 409
+    And match response == read('classpath:schemas/pets-create-pet-400.json')
+    And match response.message == '#string'
+    And match response.code == '#string'
+    Given path 'pets', petId
+    When method delete
+    Then status 204
+
+### toys/toys.feature
+Feature: Toys API
+  Generated from petstore (openapi)
+
+  Background:
+    * url baseUrl
+
+  @positive @op=listToys @domain=toys
+  Scenario: List toys - returns 200
+    # source: GET /toys
+    Given path 'toys'
+    When method get
+    Then status 200
+    And match response == read('classpath:schemas/toys.json')
+
+  @positive @op=createToy @domain=toys
+  Scenario: Create a toy - returns 201
+    # source: POST /toys
+    * def payload = karate.copy(read('classpath:data/toys.json')['createToy'])
+    Given path 'toys'
+    And request payload
+    When method post
+    Then status 201
+    And match response == read('classpath:schemas/toys-create-toy.json')
+
+  @positive @op=getToy @domain=toys
+  Scenario: Get a toy - returns 200
+    # source: GET /toys/{toyId}
+    # Creates the resource it works on first
+    * def createPayload = karate.copy(read('classpath:data/toys.json')['createToy'])
+    Given path 'toys'
+    And request createPayload
+    When method post
+    Then status 201
+    * def toyId = response.toyId
+    Given path 'toys', toyId
+    When method get
+    Then status 200
+    And match response == read('classpath:schemas/toys-create-toy.json')
+
+### toys/toys-crud.feature
+Feature: Toys API - CRUD lifecycle
+  Generated from petstore (openapi)
+
+  Background:
+    * url baseUrl
+
+  @positive @op=createToy @domain=toys @business @lock=toys
+  Scenario: Toys - created item appears in the list
+    # source: POST /toys
+    # Covers: GET /toys
+    * def payload = karate.copy(read('classpath:data/toys.json')['createToy'])
+    Given path 'toys'
+    And request payload
+    When method post
+    Then status 201
+    * def toyId = response.toyId
+    Given path 'toys'
+    When method get
+    Then status 200
+    And match karate.jsonPath(response.items, '$[*].toyId') contains toyId
+
+### data/pets.json
+{
+  "createPet": {
+    "name": "Sample name",
+    "status": "available",
+    "tag": "sample",
+    "secret": "sample"
+  },
+  "updatePet": {
+    "name": "Sample name",
+    "status": "available",
+    "tag": "sample",
+    "secret": "sample"
+  }
+}
+
+### data/toys.json
+{
+  "createToy": {
+    "label": "sample"
+  }
+}
+
+### schemas/owners.json
+{
+  "ownerId": "#number"
+}
+
+### schemas/pets-create-pet-400.json
+{
+  "message": "#string",
+  "code": "##string",
+  "error": "##number"
+}
+
+### schemas/pets.json
+{
+  "id": "#number",
+  "name": "#string",
+  "status": "#string? ['available', 'pending', 'sold'].includes(_)",
+  "tag": "##string",
+  "createdAt": "##string"
+}
+
+### schemas/toys-create-toy.json
+{
+  "toyId": "#number",
+  "label": "#string"
+}
+
+### schemas/toys.json
+{
+  "items": "#[] #object",
+  "total": "##number"
+}

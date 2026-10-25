@@ -2,17 +2,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { OpenAPIParser } from '../openApiParser';
-import { KarateGenerator } from '../karateGenerator';
 import { CoverageAnalyzer } from '../coverageAnalyzer';
 import { TestExecutor } from '../execution/TestExecutor';
 import { TestHistoryService } from '../execution/TestHistoryService';
 import { FlakinessAnalyzer, ScenarioFlakiness } from '../flakiness/FlakinessAnalyzer';
 import { FlakinessFixService } from '../flakiness/FlakinessFixService';
-import { SharedStyleService } from '../SharedStyleService';
 import { AIProviderRegistry } from '../ai/AIProviderRegistry';
 import { CIFailurePayload } from '../ci/CIFailureIngestor';
 import { TestExecutionResult } from '../../types';
 import { ScenarioLocator } from '../ci/ScenarioLocator';
+import { runGenerationForModel } from '../../generation/vscode/runGeneration';
+import type { GeneratorConfig } from '../../generation/config/GeneratorConfig';
 
 export interface KarateMcpToolOutcome {
     ok: boolean;
@@ -57,52 +57,35 @@ export class KarateMcpToolService {
         const httpMethods = this.readStringArrayArg(options, 'http_methods')?.map(m => m.toLowerCase());
 
         const parser = new OpenAPIParser();
-        let endpoints = await parser.parseSpec(specPath);
+        let model = await parser.parseModel(specPath);
         if (httpMethods && httpMethods.length > 0) {
             const methodSet = new Set(httpMethods);
-            endpoints = endpoints.filter(e => methodSet.has(e.method.toLowerCase()));
+            model = { ...model, operations: model.operations.filter(e => methodSet.has(e.method.toLowerCase())) };
         }
-
-        const generator = new KarateGenerator();
-        const sharedStyle = SharedStyleService.loadSharedStyle();
-        if (sharedStyle) {
-            generator.setStyle(sharedStyle);
-        }
-
-        const specBaseName = path.basename(specPath, path.extname(specPath));
-        const generatedFiles: Array<{ fileName: string; content: string }> = [];
-
-        if (strategy === 'domain' || strategy === 'method') {
-            const structured = generator.generateStructured(endpoints, {
-                strategy,
-                autoTag: true,
-                outputRoot: this.getWorkspaceRoot()
-            }, scenarioTypes);
-
-            for (const file of structured.files) {
-                generatedFiles.push({
-                    fileName: file.relativePath,
-                    content: file.content
-                });
-            }
-        } else {
-            const feature = generator.generateFromOpenAPI(endpoints, specBaseName, scenarioTypes);
-            if (includeBackground) {
-                feature.background = generator.generateBackground();
-            }
-            generatedFiles.push({
-                fileName: `${specBaseName}.feature`,
-                content: generator.featureToString(feature)
-            });
-        }
+        const workspaceRoot = this.getWorkspaceRoot();
+        const configuredTypes = (scenarioTypes ?? []).filter((type): type is 'positive' | 'negative' | 'edge' | 'boundary' | 'security' =>
+            ['positive', 'negative', 'edge', 'boundary', 'security'].includes(type));
+        const run = await runGenerationForModel({
+            context: this.context, workspaceRoot, model, sourceRef: path.basename(specPath), mode: 'openapi', useAi: false,
+            outputRoot: undefined,
+            configure: (config: GeneratorConfig) => ({
+                ...config,
+                layout: { ...config.layout, strategy: strategy === 'domain' || strategy === 'method' ? strategy : 'flat' },
+                scenarios: { ...config.scenarios, ...(configuredTypes.length ? { categories: configuredTypes } : {}) }
+            }),
+            progress: () => undefined,
+            notes: includeBackground ? undefined : ['MCP option include_background is obsolete; the shared Karate v2 pipeline always emits a safe Background.']
+        });
+        const generatedFiles = run.createdPaths.map(fileName => ({ fileName, content: fs.readFileSync(fileName, 'utf8') }));
 
         return {
             ok: true,
-            text: `Generated ${generatedFiles.length} feature file suggestion(s) from ${path.basename(specPath)}.`,
+            text: `Generated ${generatedFiles.length} protected feature file(s) from ${path.basename(specPath)}.`,
             data: {
                 specPath: this.workspaceRelative(specPath),
-                totalEndpoints: endpoints.length,
-                files: generatedFiles
+                totalEndpoints: model.operations.length,
+                files: generatedFiles,
+                warnings: run.warnings
             }
         };
     }

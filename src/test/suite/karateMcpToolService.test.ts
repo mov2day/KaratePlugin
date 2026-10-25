@@ -52,6 +52,17 @@ function makeExecutionResult(featurePath: string): TestExecutionResult {
     };
 }
 
+function makeExtensionContext(): vscode.ExtensionContext {
+    const values = new Map<string, unknown>();
+    return {
+        workspaceState: {
+            get: <T>(key: string, defaultValue?: T): T | undefined => (values.has(key) ? values.get(key) as T : defaultValue),
+            update: async (key: string, value: unknown): Promise<void> => { values.set(key, value); },
+            keys: (): readonly string[] => [...values.keys()]
+        }
+    } as unknown as vscode.ExtensionContext;
+}
+
 suite('KarateMcpToolService', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karate-mcp-tool-test-'));
     const workspaceRoot = tempDir;
@@ -91,7 +102,7 @@ Scenario: list pets
     });
 
     test('generate/check coverage enforce workspace path guard and structured output', async () => {
-        const service = new KarateMcpToolService({} as vscode.ExtensionContext, workspaceRoot);
+        const service = new KarateMcpToolService(makeExtensionContext(), workspaceRoot);
         (service as any).getWorkspaceRoot = () => workspaceRoot;
 
         const blocked = await service.generateTests({ spec_path: '../outside.yaml' });
@@ -100,6 +111,8 @@ Scenario: list pets
         const generated = await service.generateTests({ spec_path: specPath });
         assert.strictEqual(generated.ok, true);
         assert.ok(Array.isArray(generated.data.files));
+        assert.strictEqual(fs.existsSync(path.join(workspaceRoot, '.karate-generator.json')), false);
+        assert.ok(!(generated.data.warnings as string[]).some(warning => /quality gate.*error/i.test(warning)));
 
         const coverage = await service.checkCoverage({
             spec_path: specPath,
@@ -112,7 +125,7 @@ Scenario: list pets
     });
 
     test('repair_test supports dry-run and apply modes', async () => {
-        const service = new KarateMcpToolService({} as vscode.ExtensionContext, workspaceRoot);
+        const service = new KarateMcpToolService(makeExtensionContext(), workspaceRoot);
         (service as any).getWorkspaceRoot = () => workspaceRoot;
         const originalGetInstance = AIProviderRegistry.getInstance;
         (AIProviderRegistry as any).getInstance = () => ({
@@ -164,7 +177,7 @@ Examples:
   | dog  |
 `, 'utf-8');
 
-        const service = new KarateMcpToolService({} as vscode.ExtensionContext, workspaceRoot);
+        const service = new KarateMcpToolService(makeExtensionContext(), workspaceRoot);
         (service as any).getWorkspaceRoot = () => workspaceRoot;
         const originalGetInstance = AIProviderRegistry.getInstance;
         (AIProviderRegistry as any).getInstance = () => ({
@@ -196,7 +209,7 @@ Examples:
     });
 
     test('repair_test returns failure when target scenario is not matched', async () => {
-        const service = new KarateMcpToolService({} as vscode.ExtensionContext, workspaceRoot);
+        const service = new KarateMcpToolService(makeExtensionContext(), workspaceRoot);
         (service as any).getWorkspaceRoot = () => workspaceRoot;
         const originalGetInstance = AIProviderRegistry.getInstance;
         (AIProviderRegistry as any).getInstance = () => ({
@@ -222,7 +235,7 @@ Examples:
     });
 
     test('run_feature uses CLI backend in MCP mode', async () => {
-        const service = new KarateMcpToolService({} as vscode.ExtensionContext, workspaceRoot);
+        const service = new KarateMcpToolService(makeExtensionContext(), workspaceRoot);
         (service as any).getWorkspaceRoot = () => workspaceRoot;
 
         let capturedOptions: any;

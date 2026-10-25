@@ -8,6 +8,21 @@ import { AffectedTest } from './testImpactAnalyzer';
 import { KarateGenerator } from './karateGenerator';
 import { OpenAPIParser } from './openApiParser';
 import { logger } from '../utils/logger';
+import { runGate } from '../generation/quality/QualityGate';
+import { OutputWriter } from '../generation/write/OutputWriter';
+
+/**
+ * Legacy sync has no GenerationConfig/ExtensionContext, so it cannot safely invoke the full pipeline.
+ * It still gates output and always writes it beside the target: sync must never replace a user scenario.
+ */
+export function writeLegacySyncSibling(filePath: string, content: string): string | undefined {
+    const gate = runGate(content);
+    if (!gate.ok) {return undefined;}
+    const history = new Map<string, string>();
+    const fsApi = { exists: (p: string) => fs.existsSync(p), read: (p: string) => fs.readFileSync(p, 'utf8'), list: (p: string) => fs.readdirSync(p), write: (p: string, v: string) => fs.writeFileSync(p, v, 'utf8') };
+    const written = OutputWriter.write([{ path: filePath, content, owner: 'generated', source: 'legacy-sync', forceSideBySide: true }], fsApi, { get: p => history.get(p), set: (p, h) => history.set(p, h) }, { generatorVersion: 'legacy', workspaceRoot: path.dirname(filePath) });
+    return written.sideBySide[0]?.generatedPath;
+}
 
 /**
  * Plan for updating tests based on spec changes
@@ -136,18 +151,15 @@ export class TestSyncManager {
                 // Generate new test content for this endpoint
                 const specFileName = path.basename(specPath, path.extname(specPath));
                 const feature = this.karateGenerator.generateFromOpenAPI([endpoint], specFileName);
-                const newScenarioContent = this.extractScenarioContent(
+                const sibling = writeLegacySyncSibling(
+                    affected.testPath,
                     this.karateGenerator.featureToString(feature)
                 );
-
-                // Replace old scenario in file
-                await this.replaceScenarioInFile(
-                    affected.testPath,
-                    affected.scenarioName,
-                    newScenarioContent
-                );
-
-                logger.info(`TestSyncManager: Successfully regenerated ${affected.scenarioName}`);
+                if (!sibling) {
+                    logger.warn(`TestSyncManager: Skipped ${affected.scenarioName}; legacy output failed the quality gate`);
+                    return;
+                }
+                logger.info(`TestSyncManager: Regenerated ${affected.scenarioName} beside the edited feature: ${sibling}`);
             }
         } catch (error) {
             logger.error(`TestSyncManager: Error regenerating test ${affected.scenarioName}`, error as Error);

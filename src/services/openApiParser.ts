@@ -3,6 +3,9 @@ import * as fs from 'fs';
 import { OpenAPIEndpoint } from '../types';
 import { logger } from '../utils/logger';
 import { SmartValueGenerator } from './data/SmartValueGenerator';
+import { buildOpenApiModel } from '../generation/adapters/openapi';
+import { GenerationModel } from '../generation/model/TestModel';
+import * as nodePath from 'path';
 
 export class OpenAPIParser {
     /**
@@ -37,6 +40,15 @@ export class OpenAPIParser {
             logger.error('Failed to parse OpenAPI spec', error as Error);
             throw error;
         }
+    }
+
+    /**
+     * Parse an OpenAPI spec into the source-neutral generation model.
+     */
+    async parseModel(filePath: string): Promise<GenerationModel> {
+        const api = await SwaggerParser.validate(filePath) as any;
+        const name = nodePath.basename(filePath, nodePath.extname(filePath));
+        return buildOpenApiModel(api, name);
     }
 
     async parseBaseUrl(filePath: string): Promise<string | undefined> {

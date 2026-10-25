@@ -3,11 +3,40 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { OpenAPIParser } from './openApiParser';
 import { logger } from '../utils/logger';
+import { runGate } from '../generation/quality/QualityGate';
+import { HEADER_RE, OutputWriter, sha256, splitHeader } from '../generation/write/OutputWriter';
+import { findScenarioRanges, markScenariosDeprecated, replaceScenarios } from './specDiffMatch';
 
 /**
  * Service for comparing two OpenAPI spec versions and updating feature files
  */
 export class ManualDiffService {
+
+    private hasConsistentGeneratedHeader(content: string): boolean {
+        const parsed = splitHeader(content);
+        return HEADER_RE.test(content) && parsed.headerHash === sha256(parsed.body);
+    }
+
+    /** Route a proposal through OutputWriter so user files always retain their original path. */
+    private writeGeneratedSibling(featureFilePath: string, content: string, endpoint: any): string {
+        const dir = path.dirname(featureFilePath);
+        const fsApi = {
+            exists: (p: string) => fs.existsSync(path.join(dir, p)), read: (p: string) => fs.readFileSync(path.join(dir, p), 'utf8'),
+            list: (p: string) => fs.readdirSync(path.join(dir, p)), write: (p: string, text: string) => fs.writeFileSync(path.join(dir, p), text, 'utf8')
+        };
+        const hashes = new Map<string, string>();
+        const report = OutputWriter.write([{ path: path.basename(featureFilePath), content, owner: 'generated', source: `${endpoint.method} ${endpoint.path}`, forceSideBySide: true }], fsApi, { get: p => hashes.get(p), set: (p, h) => hashes.set(p, h) }, { generatorVersion: 'manual-diff', workspaceRoot: dir });
+        return path.join(dir, report.sideBySide[0].generatedPath);
+    }
+
+    /** Preserve existing quality debt; a spec update is blocked only by newly introduced errors. */
+    private hasNewGateErrors(before: string, after: string): boolean {
+        const key = (f: { ruleId: string; message: string }) => `${f.ruleId}|${f.message.toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ')}`;
+        const budget = new Map<string, number>();
+        for (const finding of runGate(before).findings.filter(f => f.severity === 'error')) {const k = key(finding); budget.set(k, (budget.get(k) ?? 0) + 1);}
+        for (const finding of runGate(after).findings.filter(f => f.severity === 'error')) {const k = key(finding); const left = budget.get(k) ?? 0; if (left) {budget.set(k, left - 1);} else {return true;}}
+        return false;
+    }
 
     /**
      * Compare two OpenAPI specs and find differences
@@ -129,90 +158,61 @@ export class ManualDiffService {
             return null;
         }
 
-        const content = fs.readFileSync(featureFilePath, 'utf-8');
-        const lines = content.split('\n');
-
-        // Look for scenario with matching path
-        const pathPattern = endpoint.path.replace(/\{[^}]+\}/g, '.*'); // Replace path params with wildcard
-        const scenarioPattern = new RegExp(`Scenario:.*${endpoint.method}.*${pathPattern}`, 'i');
-
-        for (let i = 0; i < lines.length; i++) {
-            if (scenarioPattern.test(lines[i])) {
-                // Found the scenario, find its end
-                let endLine = i + 1;
-                while (endLine < lines.length &&
-                    !lines[endLine].trim().startsWith('Scenario:') &&
-                    !lines[endLine].trim().startsWith('Feature:')) {
-                    endLine++;
-                }
-
-                return {
-                    found: true,
-                    startLine: i,
-                    endLine: endLine - 1,
-                    content: lines.slice(i, endLine).join('\n')
-                };
-            }
+        const lines = fs.readFileSync(featureFilePath, 'utf-8').split('\n');
+        const [first] = findScenarioRanges(lines, endpoint.method, endpoint.path);
+        if (!first) {
+            return { found: false, startLine: -1, endLine: -1, content: '' };
         }
-
-        return { found: false, startLine: -1, endLine: -1, content: '' };
+        return { found: true, startLine: first.startLine, endLine: first.endLine, content: lines.slice(first.startLine, first.endLine + 1).join('\n') };
     }
 
     /**
-     * Update or add scenario in feature file
+     * Replace all scenarios of the endpoint with the new content (append when none exist)
      */
     public async updateFeatureFile(
         featureFilePath: string,
         endpoint: any,
         newScenarioContent: string
     ): Promise<void> {
-        const scenario = this.findScenarioInFile(featureFilePath, endpoint);
-
-        if (!scenario) {
-            // Append new scenario
-            const content = fs.readFileSync(featureFilePath, 'utf-8');
-            const updatedContent = content + '\n\n' + newScenarioContent;
-            fs.writeFileSync(featureFilePath, updatedContent, 'utf-8');
-            logger.info(`Added new scenario to ${featureFilePath}`);
-        } else if (scenario.found) {
-            // Replace existing scenario
-            const content = fs.readFileSync(featureFilePath, 'utf-8');
-            const lines = content.split('\n');
-
-            const before = lines.slice(0, scenario.startLine);
-            const after = lines.slice(scenario.endLine + 1);
-
-            const updated = [...before, newScenarioContent, ...after].join('\n');
-            fs.writeFileSync(featureFilePath, updated, 'utf-8');
-            logger.info(`Updated scenario in ${featureFilePath}`);
-        } else {
-            // Append new scenario
-            const content = fs.readFileSync(featureFilePath, 'utf-8');
-            const updatedContent = content + '\n\n' + newScenarioContent;
-            fs.writeFileSync(featureFilePath, updatedContent, 'utf-8');
-            logger.info(`Added new scenario to ${featureFilePath}`);
+        const content = fs.readFileSync(featureFilePath, 'utf-8');
+        const result = replaceScenarios(content, endpoint.method, endpoint.path, newScenarioContent);
+        if (this.hasNewGateErrors(content, result.content)) {
+            const gate = runGate(result.content);
+            throw new Error(`Generated scenario rejected by quality gate: ${gate.findings.filter(f => f.severity === 'error').map(f => f.ruleId).join(', ')}`);
         }
+        if (!this.hasConsistentGeneratedHeader(content)) {
+            const sibling = this.writeGeneratedSibling(featureFilePath, result.content, endpoint);
+            logger.info(`Kept user-edited ${featureFilePath}; wrote generated proposal to ${sibling}`);
+            return;
+        }
+        const dir = path.dirname(featureFilePath);
+        const body = splitHeader(result.content).body;
+        const fsApi = { exists: (p: string) => fs.existsSync(path.join(dir, p)), read: (p: string) => fs.readFileSync(path.join(dir, p), 'utf8'), list: (p: string) => fs.readdirSync(path.join(dir, p)), write: (p: string, text: string) => fs.writeFileSync(path.join(dir, p), text, 'utf8') };
+        OutputWriter.write([{ path: path.basename(featureFilePath), content: body, owner: 'generated', source: `${endpoint.method} ${endpoint.path}` }], fsApi, { get: () => undefined, set: () => undefined }, { generatorVersion: 'manual-diff', workspaceRoot: dir });
+        logger.info(result.replaced > 0
+            ? `Replaced ${result.replaced} scenario(s) in ${featureFilePath}`
+            : `Added new scenario to ${featureFilePath}`);
     }
 
     /**
-     * Remove scenario from feature file
+     * Mark all scenarios of a removed endpoint as deprecated (they are kept, not deleted)
      */
     public async removeScenarioFromFile(
         featureFilePath: string,
         endpoint: any
     ): Promise<void> {
-        const scenario = this.findScenarioInFile(featureFilePath, endpoint);
-
-        if (scenario && scenario.found) {
-            const content = fs.readFileSync(featureFilePath, 'utf-8');
-            const lines = content.split('\n');
-
-            // Add deprecation comment instead of removing
-            const deprecationComment = `  # DEPRECATED: Endpoint removed from spec on ${new Date().toISOString()}`;
-            lines.splice(scenario.startLine + 1, 0, deprecationComment);
-
-            fs.writeFileSync(featureFilePath, lines.join('\n'), 'utf-8');
-            logger.info(`Marked scenario as deprecated in ${featureFilePath}`);
+        if (!fs.existsSync(featureFilePath)) {
+            return;
+        }
+        const content = fs.readFileSync(featureFilePath, 'utf-8');
+        const result = markScenariosDeprecated(content, endpoint.method, endpoint.path, new Date().toISOString());
+        if (result.marked > 0) {
+            if (this.hasConsistentGeneratedHeader(content)) {
+                const dir = path.dirname(featureFilePath);
+                const fsApi = { exists: (p: string) => fs.existsSync(path.join(dir, p)), read: (p: string) => fs.readFileSync(path.join(dir, p), 'utf8'), list: (p: string) => fs.readdirSync(path.join(dir, p)), write: (p: string, text: string) => fs.writeFileSync(path.join(dir, p), text, 'utf8') };
+                OutputWriter.write([{ path: path.basename(featureFilePath), content: splitHeader(result.content).body, owner: 'generated', source: `${endpoint.method} ${endpoint.path}` }], fsApi, { get: () => undefined, set: () => undefined }, { generatorVersion: 'manual-diff', workspaceRoot: dir });
+            } else {fs.writeFileSync(featureFilePath, result.content, 'utf-8');}
+            logger.info(`Marked ${result.marked} scenario(s) as deprecated in ${featureFilePath}`);
         }
     }
 }

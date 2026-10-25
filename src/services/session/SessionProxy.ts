@@ -5,6 +5,7 @@ import * as url from 'url';
 import { EventEmitter } from 'events';
 import { Duplex } from 'stream';
 import { CapturedRequest, CapturedResponse, generateRequestId } from './CapturedRequest';
+import { redactUrl } from '../../generation/adapters/secrets';
 import { logger } from '../../utils/logger';
 
 /**
@@ -128,7 +129,7 @@ export class SessionProxy extends EventEmitter {
                 parsedUrl = new url.URL(targetUrl, `http://${host}`);
             }
         } catch (error) {
-            logger.error(`Failed to parse URL: ${targetUrl}`, error as Error);
+            logger.error(`Failed to parse URL: ${redactUrl(String(targetUrl))}`, error as Error);
             clientRes.writeHead(400, { 'Content-Type': 'text/plain' });
             clientRes.end('Bad Request: Invalid URL');
             return;
@@ -207,7 +208,7 @@ export class SessionProxy extends EventEmitter {
                     this.capturedRequests.push(captured);
                     this.emit('request', captured);
 
-                    logger.info(`[CAPTURED] ${captured.method} ${captured.url} - ${captured.response.status} (${duration}ms)`);
+                    logger.info(`[CAPTURED] ${captured.method} ${redactUrl(captured.url)} - ${captured.response.status} (${duration}ms)`);
                 });
 
                 // Forward response to client

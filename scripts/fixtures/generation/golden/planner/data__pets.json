@@ -1,0 +1,12 @@
+{
+  "createPet": {
+    "name": "Buddy",
+    "tag": "dog",
+    "status": "available"
+  },
+  "updatePet": {
+    "name": "Buddy",
+    "tag": "dog",
+    "status": "available"
+  }
+}

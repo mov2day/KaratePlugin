@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { OpenAPIParser } from '../services/openApiParser';
-import { KarateGenerator } from '../services/karateGenerator';
-import { SharedStyleService } from '../services/SharedStyleService';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
+import { reportSummary } from '../generation/vscode/reportSummary';
+import { runGenerationForModel, toIncrementalProgress } from '../generation/vscode/runGeneration';
 
 export async function generateFromOpenAPI(context: vscode.ExtensionContext): Promise<void> {
     try {
@@ -24,105 +24,33 @@ export async function generateFromOpenAPI(context: vscode.ExtensionContext): Pro
         const specPath = fileUri[0].fsPath;
         logger.info(`Selected OpenAPI spec: ${specPath}`);
 
+        const workspaceRoot = FileUtils.getWorkspaceRoot();
+        if (!workspaceRoot) {
+            throw new Error('No workspace folder is open');
+        }
+
         // Step 2: Show progress
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: 'Generating Karate tests from OpenAPI',
             cancellable: false
         }, async (progress) => {
-            // Parse OpenAPI spec
-            progress.report({ increment: 30, message: 'Parsing OpenAPI specification...' });
-            const parser = new OpenAPIParser();
-            const endpoints = await parser.parseSpec(specPath);
+            progress.report({ message: 'Parsing OpenAPI specification...' });
+            const model = await new OpenAPIParser().parseModel(specPath);
 
-            if (endpoints.length === 0) {
+            if (model.operations.length === 0) {
                 vscode.window.showWarningMessage('No endpoints found in OpenAPI specification');
                 return;
             }
 
-            // Generate Karate tests
-            progress.report({ increment: 35, message: 'Generating Karate feature files...' });
-            const generator = new KarateGenerator();
-            const sharedStyle = SharedStyleService.loadSharedStyle();
-            if (sharedStyle) {
-                generator.setStyle(sharedStyle);
-            }
+            const useAi = vscode.workspace.getConfiguration('karateDsl').get<boolean>('useCopilot', false);
+            const run = await runGenerationForModel({
+                context, workspaceRoot, model, sourceRef: path.basename(specPath), mode: 'openapi', useAi,
+                progress: toIncrementalProgress(progress)
+            });
 
-            const specFileName = path.basename(specPath, path.extname(specPath));
-            const feature = generator.generateFromOpenAPI(endpoints, specFileName);
-
-            // Add background
-            feature.background = generator.generateBackground();
-
-            // Convert to string
-            const featureContent = generator.featureToString(feature);
-
-            // Step 4: Optionally enhance with Copilot
-            let finalContent = featureContent;
-            const config = vscode.workspace.getConfiguration('karateDsl');
-            const useCopilot = config.get<boolean>('useCopilot', false);
-
-            if (useCopilot) {
-                progress.report({ increment: 20, message: 'Enhancing with AI...' });
-
-                const { CopilotService } = await import('../services/copilotService');
-                const isAvailable = await CopilotService.isCopilotAvailable();
-
-                if (isAvailable) {
-                    try {
-                        const context = `Generate comprehensive Karate API tests from OpenAPI specification: ${specFileName} with ${endpoints.length} endpoints.
-
-STRICT REQUIREMENTS:
-- Use ONLY endpoints and schemas defined in the attached OpenAPI spec
-- NO hallucinations or invented endpoints
-- Generate positive, negative, and edge case scenarios
-- Include proper schema validation with Karate type markers
-- Add comprehensive assertions for each endpoint
-- Use proper authentication patterns from spec`;
-
-                        // NEW: Use file-based context with Agent Skills
-                        const specUri = CopilotService.createFileUri(specPath);
-
-                        finalContent = await CopilotService.enhanceTestWithFileContext(
-                            featureContent,
-                            context,
-                            'openapi',
-                            [specUri]  // ~10 tokens instead of 1000s!
-                        );
-
-                        logger.info('Enhanced tests with Copilot using file-based context and Agent Skills');
-                    } catch (error) {
-                        logger.warn('AI enhancement failed, using original tests', error as Error);
-                        vscode.window.showWarningMessage('AI enhancement failed. Using original tests.');
-                    }
-                } else {
-                    vscode.window.showWarningMessage('No AI provider available. Using basic test generation.');
-                }
-            }
-
-            // Step 5: Save to file
-            progress.report({ increment: 5, message: 'Saving feature file...' });
-            const outputPath = FileUtils.resolveOutputPath();
-            const outputFile = path.join(outputPath, `${specFileName}.feature`);
-            const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-
-            FileUtils.writeFile(uniqueFile, finalContent);
-
-            progress.report({ increment: 10, message: 'Done!' });
-
-            // Show success message
-            const openFile = 'Open File';
-            const result = await vscode.window.showInformationMessage(
-                `Generated Karate tests: ${path.basename(uniqueFile)} (${endpoints.length} scenarios)`,
-                openFile
-            );
-
-            if (result === openFile) {
-                const doc = await vscode.workspace.openTextDocument(uniqueFile);
-                await vscode.window.showTextDocument(doc);
-            }
-
-            logger.info(`Successfully generated Karate tests: ${uniqueFile}`);
+            logger.info(`Generated Karate tests: ${run.createdPaths.join(', ') || '(none)'}`);
+            void reportSummary(run.summary, `OpenAPI: ${path.basename(specPath)}`, run.createdPaths[0]);
         });
 
     } catch (error) {

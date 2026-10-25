@@ -23,12 +23,16 @@ export type AITask =
     | 'generate-postman'
     | 'generate-har'
     | 'generate-requirements'
+    | 'generate-graphql'
+    | 'generate-jira'
+    | 'refine-feature'
     | 'enhance-feature'
     | 'repair-scenario'
     | 'analyze-coverage'
     | 'generate-missing-test'
     | 'analyze-flakiness'
-    | 'suggest-reusability';
+    | 'suggest-reusability'
+    | 'enrich-business';
 
 export interface AIModelDescriptor {
     id: string;

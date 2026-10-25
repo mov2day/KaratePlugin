@@ -1,0 +1,10 @@
+{
+  "id": "12345",
+  "title": "Orders API test plan",
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Orders API test plan</h1><h2>TC-1 Create order</h2><p>Precondition: authenticated customer.</p><ol><li>POST /orders with sku ABC-1 and quantity 2</li><li>Expect status 201 and a response body containing id</li></ol><h2>TC-2 Reject invalid quantity</h2><p>Precondition: authenticated customer.</p><ol><li>POST /orders with sku ABC-1 and quantity 0</li><li>Expect status 400 with an error message</li></ol>"
+    }
+  }
+}

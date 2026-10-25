@@ -27,6 +27,7 @@ const forbidden = [
   /^out\/test\//,
   /^out\/debug\//,
   /^api\//,
+  /\.jar$/,
   /^scripts\/test-telemetry-collector\.cjs$/,
   /^vercel\.json$/,
   /^\.karate-test-management\//,
@@ -34,6 +35,10 @@ const forbidden = [
   /^target\//,
   /^output\//,
   /^\.playwright-cli\//,
+  /^\.agent-harness\//,
+  /^\.opencode\//,
+  /^docs\/(?!PRIVACY\.md$)/,
+  /^setup\.sh$/,
   /^design-qa\.md$/,
   /\.ts$/,
   /\.map$/,
@@ -58,8 +63,8 @@ const required = [
   'lib/scout-runtime/playwright-core/index.js',
   'resources/scout-companion/manifest.json',
   'resources/scout-companion/browser-scripts.js',
-  'skills/karate-dsl-reference.md',
-  'lib/karate-1.5.0.RC3.jar'
+  'skills/manifest.json',
+  'skills/karate-v2-core.md'
 ];
 
 const missing = required.filter((file) => !files.includes(file));

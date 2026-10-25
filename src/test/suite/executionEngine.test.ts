@@ -6,6 +6,7 @@ import { BuildToolExecutor } from '../../services/execution/BuildToolExecutor';
 import { ConfigDiscovery } from '../../services/execution/ConfigDiscovery';
 import { buildKarateArguments, scenarioLineFromEditorLine } from '../../services/execution/ExecutionArguments';
 import { ExecutionRuntimeSettings } from '../../services/execution/ExecutionSettings';
+import { KNOWN_JAR_SHA256, downloadVerified, isSafeVersion, karateJarUrl } from '../../services/execution/KarateJarDownloader';
 import { ProjectExecutionResolver } from '../../services/execution/ProjectExecutionResolver';
 import { ResultParser } from '../../services/execution/ResultParser';
 import { TestExecutionOptions } from '../../types';
@@ -150,5 +151,15 @@ class CustomRunner { @Karate.Test Karate tests() { return Karate.run("classpath:
         assert.strictEqual(ResultParser.findReportDirectory(path.join(root, 'reports'), Date.now() - 1000), reportDir);
         const parsed = ResultParser.parseKarateSummary(summaryPath, root);
         assert.strictEqual(parsed.features![0].absolutePath, path.join(root, 'features', 'users.feature'));
+    });
+
+    test('Karate jar download helpers are strict', async () => {
+        assert.ok(isSafeVersion('1.5.0.RC3') && isSafeVersion('2.0.0'));
+        assert.ok(!isSafeVersion('../x') && !isSafeVersion('1.0/../../x') && !isSafeVersion(''));
+        assert.match(KNOWN_JAR_SHA256['1.5.0.RC3'], /^[0-9a-f]{64}$/);
+        assert.strictEqual(karateJarUrl('2.0.0'), 'https://github.com/karatelabs/karate/releases/download/v2.0.0/karate-2.0.0.jar');
+        const dest = path.join(os.tmpdir(), `karate-dl-${Date.now()}.jar`);
+        await assert.rejects(downloadVerified('http://example.com/a.jar', dest, undefined), /non-https/);
+        assert.ok(!fs.existsSync(dest));
     });
 });

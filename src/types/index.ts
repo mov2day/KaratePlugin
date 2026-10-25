@@ -16,6 +16,12 @@ export interface KarateScenario {
     tags?: string[];
     category?: 'positive' | 'negative' | 'edge' | 'boundary' | 'security';
     domain?: string;
+    examples?: { columns: string[]; rows: string[][] };
+    comments?: string[];
+    source?: string;
+    draftReason?: string;
+    /** Rendered as a `# ---- <section> ----` comment line directly above the scenario (set by the layout stage). */
+    section?: string;
 }
 
 export interface KarateStep {
@@ -23,6 +29,8 @@ export interface KarateStep {
     text: string;
     docString?: string;
     table?: string[][];
+    /** Rendered as `# ...` lines directly above the step (for example the source of a request group). */
+    comment?: string;
 }
 
 export interface OpenAPIEndpoint {

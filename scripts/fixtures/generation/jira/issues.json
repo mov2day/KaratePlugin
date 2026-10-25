@@ -1,0 +1,32 @@
+{
+  "issues": [
+    {
+      "key": "SHOP-101",
+      "fields": {
+        "summary": "Customer can create an order",
+        "description": "As a customer I want to place an order so that I can buy items.",
+        "issuetype": { "name": "Story" },
+        "priority": { "name": "High" },
+        "labels": ["orders"],
+        "acceptanceCriteria": [
+          "Given a valid SKU and quantity, POST /orders returns 201 with an order id",
+          "Given a quantity of zero, POST /orders returns 400"
+        ]
+      }
+    },
+    {
+      "key": "SHOP-102",
+      "fields": {
+        "summary": "Customer can view an order",
+        "description": "As a customer I want to fetch an order by id.",
+        "issuetype": { "name": "Story" },
+        "priority": { "name": "Medium" },
+        "labels": ["orders"],
+        "acceptanceCriteria": [
+          "Given an existing order id, GET /orders/{id} returns 200 with the order",
+          "Given an unknown order id, GET /orders/{id} returns 404"
+        ]
+      }
+    }
+  ]
+}

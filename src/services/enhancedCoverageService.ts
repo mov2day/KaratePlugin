@@ -158,10 +158,7 @@ Return ONLY valid JSON with this exact structure (no markdown, no code blocks):
 `;
 
         try {
-            const response = await CopilotService.enhanceKarateTest('', prompt, {
-                type: 'openapi',
-                openApiSpec: JSON.stringify(summary)
-            });
+            const response = await CopilotService.completePlainText(prompt, 'coverage', [{ label: 'openapi', text: JSON.stringify(summary) }]);
 
             // Clean response (remove markdown code blocks if present)
             let cleanedResponse = response.trim();

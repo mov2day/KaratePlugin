@@ -3,14 +3,17 @@ import * as path from 'path';
 import { OpenAPIParser } from '../services/openApiParser';
 import { ConfluenceClient } from '../services/confluenceClient';
 import { ConfluenceParser } from '../services/confluenceParser';
-import { KarateGenerator } from '../services/karateGenerator';
-import { SharedStyleService } from '../services/SharedStyleService';
 import { ConfigManager } from '../utils/configManager';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
-import { KarateScenario, KarateStep, OpenAPIEndpoint } from '../types';
+import { buildRequirementScenarios, confluenceRequirementItems } from '../generation/adapters/requirements';
+import { requirementEvidence, safeMessage } from '../generation/vscode/RequirementsRun';
+import { GeneratorConfigLoader } from '../generation/vscode/GeneratorConfigLoader';
+import { reportSummary } from '../generation/vscode/reportSummary';
+import { runGenerationForModel, toIncrementalProgress } from '../generation/vscode/runGeneration';
 
 export async function generateCombined(context: vscode.ExtensionContext): Promise<void> {
+    let secretToken: string | undefined;
     try {
         // Step 1: Select OpenAPI spec
         const fileUri = await vscode.window.showOpenDialog({
@@ -47,6 +50,11 @@ export async function generateCombined(context: vscode.ExtensionContext): Promis
             pageId = extractedId;
         }
 
+        const workspaceRoot = FileUtils.getWorkspaceRoot();
+        if (!workspaceRoot) {
+            throw new Error('No workspace folder is open');
+        }
+
         // Step 3: Process both sources
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
@@ -54,277 +62,44 @@ export async function generateCombined(context: vscode.ExtensionContext): Promis
             cancellable: false
         }, async (progress) => {
             // Parse OpenAPI
-            progress.report({ increment: 20, message: 'Parsing OpenAPI specification...' });
-            const openApiParser = new OpenAPIParser();
-            const endpoints = await openApiParser.parseSpec(specPath);
+            progress.report({ increment: 5, message: 'Parsing OpenAPI specification...' });
+            const model = await new OpenAPIParser().parseModel(specPath);
 
             // Fetch Confluence page
-            progress.report({ increment: 20, message: 'Fetching Confluence page...' });
+            progress.report({ increment: 10, message: 'Fetching Confluence page...' });
             const baseUrl = ConfigManager.getConfluenceBaseUrl();
             const email = ConfigManager.getConfluenceEmail();
             const apiToken = await ConfigManager.getConfluenceApiToken(context);
+            secretToken = apiToken;
             const authType = vscode.workspace.getConfiguration('karateDsl.confluence').get<'basic' | 'bearer'>('authType', 'basic');
 
             const confluenceClient = new ConfluenceClient(baseUrl, email || "", apiToken, authType);
             const page = await confluenceClient.getPageById(pageId);
 
             // Parse Confluence content
-            progress.report({ increment: 20, message: 'Parsing Confluence content...' });
-            const confluenceParser = new ConfluenceParser();
-            const testData = confluenceParser.parsePageContent(page);
-
-            // Generate combined tests
-            progress.report({ increment: 30, message: 'Generating combined tests...' });
-            const generator = new KarateGenerator();
-            const sharedStyle = SharedStyleService.loadSharedStyle();
-            if (sharedStyle) {
-                generator.setStyle(sharedStyle);
-            }
-            const scenarios: KarateScenario[] = [];
-
-            // Map Confluence test cases to OpenAPI endpoints
-            const endpointMap = mapTestCasesToEndpoints(testData.testCases, endpoints);
-
-            // Generate scenarios for mapped test cases
-            for (const [testCase, endpoint] of endpointMap) {
-                if (endpoint) {
-                    // Generate OpenAPI-based scenario with Confluence context
-                    const apiScenario = createEnhancedScenario(testCase, endpoint, openApiParser);
-                    scenarios.push(apiScenario);
-                } else {
-                    // Generate Confluence-only scenario
-                    const steps: KarateStep[] = testCase.steps.map((step: string, i: number) => ({
-                        keyword: i === 0 ? 'Given' : 'And',
-                        text: `# ${step}`
-                    }));
-
-                    scenarios.push({
-                        name: testCase.name,
-                        description: testCase.description,
-                        steps
-                    });
-                }
-            }
-
-            // Add remaining OpenAPI endpoints not covered by Confluence
-            const coveredEndpoints = new Set(
-                Array.from(endpointMap.values()).filter((e): e is OpenAPIEndpoint => e !== null).map(e => e.operationId || `${e.method}${e.path}`)
-            );
-
-            for (const endpoint of endpoints) {
-                const endpointKey = endpoint.operationId || `${endpoint.method}${endpoint.path}`;
-                if (!coveredEndpoints.has(endpointKey)) {
-                    const feature = generator.generateFromOpenAPI([endpoint], 'temp');
-                    scenarios.push(...feature.scenarios);
-                }
-            }
-
-            // Create combined feature
+            progress.report({ increment: 5, message: 'Parsing Confluence content...' });
+            const testData = new ConfluenceParser().parsePageContent(page);
             const specFileName = path.basename(specPath, path.extname(specPath));
-            const feature = {
-                name: `${specFileName} - ${page.title}`,
-                description: 'Combined tests from OpenAPI specification and Confluence requirements',
-                background: generator.generateBackground(),
-                scenarios
-            };
+            const loaded = await GeneratorConfigLoader.load(workspaceRoot);
+            for (const w of loaded.warnings) {logger.warn(`Generator config: ${w}`);}
+            const req = buildRequirementScenarios(confluenceRequirementItems({ id: String(page.id ?? pageId), title: page.title }, testData), { config: loaded.config, name: specFileName, model });
+            const pageContent = page.body.storage?.value || page.body.view?.value || '';
 
-            let featureContent = generator.featureToString(feature);
+            const useAi = vscode.workspace.getConfiguration('karateDsl').get<boolean>('useCopilot', false);
+            const run = await runGenerationForModel({
+                context, workspaceRoot, model, sourceRef: path.basename(specPath), mode: 'combined', useAi,
+                extraFeatures: req.features.length > 0 ? req.features : undefined, classpathFiles: req.files, config: loaded.config, notes: [...req.warnings, ...(req.features.length > 0 ? [`Requirements written to ${req.features.map(f => f.relativePath).join(', ')} (under the generator output root)`] : [])],
+                evidence: requirementEvidence(`Confluence: ${page.title}`, pageContent),
+                progress: toIncrementalProgress(progress, { from: 20, to: 100 })
+            });
 
-            // Optionally enhance with Copilot
-            const config = vscode.workspace.getConfiguration('karateDsl');
-            const useCopilot = config.get<boolean>('useCopilot', false);
-
-            if (useCopilot) {
-                progress.report({ increment: 5, message: 'Enhancing with GitHub Copilot...' });
-
-                const { CopilotService } = await import('../services/copilotService');
-                const isAvailable = await CopilotService.isCopilotAvailable();
-
-                if (isAvailable) {
-                    let tempUri: vscode.Uri | null = null;
-
-                    try {
-                        const context = `Generate comprehensive Karate API tests combining OpenAPI specification with Confluence documentation.
-
-STRICT REQUIREMENTS:
-- Use ONLY information from the attached OpenAPI spec and Confluence page
-- NO hallucinations or invented endpoints
-- Generate positive, negative, and edge case scenarios
-- Map business requirements from Confluence to technical tests from OpenAPI
-- Include proper schema validation from OpenAPI spec
-- Add comprehensive assertions
-- Follow Karate DSL best practices`;
-
-                        // NEW: Create file URIs instead of reading content
-                        const files: vscode.Uri[] = [];
-
-                        // Attach OpenAPI spec file
-                        files.push(CopilotService.createFileUri(specPath));
-
-                        // Create temp file for Confluence content
-                        const pageContent = page.body.storage?.value || page.body.view?.value || '';
-                        tempUri = await CopilotService.createTempFile(pageContent, '.html');
-                        files.push(tempUri);
-
-                        featureContent = await CopilotService.enhanceTestWithFileContext(
-                            featureContent,
-                            context,
-                            'confluence',  // Use confluence as primary context type
-                            files  // Attach both OpenAPI and Confluence files
-                        );
-                        logger.info('Enhanced combined tests with file-based context');
-                    } catch (error) {
-                        logger.warn('Copilot enhancement failed, using original tests', error as Error);
-                    } finally {
-                        // Always cleanup temp files
-                        if (tempUri) {
-                            await CopilotService.cleanupTempFiles();
-                        }
-                    }
-                }
-            }
-
-            // Save file
-            progress.report({ increment: 10, message: 'Saving feature file...' });
-            const outputPath = FileUtils.resolveOutputPath();
-            const outputFile = path.join(outputPath, `${specFileName}_combined.feature`);
-            const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-
-            FileUtils.writeFile(uniqueFile, featureContent);
-
-            // Show success
-            const openFile = 'Open File';
-            const result = await vscode.window.showInformationMessage(
-                `Generated combined Karate tests: ${path.basename(uniqueFile)} (${scenarios.length} scenarios)`,
-                openFile
-            );
-
-            if (result === openFile) {
-                const doc = await vscode.workspace.openTextDocument(uniqueFile);
-                await vscode.window.showTextDocument(doc);
-            }
-
-            logger.info(`Successfully generated combined tests: ${uniqueFile}`);
+            logger.info(`Generated combined tests: ${run.createdPaths.join(', ') || '(none)'}`);
+            void reportSummary(run.summary, `Combined: ${specFileName}`, run.createdPaths[0]);
         });
 
     } catch (error) {
-        logger.error('Failed to generate combined tests', error as Error);
-        vscode.window.showErrorMessage(`Failed to generate combined tests: ${(error as Error).message}`);
+        const message = safeMessage(error, [secretToken, ConfigManager.getConfluenceBaseUrl()]);
+        logger.error('Failed to generate combined tests', new Error(message));
+        vscode.window.showErrorMessage(`Failed to generate combined tests: ${message}`);
     }
-}
-
-/**
- * Map Confluence test cases to OpenAPI endpoints
- */
-function mapTestCasesToEndpoints(
-    testCases: any[],
-    endpoints: OpenAPIEndpoint[]
-): Map<any, OpenAPIEndpoint | null> {
-    const map = new Map();
-
-    for (const testCase of testCases) {
-        let matchedEndpoint: OpenAPIEndpoint | null = null;
-
-        // Try to match by name/description
-        const testCaseLower = (testCase.name + ' ' + (testCase.description || '')).toLowerCase();
-
-        for (const endpoint of endpoints) {
-            const endpointText = (
-                endpoint.summary + ' ' +
-                endpoint.description + ' ' +
-                endpoint.operationId + ' ' +
-                endpoint.path
-            ).toLowerCase();
-
-            // Simple keyword matching
-            if (testCaseLower.includes(endpoint.method.toLowerCase()) ||
-                testCaseLower.includes(endpoint.path.split('/').pop() || '')) {
-                matchedEndpoint = endpoint;
-                break;
-            }
-        }
-
-        map.set(testCase, matchedEndpoint);
-    }
-
-    return map;
-}
-
-/**
- * Create enhanced scenario combining Confluence test case and OpenAPI endpoint
- */
-function createEnhancedScenario(
-    testCase: any,
-    endpoint: OpenAPIEndpoint,
-    parser: OpenAPIParser
-): KarateScenario {
-    const steps: KarateStep[] = [];
-
-    // Add Confluence context as comments
-    steps.push({
-        keyword: 'Given',
-        text: `# Test Case: ${testCase.name}`
-    });
-
-    if (testCase.description) {
-        steps.push({
-            keyword: 'And',
-            text: `# ${testCase.description}`
-        });
-    }
-
-    // Add OpenAPI-based steps
-    steps.push({
-        keyword: 'And',
-        text: `url baseUrl + '${endpoint.path}'`
-    });
-
-    // Add parameters
-    const pathParams = endpoint.parameters?.filter(p => p.in === 'path') || [];
-    for (const param of pathParams) {
-        const exampleValue = parser.getExampleValue(param.schema);
-        steps.push({
-            keyword: 'And',
-            text: `path '${param.name}' = ${JSON.stringify(exampleValue)}`
-        });
-    }
-
-    // Add request
-    if (['POST', 'PUT', 'PATCH'].includes(endpoint.method) && endpoint.requestBody) {
-        const content = endpoint.requestBody.content;
-        if (content && content['application/json']) {
-            const schema = content['application/json'].schema;
-            const exampleBody = parser.getExampleValue(schema);
-            steps.push({
-                keyword: 'And',
-                text: 'request',
-                docString: JSON.stringify(exampleBody, null, 2)
-            });
-        }
-    }
-
-    steps.push({
-        keyword: 'When',
-        text: `method ${endpoint.method.toLowerCase()}`
-    });
-
-    steps.push({
-        keyword: 'Then',
-        text: 'status 200'
-    });
-
-    // Add expected result from Confluence
-    if (testCase.expectedResult) {
-        steps.push({
-            keyword: 'And',
-            text: `# Expected: ${testCase.expectedResult}`
-        });
-    }
-
-    return {
-        name: testCase.name,
-        description: `${endpoint.method} ${endpoint.path}`,
-        steps,
-        tags: endpoint.tags
-    };
 }

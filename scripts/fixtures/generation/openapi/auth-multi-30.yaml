@@ -1,0 +1,114 @@
+openapi: 3.0.3
+info:
+  title: Auth Matrix 30
+  version: 1.0.0
+servers:
+  - url: http://localhost:9000
+# Declaration order puts basicAuth first, but most operations use bearerAuth.
+x-shared:
+  queryKey:
+    type: apiKey
+    in: Query
+    name: api_key
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+    bearerAuth:
+      type: http
+      scheme: bearer
+    refQuery:
+      $ref: '#/x-shared/queryKey'
+    cookieKey:
+      type: apiKey
+      in: cookie
+      name: session
+    badIn:
+      type: apiKey
+      in: body
+      name: nope
+    mtls:
+      type: mutualTLS
+    digestAuth:
+      type: http
+      scheme: digest
+    oidc:
+      type: openIdConnect
+      openIdConnectUrl: https://idp.example.com/.well-known/openid-configuration
+    pwFlow:
+      type: oauth2
+      flows:
+        password:
+          tokenUrl: https://idp.example.com/token
+          scopes:
+            read: Read access
+            write: Write access
+paths:
+  /items:
+    get:
+      operationId: listItems
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: ok }
+        '401': { description: unauthorized }
+  /items/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: getItem
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: ok }
+    delete:
+      operationId: deleteItem
+      security:
+        - basicAuth: []
+      responses:
+        '204': { description: gone }
+  /optional:
+    get:
+      operationId: optionalOp
+      security:
+        - {}
+        - bearerAuth: []
+      responses:
+        '200': { description: ok }
+  /ghost:
+    get:
+      operationId: ghostOp
+      security:
+        - ghostScheme: []
+      responses:
+        '200': { description: ok }
+  /queried:
+    get:
+      operationId: queriedOp
+      security:
+        - refQuery: []
+        - cookieKey: []
+      responses:
+        '200': { description: ok }
+  /tls:
+    get:
+      operationId: tlsOp
+      security:
+        - mtls: []
+      responses:
+        '200': { description: ok }
+  /pw:
+    get:
+      operationId: pwOp
+      security:
+        - pwFlow: [read]
+      responses:
+        '200': { description: ok }
+  /oidc:
+    get:
+      operationId: oidcOp
+      security:
+        - oidc: []
+      responses:
+        '200': { description: ok }

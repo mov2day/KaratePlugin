@@ -13,6 +13,7 @@ import { TagPlacementRule } from './rules/TagPlacementRule';
 import { AuthenticationTestRule } from './rules/AuthenticationTestRule';
 import { HardcodedSecretRule } from './rules/HardcodedSecretRule';
 import { DuplicateZephyrTagRule } from './rules/DuplicateZephyrTagRule';
+import { GateFindingsRule } from './rules/GateFindingsRule';
 
 export class KarateLinter {
     private diagnosticsManager: DiagnosticsManager;
@@ -21,8 +22,10 @@ export class KarateLinter {
 
     constructor() {
         this.diagnosticsManager = new DiagnosticsManager();
+        const hardcodedUrl = new HardcodedUrlRule();
+        const hardcodedSecret = new HardcodedSecretRule();
         this.rules = [
-            new HardcodedUrlRule(),
+            hardcodedUrl,
             new ConsistentIndentationRule(),
             new KeywordSpacingRule(),
             new DuplicateScenarioRule(),
@@ -31,11 +34,17 @@ export class KarateLinter {
             new FileNamingRule(),
             new TagPlacementRule(),
             new AuthenticationTestRule(),
-            new HardcodedSecretRule(),
-            new DuplicateZephyrTagRule()
+            hardcodedSecret,
+            new DuplicateZephyrTagRule(),
+            new GateFindingsRule(id => this.isRuleEnabled(id), [hardcodedUrl, hardcodedSecret])
         ];
 
         this.registerListeners();
+    }
+
+    private isRuleEnabled(ruleId: string): boolean {
+        const enabled = vscode.workspace.getConfiguration('karate.linter').get<Record<string, boolean>>('enabledRules', {});
+        return enabled[ruleId] !== false;
     }
 
     private registerListeners() {

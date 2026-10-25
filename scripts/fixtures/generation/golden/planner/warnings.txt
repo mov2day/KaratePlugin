@@ -1,0 +1,1 @@
+POST /pets/{petId}/photo: Unsupported request body content type: multipart/form-data (multipart form data is not generated)

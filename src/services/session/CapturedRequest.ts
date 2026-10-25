@@ -39,6 +39,8 @@ export interface RecordingSession {
     requests: CapturedRequest[];        // Captured requests
     proxyPort?: number;                 // Port the proxy is running on
     status: 'recording' | 'stopped' | 'synthesizing';
+    origin?: 'har' | 'proxy';           // where the requests came from
+    label?: string;                     // HAR file name (without extension) for imported sessions
 }
 
 /**
@@ -99,20 +101,6 @@ export interface HarFilterOptions {
     methods?: string[];                 // Only include these methods
     minStatus?: number;                 // Minimum status code
     maxStatus?: number;                 // Maximum status code
-}
-
-/**
- * Resource lifecycle detection result
- */
-export interface ResourceLifecycle {
-    resourceType: string;               // e.g., 'orders', 'users'
-    basePath: string;                   // e.g., '/api/orders'
-    createRequest?: CapturedRequest;    // POST request that creates
-    readRequests: CapturedRequest[];    // GET requests that read
-    updateRequests: CapturedRequest[];  // PUT/PATCH requests
-    deleteRequest?: CapturedRequest;    // DELETE request
-    idField: string;                    // Field containing the ID (e.g., 'id', 'orderId')
-    extractedIds: Map<string, string>;  // Mapping of request IDs to extracted values
 }
 
 /**

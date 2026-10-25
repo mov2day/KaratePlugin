@@ -1,0 +1,234 @@
+=== pets/pets.feature
+Feature: Pets API
+  Generated from petstore (openapi)
+
+  Background:
+    * url baseUrl
+    * call read('classpath:common/auth.feature')
+
+  # ---- positive ----
+  @positive @op=listPets @domain=pets
+  Scenario: List all pets - returns 200
+    # source: GET /pets
+    Given path 'pets'
+    And param limit = 10
+    When method get
+    Then status 200
+    And match each response == read('classpath:schemas/pets.json')
+
+  @positive @op=createPet @domain=pets
+  Scenario: Create a pet - returns 201
+    # source: POST /pets
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Buddy-' + karate.uuid()
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    And match response == read('classpath:schemas/pets.json')
+
+  @positive @op=getPetById @domain=pets
+  Scenario: Get pet by ID - returns 200
+    # source: GET /pets/{petId}
+    # Assumes a resource with this id exists in the target environment
+    * def petId = 1
+    Given path 'pets', petId
+    When method get
+    Then status 200
+    And match response == read('classpath:schemas/pets.json')
+
+  @positive @op=updatePet @domain=pets
+  Scenario: Update a pet - returns 200
+    # source: PUT /pets/{petId}
+    # Assumes a resource with this id exists in the target environment
+    * def petId = 1
+    * def payload = karate.copy(read('classpath:data/pets.json')['updatePet'])
+    * set payload.name = 'Buddy-' + karate.uuid()
+    Given path 'pets', petId
+    And request payload
+    When method put
+    Then status 200
+    And match response == read('classpath:schemas/pets-update-pet.json')
+
+  @ignore @positive @op=uploadPetPhoto @domain=pets
+  Scenario: Upload a pet photo
+    # Draft: Unsupported request body content type: multipart/form-data (multipart form data is not generated)
+    # source: POST /pets/{petId}/photo
+    * def petId = 1
+    Given path 'pets', petId, 'photo'
+    When method post
+    Then status 200
+
+=== pets/pets-edge.feature
+Feature: Pets API - Edge
+  Generated from petstore (openapi)
+
+  Background:
+    * url baseUrl
+    * call read('classpath:common/auth.feature')
+
+  # ---- edge ----
+  @edge @op=createPet @domain=pets
+  Scenario Outline: Create a pet - accepts every allowed value of 'status'
+    # source: POST /pets
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Buddy-' + karate.uuid()
+    * set payload.status = statusValue
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    And match response == read('classpath:schemas/pets.json')
+
+    Examples:
+      | statusValue |
+      | available   |
+      | pending     |
+      | sold        |
+
+  @edge @op=updatePet @domain=pets
+  Scenario Outline: Update a pet - accepts every allowed value of 'status'
+    # source: PUT /pets/{petId}
+    # Assumes a resource with this id exists in the target environment
+    * def petId = 1
+    * def payload = karate.copy(read('classpath:data/pets.json')['updatePet'])
+    * set payload.name = 'Buddy-' + karate.uuid()
+    * set payload.status = statusValue
+    Given path 'pets', petId
+    And request payload
+    When method put
+    Then status 200
+    And match response == read('classpath:schemas/pets-update-pet.json')
+
+    Examples:
+      | statusValue |
+      | available   |
+      | pending     |
+      | sold        |
+
+=== pets/pets-negative.feature
+Feature: Pets API - Negative
+  Generated from petstore (openapi)
+
+  Background:
+    * url baseUrl
+    * call read('classpath:common/auth.feature')
+
+  # ---- negative ----
+  @negative @op=getPetById @domain=pets
+  Scenario: Get pet by ID - returns 404 for an unknown id
+    # source: GET /pets/{petId}
+    * def petId = 999999999
+    Given path 'pets', petId
+    When method get
+    Then status 404
+
+=== pets/pets-crud.feature
+Feature: Pets API - CRUD lifecycle
+  Generated from petstore (openapi)
+
+  Background:
+    * url baseUrl
+    * call read('classpath:common/auth.feature')
+
+  # ---- positive ----
+  @positive @op=createPet @domain=pets @crud @lock=pets
+  Scenario: Pets lifecycle - create, read, update, delete
+    # source: POST /pets
+    # Covers: GET /pets/{petId}, PUT /pets/{petId}, DELETE /pets/{petId}
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Buddy-' + karate.uuid()
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 201
+    And match response == read('classpath:schemas/pets.json')
+    * def petId = response.id
+    Given path 'pets', petId
+    When method get
+    Then status 200
+    And match response == read('classpath:schemas/pets.json')
+    And match response.name == payload.name
+    * def updatePayload = karate.copy(read('classpath:data/pets.json')['updatePet'])
+    * set updatePayload.name = 'Buddy-' + karate.uuid()
+    Given path 'pets', petId
+    And request updatePayload
+    When method put
+    Then status 200
+    And match response == read('classpath:schemas/pets-update-pet.json')
+    And match response.name == updatePayload.name
+    Given path 'pets', petId
+    When method delete
+    Then status 204
+    Given path 'pets', petId
+    When method get
+    Then status 404
+
+=== pets/pets-security.feature
+Feature: Pets API - Security
+  Generated from petstore (openapi)
+
+  Background:
+    * url baseUrl
+
+  # ---- security ----
+  @security @op=listPets @domain=pets
+  Scenario: List all pets - rejects an unauthenticated request with 401
+    # source: GET /pets
+    Given path 'pets'
+    And param limit = 10
+    When method get
+    Then status 401
+
+  @security @op=createPet @domain=pets
+  Scenario: Create a pet - rejects an unauthenticated request with 401
+    # source: POST /pets
+    * def payload = karate.copy(read('classpath:data/pets.json')['createPet'])
+    * set payload.name = 'Buddy-' + karate.uuid()
+    Given path 'pets'
+    And request payload
+    When method post
+    Then status 401
+
+  @security @op=deletePet @domain=pets
+  Scenario: Delete a pet - rejects an unauthenticated request with 401
+    # source: DELETE /pets/{petId}
+    * def petId = 1
+    Given path 'pets', petId
+    When method delete
+    Then status 401
+
+  @security @op=getPetById @domain=pets
+  Scenario: Get pet by ID - rejects an unauthenticated request with 401
+    # source: GET /pets/{petId}
+    * def petId = 1
+    Given path 'pets', petId
+    When method get
+    Then status 401
+
+  @security @op=updatePet @domain=pets
+  Scenario: Update a pet - rejects an unauthenticated request with 401
+    # source: PUT /pets/{petId}
+    * def petId = 1
+    * def payload = karate.copy(read('classpath:data/pets.json')['updatePet'])
+    * set payload.name = 'Buddy-' + karate.uuid()
+    Given path 'pets', petId
+    And request payload
+    When method put
+    Then status 401
+
+=== system/system.feature
+Feature: System API
+  Generated from petstore (openapi)
+
+  Background:
+    * url baseUrl
+
+  # ---- positive ----
+  @positive @op=getHealth @domain=system
+  Scenario: Health check (public) - returns 200
+    # source: GET /health
+    Given path 'health'
+    When method get
+    Then status 200
+    And match response == read('classpath:schemas/system.json')

@@ -5,6 +5,42 @@ import { SharedStyleService } from '../services/SharedStyleService';
 import { logger } from '../utils/logger';
 import { WorkspaceEntityStore } from '../services/workspace/WorkspaceEntityStore';
 import { QualityWorkflowService } from '../services/workspace/QualityWorkflowService';
+import * as fs from 'fs';
+import { runGate } from '../generation/quality/QualityGate';
+import { HEADER_RE, OutputWriter, sha256, splitHeader } from '../generation/write/OutputWriter';
+
+/** Same error-budget rule as AI refinement: preserve pre-existing user findings, reject only new ones. */
+const hasNewGateErrors = (before: string, after: string): boolean => {
+    const key = (f: { ruleId: string; message: string }) => `${f.ruleId}|${f.message.toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ')}`;
+    const budget = new Map<string, number>();
+    for (const finding of runGate(before).findings.filter(f => f.severity === 'error')) {
+        const k = key(finding); budget.set(k, (budget.get(k) ?? 0) + 1);
+    }
+    for (const finding of runGate(after).findings.filter(f => f.severity === 'error')) {
+        const k = key(finding); const left = budget.get(k) ?? 0;
+        if (left) {budget.set(k, left - 1);} else {return true;}
+    }
+    return false;
+};
+
+const hasConsistentGeneratedHeader = (content: string): boolean => {
+    const parsed = splitHeader(content);
+    return HEADER_RE.test(content) && parsed.headerHash === sha256(parsed.body);
+};
+
+const writeAppendedScenarios = (targetFile: string, original: string, merged: string, source: string): string => {
+    const dir = path.dirname(targetFile);
+    const fsApi = {
+        exists: (p: string) => fs.existsSync(path.join(dir, p)), read: (p: string) => fs.readFileSync(path.join(dir, p), 'utf8'),
+        list: (p: string) => fs.readdirSync(path.join(dir, p)), write: (p: string, text: string) => fs.writeFileSync(path.join(dir, p), text, 'utf8')
+    };
+    const hashes = new Map<string, string>();
+    const report = OutputWriter.write([{
+        path: path.basename(targetFile), content: splitHeader(merged).body, owner: 'generated', source,
+        forceSideBySide: !hasConsistentGeneratedHeader(original)
+    }], fsApi, { get: p => hashes.get(p), set: (p, h) => hashes.set(p, h) }, { generatorVersion: 'coverage-dashboard', workspaceRoot: dir });
+    return path.join(dir, report.sideBySide[0]?.generatedPath ?? path.basename(targetFile));
+};
 
 /**
  * Webview provider for the interactive coverage dashboard
@@ -253,30 +289,8 @@ export class CoverageDashboardProvider {
                 // APPEND MODE
                 const content = fs.readFileSync(targetFile, 'utf-8');
 
-                // Generate a simple scenario block (since we don't use AI here)
-                // We try to infer if 'url' variable is used in background for slightly better code
-                const hasUrlVar = content.includes('url baseUrl') || content.includes('url ');
-
-                let scenario = `
-  Scenario: ${endpoint.summary || `${endpoint.method} ${endpoint.path}`}
-    Given path '${endpoint.path}'
-    When method ${endpoint.method}
-    Then status 200
-`;
-                // Simple indentation fix
-                if (content.includes('  Scenario:')) {
-                    // scenario is already indented 2 spaces
-                } else if (content.includes('Scenario:')) {
-                    scenario = scenario.replace(/^  /gm, ''); // Remove indentation if file uses 0 indent
-                }
-
-                const newContent = content + '\n' + scenario;
-                fs.writeFileSync(targetFile, newContent);
-
-                const doc = await vscode.workspace.openTextDocument(targetFile);
-                await vscode.window.showTextDocument(doc);
-
-                vscode.window.showInformationMessage(`Appended test to ${path.basename(targetFile)}`);
+                vscode.window.showWarningMessage('Appending a non-AI placeholder is disabled: generate from the OpenAPI pipeline so status assertions remain contract-derived.');
+                return;
 
             } else {
                 // NEW FILE MODE
@@ -373,12 +387,18 @@ export class CoverageDashboardProvider {
 
                         if (newScenarios && newScenarios.length > 0) {
                             const appendContent = '\n' + newScenarios.join('\n\n');
-                            fs.writeFileSync(targetFile, content + appendContent);
+                            const merged = content + appendContent;
+                            if (hasNewGateErrors(content, merged)) {
+                                const sibling = writeAppendedScenarios(targetFile, content, merged, `${endpoint.method} ${endpoint.path}`);
+                                vscode.window.showWarningMessage(`AI scenarios failed the quality gate; wrote ${path.basename(sibling)} for review.`);
+                                return;
+                            }
+                            const written = writeAppendedScenarios(targetFile, content, merged, `${endpoint.method} ${endpoint.path}`);
 
-                            const doc = await vscode.workspace.openTextDocument(targetFile);
+                            const doc = await vscode.workspace.openTextDocument(written);
                             await vscode.window.showTextDocument(doc);
 
-                            vscode.window.showInformationMessage(`AI appended ${newScenarios.length} scenarios to ${path.basename(targetFile)}`);
+                            vscode.window.showInformationMessage(`AI appended ${newScenarios.length} scenarios to ${path.basename(written)}`);
                         } else {
                             vscode.window.showWarningMessage('AI did not return valid scenarios');
                         }

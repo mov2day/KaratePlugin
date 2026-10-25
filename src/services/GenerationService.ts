@@ -9,11 +9,20 @@ import { OpenAPIParser } from './openApiParser';
 import { KarateGenerator } from './karateGenerator';
 import { ConfluenceClient } from './confluenceClient';
 import { ConfluenceParser } from './confluenceParser';
-import { FeatureStructurer, StructuringOptions } from './FeatureStructurer';
-import { ReusabilityEngine } from './ReusabilityEngine';
 import { SpecHashManager, SpecMetadata } from './specHashManager';
 import { GenerationOptions, KarateStyle, KarateTemplate } from '../types';
 import { SharedStyleService } from './SharedStyleService';
+import { categoriesForScenarioTypes } from '../generation/config/ScenarioTypes';
+import type { GeneratorConfig } from '../generation/config/GeneratorConfig';
+import type { GenerationModel } from '../generation/model/TestModel';
+import { buildRequirementScenarios, confluenceRequirementItems } from '../generation/adapters/requirements';
+import type { RequirementBuild } from '../generation/adapters/requirements';
+import { GeneratorConfigLoader } from '../generation/vscode/GeneratorConfigLoader';
+import { requirementEvidence } from '../generation/vscode/RequirementsRun';
+import { slug } from '../generation/plan/slug';
+import type { PlannedFeature } from '../generation/plan/OpenApiPlanner';
+import type { GenerationSummary } from '../generation/pipeline/Summary';
+import { runGenerationForModel } from '../generation/vscode/runGeneration';
 
 /**
  * Service to handle all test generation logic
@@ -38,74 +47,19 @@ export class GenerationService {
     }
 
     /**
-     * Generate tests from OpenAPI specification
+     * Generate tests from OpenAPI specification (via the generation pipeline)
      */
     public async generateFromOpenAPI(
         options: GenerationOptions,
         progressCallback: (message: string, percentage: number) => void
-    ): Promise<{ files: string[], content: string }> {
+    ): Promise<{ files: string[], content: string, summary: GenerationSummary }> {
         try {
             if (!options.filePath) throw new Error('OpenAPI file path is required');
 
-            progressCallback('Parsing OpenAPI specification...', 30);
-            const parser = new OpenAPIParser();
-            let endpoints = await parser.parseSpec(options.filePath);
-
-            if (options.httpMethods && options.httpMethods.length > 0) {
-                endpoints = endpoints.filter(e => options.httpMethods!.includes(e.method.toLowerCase()));
-            }
-
-            progressCallback('Generating Karate tests...', 60);
-            const generator = new KarateGenerator();
-            this.configureGenerator(generator);
-
-            const specFileName = path.basename(options.filePath, path.extname(options.filePath));
-            const strategy = ConfigManager.getStructuringStrategy();
-            const outputPath = FileUtils.resolveOutputPath();
-            const createdFiles: string[] = [];
-            let firstContent = '';
-
-            if (strategy !== 'flat') {
-                // Structured Generation
-                const structOptions: StructuringOptions = {
-                    strategy,
-                    autoTag: ConfigManager.isAutoTagEnabled(),
-                    outputRoot: outputPath
-                };
-                const structured = generator.generateStructured(endpoints, structOptions, options.scenarioTypes);
-
-                for (const file of structured.files) {
-                    let content = file.content;
-                    if (options.useCopilot) {
-                        progressCallback(`Enhancing ${file.featureName} with Copilot...`, 80);
-                        content = await this.enhanceWithCopilot(content, file.featureName, 'openapi', options, [options.filePath]);
-                    }
-
-                    const outputFile = path.join(outputPath, file.relativePath);
-                    const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-                    content = this.applyReusability(content, uniqueFile);
-                    FileUtils.writeFile(uniqueFile, content);
-                    createdFiles.push(uniqueFile);
-                    if (!firstContent) firstContent = content;
-                }
-            } else {
-                // Flat Generation
-                const feature = generator.generateFromOpenAPI(endpoints, specFileName, options.scenarioTypes);
-                feature.background = generator.generateBackground();
-                let content = generator.featureToString(feature);
-
-                if (options.useCopilot) {
-                    progressCallback('Enhancing with GitHub Copilot...', 80);
-                    content = await this.enhanceWithCopilot(content, specFileName, 'openapi', options, [options.filePath]);
-                }
-
-                const outputFile = path.join(outputPath, `${specFileName}.feature`);
-                const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-                content = this.applyReusability(content, uniqueFile);
-                FileUtils.writeFile(uniqueFile, content);
-                createdFiles.push(uniqueFile);
-                firstContent = content;
-            }
+            progressCallback('Parsing OpenAPI specification...', 2);
+            const model = await this.parseFilteredModel(options.filePath, options.httpMethods);
+            const run = await this.runPipelineFor(model, options.filePath, 'openapi', options, progressCallback);
+            const createdFiles = run.createdPaths;
 
             // Record History & Metadata
             await this.historyManager.addToHistory({
@@ -114,9 +68,9 @@ export class GenerationService {
                 outputPath: createdFiles[0],
                 template: ConfigManager.getTestTemplate()
             });
-            await this.saveSpecMetadata(options.filePath, endpoints, createdFiles[0]);
+            await this.saveSpecMetadata(options.filePath, this.endpointsOf(model), createdFiles[0]);
 
-            return { files: createdFiles, content: firstContent };
+            return { files: createdFiles, content: run.firstContent, summary: run.summary };
 
         } catch (error) {
             logger.error('Failed to generate from OpenAPI', error as Error);
@@ -130,59 +84,51 @@ export class GenerationService {
     public async generateFromConfluence(
         options: GenerationOptions,
         progressCallback: (message: string, percentage: number) => void
-    ): Promise<{ files: string[], content: string }> {
+    ): Promise<{ files: string[], content: string, summary: GenerationSummary }> {
         try {
             if (!options.pageUrl) throw new Error('Confluence Page URL is required');
+            const workspaceRoot = FileUtils.getWorkspaceRoot();
+            if (!workspaceRoot) throw new Error('No workspace folder is open');
 
-            progressCallback('Fetching Confluence page...', 30);
-            const { page, scenarios } = await this.fetchConfluenceData(options.pageUrl);
+            progressCallback('Fetching Confluence page...', 10);
+            const { page, testData } = await this.fetchConfluenceData(options.pageUrl);
+            const pageContent = page.body.storage?.value || page.body.view?.value || '';
 
-            progressCallback('Generating Karate tests...', 60);
-            const generator = new KarateGenerator();
-            this.configureGenerator(generator);
-
-            const feature = {
-                name: page.title,
-                description: `Test scenarios from Confluence page ${page.id}`,
-                scenarios,
-                background: generator.generateBackground()
-            };
-
-            let content = generator.featureToString(feature as any);
-
-            if (options.useCopilot) {
-                progressCallback('Enhancing with GitHub Copilot...', 80);
-                const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
-                const { CopilotService } = await import('./copilotService');
-                const isAvailable = await CopilotService.isCopilotAvailable();
-
-                if (isAvailable) {
-                    let tempUri: vscode.Uri | null = null;
-                    try {
-                        tempUri = await CopilotService.createTempFile(confluenceContent, '.html');
-                        const context = `Generate comprehensive Karate API tests from Confluence documentation: ${page.title} with ${scenarios.length} scenarios.`;
-                        content = await CopilotService.enhanceTestWithFileContext(content, context, 'confluence', [tempUri]);
-                    } finally {
-                        if (tempUri) await CopilotService.cleanupTempFiles();
-                    }
-                }
+            // Test cases become drafts (no contract is linked from here); the pipeline gates every feature.
+            const loaded = await GeneratorConfigLoader.load(workspaceRoot, { fallbackStyle: this._learnedStyle });
+            const req = buildRequirementScenarios(confluenceRequirementItems({ id: String(page.id), title: page.title }, testData), {
+                config: loaded.config, name: slug(page.title) || `page-${page.id}`
+            });
+            if (req.features.length === 0) {
+                throw new Error(`No test cases or flows found in the Confluence page. ${req.warnings.join('; ')}`.trim());
             }
-
-            const outputPath = FileUtils.resolveOutputPath();
-            const sanitizedTitle = page.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-            const outputFile = path.join(outputPath, `${sanitizedTitle}.feature`);
-            const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-            content = this.applyReusability(content, uniqueFile);
-            FileUtils.writeFile(uniqueFile, content);
+            const notes = [...req.warnings, `Requirements written to ${req.features.map(f => f.relativePath).join(', ')} (under the generator output root)`];
+            if (this._template) {
+                const note = `Template '${options.templateId ?? 'custom'}' is ignored by the Karate v2 generator (use .karate-generator.json style/layout)`;
+                logger.info(note);
+                notes.push(note);
+            }
+            const run = await runGenerationForModel({
+                context: this.context, workspaceRoot,
+                model: { source: 'confluence', name: slug(page.title) || 'confluence', schemes: [], operations: [], unsupported: [] },
+                sourceRef: `Confluence page ${page.id}`, mode: 'confluence', useAi: options.useCopilot,
+                scenarios: req.features, classpathFiles: req.files, config: loaded.config, notes,
+                evidence: requirementEvidence(`Confluence: ${page.title}`, pageContent),
+                learnedStyle: this._learnedStyle,
+                progress: (message, pct) => progressCallback(message, 15 + Math.round(pct * 0.85))
+            });
+            if (run.createdPaths.length === 0) {
+                throw new Error(`No feature files were generated. ${run.warnings.join('; ')}`.trim());
+            }
 
             await this.historyManager.addToHistory({
                 type: 'confluence',
                 source: options.pageUrl,
-                outputPath: uniqueFile,
+                outputPath: run.createdPaths[0],
                 template: ConfigManager.getTestTemplate()
             });
 
-            return { files: [uniqueFile], content };
+            return { files: run.createdPaths, content: run.firstContent, summary: run.summary };
 
         } catch (error) {
             logger.error('Failed to generate from Confluence', error as Error);
@@ -191,110 +137,37 @@ export class GenerationService {
     }
 
     /**
-     * Combined Generation (OpenAPI + Confluence)
+     * Combined Generation (OpenAPI + Confluence). The OpenAPI part runs through the pipeline; Confluence test cases
+     * become a separate all-draft requirements feature until real requirement mapping lands.
      */
     public async generateCombined(
         options: GenerationOptions,
         progressCallback: (message: string, percentage: number) => void
-    ): Promise<{ files: string[], content: string }> {
+    ): Promise<{ files: string[], content: string, summary: GenerationSummary }> {
         try {
             if (!options.openApiPath || !options.confluenceUrl) throw new Error('Both OpenAPI path and Confluence URL are required');
 
-            progressCallback('Processing both sources...', 20);
-
-            // 1. Parse OpenAPI
-            const parser = new OpenAPIParser();
-            let endpoints = await parser.parseSpec(options.openApiPath);
-            if (options.httpMethods && options.httpMethods.length > 0) {
-                endpoints = endpoints.filter(e => options.httpMethods!.includes(e.method.toLowerCase()));
-            }
-
-            // 2. Fetch Confluence
-            const { page, scenarios: confluenceScenarios } = await this.fetchConfluenceData(options.confluenceUrl);
+            progressCallback('Processing both sources...', 2);
+            const model = await this.parseFilteredModel(options.openApiPath, options.httpMethods);
+            const { page, testData } = await this.fetchConfluenceData(options.confluenceUrl);
             const confluenceContent = page.body.storage?.value || page.body.view?.value || '';
 
-            progressCallback('Generating combined tests...', 60);
-            const generator = new KarateGenerator();
-            this.configureGenerator(generator);
-
             const specFileName = path.basename(options.openApiPath, path.extname(options.openApiPath));
-            const openApiScenarios = generator.generateFromOpenAPI(endpoints, specFileName, options.scenarioTypes).scenarios;
-            const mergedScenarios = [...confluenceScenarios, ...openApiScenarios];
+            const workspaceRoot = FileUtils.getWorkspaceRoot();
+            if (!workspaceRoot) throw new Error('No workspace folder is open');
+            const loaded = await GeneratorConfigLoader.load(workspaceRoot, { fallbackStyle: this._learnedStyle });
+            // Requirements link to real operations of the same contract; unmatched ones stay honest drafts.
+            const req: RequirementBuild = buildRequirementScenarios(confluenceRequirementItems({ id: String(page.id), title: page.title }, testData), {
+                config: loaded.config, name: specFileName, model
+            });
 
-            const strategy = ConfigManager.getStructuringStrategy();
-            const outputPath = FileUtils.resolveOutputPath();
-            const createdFiles: string[] = [];
-            let firstContent = '';
-
-            if (strategy !== 'flat') {
-                const structOptions: StructuringOptions = {
-                    strategy,
-                    autoTag: ConfigManager.isAutoTagEnabled(),
-                    outputRoot: outputPath
-                };
-                const structured = FeatureStructurer.structureCombined(mergedScenarios, endpoints, confluenceContent, structOptions);
-
-                for (const file of structured.files) {
-                    let content = file.content;
-                    if (options.useCopilot) {
-                        progressCallback(`Enhancing ${file.featureName} with Copilot...`, 80);
-                        const { CopilotService } = await import('./copilotService');
-                        if (await CopilotService.isCopilotAvailable()) {
-                            let tempUri: vscode.Uri | null = null;
-                            try {
-                                const files = [CopilotService.createFileUri(options.openApiPath)];
-                                tempUri = await CopilotService.createTempFile(confluenceContent, '.html');
-                                files.push(tempUri);
-
-                                const context = this.buildEnhancementContext(file.featureName, 'combined', options, specFileName, page.title);
-                                content = await CopilotService.enhanceTestWithFileContext(content, context, 'combined', files);
-                            } finally {
-                                if (tempUri) await CopilotService.cleanupTempFiles();
-                            }
-                        }
-                    }
-
-                    const outputFile = path.join(outputPath, file.relativePath);
-                    const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-                    content = this.applyReusability(content, uniqueFile);
-                    FileUtils.writeFile(uniqueFile, content);
-                    createdFiles.push(uniqueFile);
-                    if (!firstContent) firstContent = content;
-                }
-            } else {
-                const feature = {
-                    name: `${specFileName} - ${page.title}`,
-                    description: `Combined AI tests: OpenAPI (${specFileName}) + Confluence (${page.title})`,
-                    scenarios: mergedScenarios,
-                    background: generator.generateBackground()
-                };
-                let content = generator.featureToString(feature as any);
-
-                if (options.useCopilot) {
-                    progressCallback('Enhancing with GitHub Copilot...', 80);
-                    const { CopilotService } = await import('./copilotService');
-                    if (await CopilotService.isCopilotAvailable()) {
-                        let tempUri: vscode.Uri | null = null;
-                        try {
-                            const files = [CopilotService.createFileUri(options.openApiPath)];
-                            tempUri = await CopilotService.createTempFile(confluenceContent, '.html');
-                            files.push(tempUri);
-
-                            const context = this.buildEnhancementContext(`${specFileName} - ${page.title}`, 'combined', options, specFileName, page.title);
-                            content = await CopilotService.enhanceTestWithFileContext(content, context, 'combined', files);
-                        } finally {
-                            if (tempUri) await CopilotService.cleanupTempFiles();
-                        }
-                    }
-                }
-
-                const outputFile = path.join(outputPath, `${specFileName}_combined.feature`);
-                const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-                content = this.applyReusability(content, uniqueFile);
-                FileUtils.writeFile(uniqueFile, content);
-                createdFiles.push(uniqueFile);
-                firstContent = content;
-            }
+            const run = await this.runPipelineFor(model, options.openApiPath, 'combined', options, progressCallback, {
+                extraFeatures: req.features.length > 0 ? req.features : undefined,
+                classpathFiles: req.files,
+                notes: [...req.warnings, `Requirements written to ${req.features.map(f => f.relativePath).join(', ')} (under the generator output root)`],
+                evidence: requirementEvidence(`Confluence: ${page.title}`, confluenceContent)
+            });
+            const createdFiles = run.createdPaths;
 
             await this.historyManager.addToHistory({
                 type: 'combined',
@@ -304,7 +177,7 @@ export class GenerationService {
                 template: ConfigManager.getTestTemplate()
             });
 
-            return { files: createdFiles, content: firstContent };
+            return { files: createdFiles, content: run.firstContent, summary: run.summary };
 
         } catch (error) {
             logger.error('Failed to generate combined tests', error as Error);
@@ -324,29 +197,63 @@ export class GenerationService {
         if (this._template) generator.setTemplate(this._template);
     }
 
-    private async enhanceWithCopilot(content: string, name: string, type: 'openapi' | 'confluence' | 'custom', options: GenerationOptions, filePaths: string[]): Promise<string> {
-        const { CopilotService } = await import('./copilotService');
-        const isAvailable = await CopilotService.isCopilotAvailable();
-
-        if (isAvailable) {
-            const context = this.buildEnhancementContext(name, type, options);
-            const uris = filePaths.map(p => CopilotService.createFileUri(p));
-            return await CopilotService.enhanceTestWithFileContext(content, context, type as any, uris);
+    private async parseFilteredModel(specPath: string, httpMethods?: string[]): Promise<GenerationModel> {
+        const model = await new OpenAPIParser().parseModel(specPath);
+        if (httpMethods && httpMethods.length > 0) {
+            const wanted = httpMethods.map(m => m.toLowerCase());
+            model.operations = model.operations.filter(o => wanted.includes(o.method.toLowerCase()));
         }
-        return content;
+        if (model.operations.length === 0) {
+            throw new Error('No operations found in the OpenAPI specification for the selected HTTP methods');
+        }
+        return model;
     }
 
-    private buildEnhancementContext(name: string, type: string, options: GenerationOptions, specName?: string, pageTitle?: string): string {
-        const typesStr = options.scenarioTypes?.length ? ` Scenario types: ${options.scenarioTypes.join(', ')}.` : '';
-        const instrStr = options.customInstruction ? ` Custom instruction: ${options.customInstruction}` : '';
-        const methodsStr = options.httpMethods?.length ? ` HTTP methods: ${options.httpMethods.join(', ').toUpperCase()}.` : '';
+    private endpointsOf(model: GenerationModel): { path: string; method: string; operationId: string }[] {
+        return model.operations.map(o => ({ path: o.path, method: o.method.toUpperCase(), operationId: o.id }));
+    }
 
-        if (type === 'openapi') {
-            return `Enhance Karate API tests for ${name} from OpenAPI specification.${methodsStr}${typesStr}${instrStr}`;
-        } else if (type === 'combined') {
-            return `Enhance Karate API tests for ${name} combining OpenAPI + Confluence: ${specName} + ${pageTitle}.${methodsStr}${typesStr}${instrStr}`;
+    private async runPipelineFor(
+        model: GenerationModel,
+        specPath: string,
+        mode: 'openapi' | 'combined',
+        options: GenerationOptions,
+        progressCallback: (message: string, percentage: number) => void,
+        extras: { extraFeatures?: PlannedFeature[]; classpathFiles?: { path: string; content: string; owner: 'user' | 'generated' }[]; notes?: string[]; evidence?: { label: string; text: string }[] } = {}
+    ) {
+        const workspaceRoot = FileUtils.getWorkspaceRoot();
+        if (!workspaceRoot) throw new Error('No workspace folder is open');
+
+        const notes: string[] = [];
+        if (this._template) {
+            const note = `Template '${options.templateId ?? 'custom'}' is ignored by the Karate v2 generator (use .karate-generator.json style/layout)`;
+            logger.info(note);
+            notes.push(note);
         }
-        return `Enhance Karate API tests for ${name} from documentation.${typesStr}${instrStr}`;
+
+        const run = await runGenerationForModel({
+            context: this.context,
+            workspaceRoot,
+            model,
+            sourceRef: path.basename(specPath),
+            mode,
+            useAi: options.useCopilot,
+            extraFeatures: extras.extraFeatures,
+            classpathFiles: extras.classpathFiles,
+            evidence: extras.evidence,
+            customInstruction: options.customInstruction,
+            learnedStyle: this._learnedStyle,
+            notes: [...notes, ...(extras.notes ?? [])],
+            configure: (c: GeneratorConfig) => ({
+                ...c,
+                scenarios: { ...c.scenarios, categories: categoriesForScenarioTypes(options.scenarioTypes, c.scenarios.categories) }
+            }),
+            progress: progressCallback
+        });
+        if (run.createdPaths.length === 0) {
+            throw new Error(`No feature files were generated. ${run.warnings.join('; ')}`.trim());
+        }
+        return run;
     }
 
     private async fetchConfluenceData(url: string) {
@@ -363,93 +270,8 @@ export class GenerationService {
         const client = new ConfluenceClient(baseUrl, email || "", apiToken, authType);
         const page = await client.getPageById(pageId);
 
-        const parser = new ConfluenceParser();
-        const testData = parser.parsePageContent(page);
-
-        // Re-use logic from WebviewProvider to create scenarios from test data
-        // For cleaner code, we duplicate the simple mapping logic here or make it static in parser
-        const scenarios = this.mapConfluenceDataToScenarios(testData);
-
-        return { page, scenarios };
-    }
-
-    private mapConfluenceDataToScenarios(testData: any): any[] {
-        const scenarios: any[] = [];
-        for (const testCase of testData.testCases) {
-            const steps: any[] = [];
-            for (let i = 0; i < testCase.steps.length; i++) {
-                steps.push({
-                    keyword: i === 0 ? 'Given' : 'And',
-                    text: `# ${testCase.steps[i]}`
-                });
-            }
-            steps.push({ keyword: 'When', text: 'method get # TODO: Replace with actual API call' });
-            if (testCase.expectedResult) {
-                steps.push({ keyword: 'Then', text: `# Expected: ${testCase.expectedResult}` });
-            }
-            scenarios.push({
-                name: testCase.name,
-                description: testCase.description,
-                steps
-            });
-        }
-        return scenarios;
-    }
-
-    private applyReusability(content: string, outputPath: string): string {
-        const result = ReusabilityEngine.extract(content);
-        const createdPaths = new Set<string>();
-
-        if (result.commonFiles.length > 0) {
-            const commonDir = ReusabilityEngine.getCommonDir(outputPath);
-            for (const file of result.commonFiles) {
-                const filePath = path.join(commonDir, path.basename(file.path));
-                FileUtils.writeFile(filePath, file.content);
-                createdPaths.add(path.basename(file.path));
-            }
-            logger.info(`ReusabilityEngine: extracted ${result.commonFiles.length} common file(s) to ${commonDir}`);
-        }
-
-        // Phantom reference handling (Copied logic from WebviewProvider to keep it self-contained)
-        // Ideally this should be in ReusabilityEngine itself but keeping scope limited to refactoring
-        const readRefPattern = /read\(['"]common\/([^'"]+)['"]\)/g;
-        let match: RegExpExecArray | null;
-        while ((match = readRefPattern.exec(result.modifiedContent)) !== null) {
-            const refFilename = match[1];
-            if (!createdPaths.has(refFilename)) {
-                const commonDir = ReusabilityEngine.getCommonDir(outputPath);
-                const stubPath = path.join(commonDir, refFilename);
-                if (!fs.existsSync(stubPath)) {
-                    this.createStubFile(stubPath, refFilename);
-                    createdPaths.add(refFilename);
-                }
-            }
-        }
-
-        return result.modifiedContent;
-    }
-
-    private createStubFile(stubPath: string, refFilename: string) {
-        const featureName = refFilename.replace('.feature', '').replace(/-/g, ' ');
-        let steps = ['  # TODO: Implement this shared helper', `  * def result = 'placeholder'`];
-
-        if (refFilename.includes('setup')) {
-            steps = ["  * def baseUrl = karate.properties['baseUrl'] || 'http://localhost:8080'", '  * url baseUrl', '  * configure ssl = true'];
-        } else if (refFilename.includes('auth')) {
-            steps = ["  * def token = 'mock-token-123'", "  * def authHeader = { Authorization: 'Bearer ' + token }"];
-        } else if (refFilename.includes('headers')) {
-            steps = ["  * def headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' }"];
-        }
-
-        const stubContent = [
-            `Feature: ${featureName.charAt(0).toUpperCase() + featureName.slice(1)} Helper`,
-            '',
-            `Scenario: ${featureName}`,
-            ...steps,
-            '',
-        ].join('\n');
-        FileUtils.writeFile(stubPath, stubContent);
-        logger.info(`ReusabilityEngine: created stub for phantom reference common/${refFilename}`);
+        const testData = new ConfluenceParser().parsePageContent(page);
+        return { page, testData };
     }
 
     private async saveSpecMetadata(specPath: string, endpoints: any[], testFilePath: string): Promise<void> {

@@ -9,6 +9,7 @@ import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
 import { SpecHashManager, SpecMetadata } from '../services/specHashManager';
 import { GenerationService } from '../services/GenerationService';
+import { reportSummary } from '../generation/vscode/reportSummary';
 import { GenerationOptions, KarateConfig, HistoryItem, KarateTemplate, TestExecutionOptions, WebviewMessage, KarateStyle } from '../types';
 import { HistoryManager } from '../services/historyManager';
 import { TemplateManager } from '../services/templateManager';
@@ -46,11 +47,6 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
     private _scoutHandler?: (command: ScoutCommand) => Promise<void>;
 
     public setScoutHandler(handler: (command: ScoutCommand) => Promise<void>): void { this._scoutHandler = handler; }
-
-    /**
-     * Process feature content through ReusabilityEngine.
-     * Extracts common patterns (auth, setup, headers, etc.) into shared feature files.
-     */
 
     private _specHashManager: SpecHashManager;
 
@@ -333,10 +329,13 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 throw new Error('GenerationService not initialized');
             }
 
-            service.setLearnedStyle(this._learnedStyle);
+            service.setLearnedStyle(this._learnedStyle); // used as the lowest-precedence style layer
+            // NOTE: templates no longer shape OpenAPI output; GenerationService reports them as ignored in the summary.
             if (templateId) {
                 const template = await this._templateManager?.getTemplate(templateId);
                 service.setTemplate(template?.content || null);
+            } else {
+                service.setTemplate(null);
             }
 
             const options: GenerationOptions = {
@@ -353,8 +352,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendSuccess(
                 `Generated tests for ${path.basename(filePath)}`,
                 result.files[0],
-                result.content
+                result.content,
+                result.summary
             );
+            void reportSummary(result.summary, `OpenAPI: ${path.basename(filePath)}`);
             await this.sendHistory();
 
         } catch (error) {
@@ -374,6 +375,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             if (templateId) {
                 const template = await this._templateManager?.getTemplate(templateId);
                 service.setTemplate(template?.content || null);
+            } else {
+                service.setTemplate(null);
             }
 
             const options: GenerationOptions = {
@@ -408,6 +411,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             if (templateId) {
                 const template = await this._templateManager?.getTemplate(templateId);
                 service.setTemplate(template?.content || null);
+            } else {
+                service.setTemplate(null);
             }
 
             const options: GenerationOptions = {
@@ -425,8 +430,10 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
             this.sendSuccess(
                 `Generated combined tests`,
                 result.files[0],
-                result.content
+                result.content,
+                result.summary
             );
+            void reportSummary(result.summary, `Combined: ${path.basename(openApiPath)}`);
             await this.sendHistory();
 
         } catch (error) {
@@ -478,8 +485,8 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
         this.sendMessage({ type: 'progress', message, percentage });
     }
 
-    private sendSuccess(message: string, filePath: string, content: string) {
-        this.sendMessage({ type: 'success', message, filePath, content });
+    private sendSuccess(message: string, filePath: string, content: string, summary?: { headline: string; details: string[] }) {
+        this.sendMessage({ type: 'success', message, filePath, content, ...(summary ? { summary: { headline: summary.headline, details: summary.details } } : {}) });
     }
 
     private sendError(message: string) {
@@ -1456,7 +1463,7 @@ export class KarateWebviewProvider implements vscode.WebviewViewProvider {
                 <div class="help-section">
                     <p><strong>Precision Controls:</strong> In OpenAPI & Combined tabs, use checkboxes to filter by scenario type (positive, negative, edge, security) and HTTP method (GET, POST, PUT, DELETE, PATCH). Add free-text instructions for Copilot.</p>
                     <p><strong>Structuring Strategies:</strong> Set <code>karateDsl.generation.structuringStrategy</code> to <code>domain</code> (default — groups by API domain), <code>flat</code> (single file), or <code>method</code> (groups by HTTP verb).</p>
-                    <p><strong>Smart Reusability:</strong> Generated tests are auto-analyzed for repeated patterns (auth, setup, headers). Common steps are extracted to <code>common/</code> feature files with <code>call</code>/<code>callonce</code>.</p>
+                    <p><strong>Smart Reusability:</strong> Generated tests are planned with shared helpers from the start: authentication is a single <code>call read('classpath:common/auth.feature')</code> line, and a missing helper is reported by the quality gate rather than stubbed.</p>
                     <p><strong>Agent Skills:</strong> Copilot prompts are hardened with skill files for Karate DSL expertise, preventing hallucinations and enforcing best practices.</p>
                 </div>
             </div>

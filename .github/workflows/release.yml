@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version
+        id: version
+        run: echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether the tag exists
+        id: tag
+        run: |
+          if git rev-parse -q --verify "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node
+        if: steps.tag.outputs.exists == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        if: steps.tag.outputs.exists == 'false'
+        run: npm ci
+
+      - name: Verify
+        if: steps.tag.outputs.exists == 'false'
+        run: npm run verify
+
+      - name: Package
+        if: steps.tag.outputs.exists == 'false'
+        run: npx vsce package --out karate-test-generator-${{ steps.version.outputs.tag }}.vsix
+
+      - name: Tag and create GitHub release
+        if: steps.tag.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            "karate-test-generator-${{ steps.version.outputs.tag }}.vsix" \
+            --target "${{ github.sha }}" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --generate-notes
+
+      - name: Publish to VS Code Marketplace
+        if: steps.tag.outputs.exists == 'false' && env.VSCE_PAT != ''
+        run: npx vsce publish --packagePath "karate-test-generator-${{ steps.version.outputs.tag }}.vsix"
+
+      - name: Publish to Open VSX
+        if: steps.tag.outputs.exists == 'false' && env.OVSX_PAT != ''
+        run: npx --yes ovsx publish "karate-test-generator-${{ steps.version.outputs.tag }}.vsix" -p "$OVSX_PAT"

@@ -1,0 +1,425 @@
+const fs = require('fs');
+const assert = require('node:assert/strict');
+const yaml = require('js-yaml');
+const { fixture } = require('./support/golden.cjs');
+
+const out = rel => require('../../out/' + rel);
+const pipeline = () => out('generation/pipeline/GenerationPipeline');
+const cfgMod = () => out('generation/config/GeneratorConfig');
+
+const buildModel = () => out('generation/adapters/openapi').buildOpenApiModel(yaml.load(fs.readFileSync(fixture('openapi', 'petstore-secured.yaml'), 'utf8')), 'petstore');
+const config = (over = {}) => {
+    const base = JSON.parse(JSON.stringify(cfgMod().DEFAULT_GENERATOR_CONFIG));
+    for (const [k, v] of Object.entries(over)) base[k] = { ...base[k], ...v };
+    return base;
+};
+const project = (over = {}) => ({ classpathRoot: 'src/test/java', envConfigs: [], hasEnvJson: false, runnerStyle: 'unknown', ...over });
+
+function memFs(initial = {}) {
+    const map = new Map(Object.entries(initial));
+    return {
+        map,
+        exists: p => map.has(p) || [...map.keys()].some(k => k.startsWith(p + '/')),
+        read: p => {
+            if (!map.has(p)) throw new Error('ENOENT ' + p);
+            return map.get(p);
+        },
+        list: dir => [...new Set([...map.keys()].filter(k => k.startsWith(dir + '/')).map(k => k.slice(dir.length + 1).split('/')[0]))],
+        write: (p, c) => { map.set(p, c); }
+    };
+}
+const history = () => {
+    const h = new Map();
+    return { get: p => h.get(p), set: (p, v) => { h.set(p, v); } };
+};
+const base = (over = {}) => ({
+    model: buildModel(), config: config(), project: project(), fsApi: memFs(), history: history(),
+    generatorVersion: '9.9.9', sourceRef: 'petstore-secured.yaml', mode: 'openapi', ...over
+});
+const run = i => pipeline().runPipeline(i);
+const featureFiles = fsApi => [...fsApi.map.keys()].filter(k => k.endsWith('.feature') && k.startsWith('src/test/karate/')).sort();
+const echo = async p => /<feature>\n([\s\S]*?)\n<\/feature>/.exec(p.user)[1];
+
+const step = (keyword, text) => ({ keyword, text });
+const plannedFeature = (name, scenarios, extra = {}) => ({
+    relativePath: `bad/${name}.feature`,
+    feature: { name, background: { steps: [step('*', 'url baseUrl')] }, scenarios, ...extra }
+});
+const okScenario = name => ({ name, tags: ['positive'], steps: [step('Given', "path 'x'"), step('When', 'method get'), step('Then', 'status 200')] });
+const urlScenario = name => ({ name, tags: ['positive'], steps: [step('Given', "url 'http://x'"), step('And', "path 'x'"), step('When', 'method get'), step('Then', 'status 200')] });
+const scoutModel = () => ({ source: 'scout', name: 'x', schemes: [], operations: [], unsupported: [] });
+
+module.exports = [
+    {
+        name: 'pipeline: auth helper without Configures header warns but does not draft secured operations',
+        async run() {
+            const apiKeyModel = { source: 'openapi', name: 'keys', baseUrl: 'https://example.test', schemes: [{ name: 'apiKeyAuth', kind: 'apiKey', in: 'header', paramName: 'X-API-Key' }], unsupported: [], operations: [{ id: 'listKeys', method: 'GET', path: '/keys', tags: [], sourceRef: 'GET /keys', security: ['apiKeyAuth'], securityGroups: [['apiKeyAuth']], responses: [{ status: 200, schema: { type: 'object' } }], pathParams: [], queryParams: [], headerParams: [] }] };
+            const i = base({ model: apiKeyModel, fsApi: memFs({ 'src/test/java/common/auth.feature': '@ignore\nFeature: user auth\n' }) });
+            const r = await run(i);
+            const features = [...i.fsApi.map.entries()].filter(([p]) => p.endsWith('.feature')).map(([, text]) => text).join('\n');
+            assert.ok(r.warnings.includes("common/auth.feature has no '# Configures:' header; cannot verify auth coverage"), r.warnings.join('\n'));
+            assert.ok(!features.includes('Requires auth scheme(s) not configured'), features);
+        }
+    },
+    {
+        name: 'pipeline: existing bearer-only auth helper drafts apiKey operations and warns',
+        async run() {
+            const apiKeyModel = { source: 'openapi', name: 'keys', baseUrl: 'https://example.test', schemes: [{ name: 'apiKeyAuth', kind: 'apiKey', in: 'header', paramName: 'X-API-Key' }], unsupported: [], operations: [{ id: 'listKeys', method: 'GET', path: '/keys', tags: [], sourceRef: 'GET /keys', security: ['apiKeyAuth'], securityGroups: [['apiKeyAuth']], responses: [{ status: 200, schema: { type: 'object' } }], pathParams: [], queryParams: [], headerParams: [] }] };
+            const i = base({ model: apiKeyModel, fsApi: memFs({ 'src/test/java/common/auth.feature': '# Configures: bearerAuth\n@ignore\nFeature: user auth\n' }) });
+            const r = await run(i);
+            const features = [...i.fsApi.map.entries()].filter(([p]) => p.endsWith('.feature')).map(([, text]) => text).join('\n');
+            assert.ok(features.includes('Requires auth scheme(s) not configured by existing common/auth.feature: apiKeyAuth'), features);
+            assert.ok(r.warnings.some(w => /apiKeyAuth/.test(w)), r.warnings.join('\n'));
+        }
+    },
+    {
+        name: 'pipeline: petstore end-to-end writes scaffold, data, schemas and features with zero gate errors',
+        async run() {
+            const i = base();
+            const r = await run(i);
+            for (const p of [
+                'src/test/java/karate-config.js', 'src/test/java/karate-config-dev.js', 'src/test/java/karate-config-staging.js',
+                'src/test/java/common/auth.feature', 'src/test/java/common/utils.feature',
+                'src/test/java/data/pets.json', 'src/test/java/schemas/pets.json', 'src/test/java/schemas/system.json'
+            ]) assert.ok(i.fsApi.exists(p), `missing ${p}`);
+            assert.deepEqual(featureFiles(i.fsApi), [
+                'src/test/karate/pets/pets-crud.feature', 'src/test/karate/pets/pets-security.feature',
+                'src/test/karate/pets/pets.feature', 'src/test/karate/system/system.feature'
+            ]);
+            assert.equal(r.gate.errors, 0, JSON.stringify(r.features.map(f => f.findings.filter(x => x.severity === 'error'))));
+            assert.equal(r.features.length, 4);
+            assert.ok(i.fsApi.read('src/test/karate/pets/pets.feature').startsWith('# Generated by Karate Test Management 9.9.9 | source: petstore-secured.yaml | hash: '));
+            assert.equal(r.written.sideBySide.length, 0);
+            assert.ok(r.written.created.includes('src/test/java/karate-config.js'));
+            assert.ok(r.warnings.some(w => /multipart/.test(w)), 'planner warnings are surfaced');
+            assert.ok(r.draftScenarios > 0, 'petstore plan contains drafts');
+            assert.ok(r.features.some(f => f.draft));
+        }
+    },
+    {
+        name: 'pipeline: second identical run updates features only and leaves karate-config.js untouched',
+        async run() {
+            const i = base();
+            await run(i);
+            const cfgBefore = i.fsApi.read('src/test/java/karate-config.js');
+            i.fsApi.write('src/test/java/karate-config.js', cfgBefore + '// user edit\n');
+            const r2 = await run({ ...i });
+            assert.deepEqual(r2.written.created, []);
+            assert.deepEqual(r2.written.sideBySide, []);
+            assert.ok(r2.written.skippedExisting.includes('src/test/java/karate-config.js'));
+            assert.equal(i.fsApi.read('src/test/java/karate-config.js'), cfgBefore + '// user edit\n');
+            assert.equal(r2.written.updated.filter(p => p.endsWith('.feature') && p.startsWith('src/test/karate')).length, 4);
+        }
+    },
+    {
+        name: 'pipeline: user-edited generated feature gets a side-by-side file and the edit stays intact',
+        async run() {
+            const i = base();
+            await run(i);
+            const p = 'src/test/karate/system/system.feature';
+            const edited = i.fsApi.read(p) + '\n# my note\n';
+            i.fsApi.write(p, edited);
+            const r2 = await run({ ...i });
+            assert.equal(r2.written.sideBySide.length, 1);
+            assert.equal(r2.written.sideBySide[0].path, p);
+            assert.equal(i.fsApi.read(p), edited);
+            assert.ok(i.fsApi.exists(r2.written.sideBySide[0].generatedPath));
+        }
+    },
+    {
+        name: 'pipeline: AI off has no refinement; AI on with an echoing model is unchanged and gate-clean',
+        async run() {
+            const off = await run(base());
+            assert.ok(off.features.every(f => f.refinement === undefined));
+            let calls = 0;
+            const ai = async p => { calls++; return echo(p); };
+            const on = await run(base({ ai }));
+            assert.equal(calls, 4);
+            assert.equal(on.gate.errors, 0);
+            assert.ok(on.features.every(f => f.refinement && f.refinement.status === 'unchanged'));
+            const offAi = await run(base({ ai, config: config({ ai: { refine: false } }) }));
+            assert.ok(offAi.features.every(f => f.refinement === undefined));
+        }
+    },
+    {
+        name: 'pipeline: AI output with a hard-coded URL is rejected and the deterministic text is written',
+        async run() {
+            const ai = async p => echo(p).then(t => t.replace('* url baseUrl', "* url 'http://evil.example'"));
+            const i = base({ ai });
+            const r = await run(i);
+            const pets = r.features.find(f => f.path.endsWith('pets/pets.feature'));
+            assert.equal(pets.refinement.status, 'rejected');
+            assert.ok(pets.refinement.findings.some(f => f.ruleId === 'V2-CFG-001'));
+            assert.ok(!i.fsApi.read(pets.path).includes('evil.example'));
+            assert.equal(r.gate.errors, 0);
+        }
+    },
+    {
+        name: 'pipeline: adopted project (baseConfig set) writes no config files',
+        async run() {
+            const i = base({ project: project({ baseConfig: { path: 'src/test/java/karate-config.js', urlVariable: 'baseUrl', variables: ['baseUrl'] } }) });
+            const r = await run(i);
+            const all = [...i.fsApi.map.keys()];
+            assert.ok(!all.some(k => /karate-config/.test(k)), all.join(','));
+            assert.ok(r.written.created.some(p => p.endsWith('common/auth.feature')));
+        }
+    },
+    {
+        name: 'pipeline: failing feature is written with the failing scenario @ignore and reported',
+        async run() {
+            const i = base({ model: scoutModel(), mode: 'scout', scenarios: [plannedFeature('Bad', [okScenario('fine'), urlScenario('literal url')])] });
+            const r = await run(i);
+            const text = i.fsApi.read('src/test/karate/bad/Bad.feature');
+            assert.match(text, /@ignore @positive\n\s*Scenario: literal url/);
+            assert.match(text, /# Draft: Quality gate: V2-CFG-001/);
+            assert.ok(!/@ignore[^\n]*\n\s*Scenario: fine/.test(text));
+            assert.ok(r.gate.errors >= 1);
+            assert.ok(r.features[0].findings.some(f => f.ruleId === 'V2-CFG-001'));
+            assert.equal(r.features[0].draft, true);
+            assert.equal(r.draftScenarios, 1);
+        }
+    },
+    {
+        name: 'pipeline: file-level gate error marks the whole Feature @ignore',
+        async run() {
+            const f = plannedFeature('Orphan', [okScenario('fine')], { description: '* def x = 1' });
+            const i = base({ model: scoutModel(), mode: 'scout', scenarios: [f] });
+            const r = await run(i);
+            const text = i.fsApi.read('src/test/karate/bad/Orphan.feature');
+            assert.match(text, /^@ignore\nFeature: Orphan/m);
+            assert.ok(r.features[0].findings.some(x => x.ruleId === 'V2-GHERKIN-001'));
+            assert.equal(r.features[0].draft, true);
+            assert.equal(r.draftScenarios, 1);
+        }
+    },
+    {
+        name: "pipeline: failOn 'never' writes failing features as they are",
+        async run() {
+            const i = base({ model: scoutModel(), mode: 'scout', config: config({ gate: { failOn: 'never' } }), scenarios: [plannedFeature('Bad', [urlScenario('literal url')])] });
+            const r = await run(i);
+            const text = i.fsApi.read('src/test/karate/bad/Bad.feature');
+            assert.ok(!text.includes('@ignore'));
+            assert.ok(r.gate.errors >= 1);
+            assert.equal(r.features[0].draft, false);
+        }
+    },
+    {
+        name: 'pipeline: progress is monotonic and ends at 100; draftScenarios counts planner drafts',
+        async run() {
+            const seen = [];
+            const r = await run(base({ progress: (m, pct) => { seen.push(pct); assert.equal(typeof m, 'string'); } }));
+            assert.ok(seen.length >= 5);
+            for (let k = 1; k < seen.length; k++) assert.ok(seen[k] >= seen[k - 1], seen.join(','));
+            assert.equal(seen[seen.length - 1], 100);
+            const planned = out('generation/plan/OpenApiPlanner').planOpenApi(buildModel(), config());
+            const expected = planned.features.flatMap(f => f.feature.scenarios).filter(s => s.draftReason !== undefined).length;
+            assert.equal(r.draftScenarios, expected);
+        }
+    },
+    {
+        name: 'pipeline: output is byte-identical across runs with fresh file systems',
+        async run() {
+            const a = base();
+            const b = base();
+            await run(a);
+            await run(b);
+            assert.deepEqual([...a.fsApi.map.entries()].sort(), [...b.fsApi.map.entries()].sort());
+        }
+    },
+    {
+        name: 'pipeline: dry run is optional, runs before protected writes and never throws out of the pipeline',
+        async run() {
+            let got;
+            const r = await run(base({ dryRun: async files => { got = files; return { status: 'passed', message: 'ok', findings: [] }; } }));
+            assert.equal(r.dryRun.status, 'passed');
+            assert.ok(got.length === 4 && got.every(f => f.path.endsWith('.feature') && typeof f.content === 'string'));
+            const bad = await run(base({ dryRun: async () => { throw new Error('boom'); } }));
+            assert.equal(bad.dryRun.status, 'skipped');
+            assert.match(bad.dryRun.message, /boom/);
+            const off = await run(base({ config: config({ gate: { dryRun: 'off' } }), dryRun: async () => { throw new Error('must not run'); } }));
+            assert.equal(off.dryRun, undefined);
+            assert.equal((await run(base())).dryRun, undefined);
+        }
+    },
+    {
+        name: 'pipeline: outputRoot traversal is rejected before the writer',
+        async run() {
+            const i = base({ config: config({ layout: { outputRoot: '../../x' } }) });
+            const r = await run(i);
+            assert.equal(featureFiles(i.fsApi).length, 0);
+            assert.ok(r.warnings.some(w => /Output root.*escapes/.test(w)));
+        }
+    },
+    {
+        name: 'pipeline: a failed dry run preserves an edited feature and writes only a clearly marked draft sibling',
+        async run() {
+            const i = base();
+            await run(i);
+            const p = 'src/test/karate/system/system.feature';
+            const before = i.fsApi.read(p) + '# user edit\n';
+            i.fsApi.write(p, before);
+            const r = await run({ ...i, dryRun: async () => ({ status: 'failed', message: 'parse error', findings: [] }) });
+            assert.equal(i.fsApi.read(p), before);
+            assert.ok(r.written.sideBySide.some(x => x.path === p));
+            assert.ok(r.warnings.some(w => /Dry run failed/.test(w)), r.warnings.join('|'));
+        }
+    },
+    {
+        name: 'pipeline: a failed dry run on a fresh workspace writes every feature only to marked draft siblings',
+        async run() {
+            const i = base({ dryRun: async () => ({ status: 'failed', message: 'parse error', findings: [] }) });
+            const r = await run(i);
+            const primary = featureFiles(i.fsApi).filter(p => !p.includes('.generated.'));
+            const drafts = featureFiles(i.fsApi).filter(p => p.includes('.generated.'));
+            assert.deepEqual(primary, []);
+            assert.equal(drafts.length, r.features.length);
+            assert.ok(drafts.every(p => i.fsApi.read(p).includes('# Draft: Karate v2 dry run failed; review before use')));
+            assert.equal(r.written.sideBySide.length, r.features.length);
+        }
+    },
+    {
+        name: 'pipeline: traversal and absolute output roots are rejected without writes outside the workspace',
+        async run() {
+            for (const outputRoot of ['../../x', '/tmp/x']) {
+                const i = base({ root: '/workspace', config: config({ layout: { outputRoot } }) });
+                const r = await run(i);
+                assert.ok(![...i.fsApi.map.keys()].some(p => p.includes('/x/')), [...i.fsApi.map.keys()].join(','));
+                assert.ok(r.warnings.some(w => /outside the workspace|absolute/.test(w)), r.warnings.join('|'));
+            }
+        }
+    },
+    {
+        name: 'pipeline: missing required input is a programmer error',
+        async run() {
+            await assert.rejects(() => run({ ...base(), model: undefined }), /model/);
+            await assert.rejects(() => run({ ...base(), fsApi: undefined }), /fsApi/);
+        }
+    },
+    {
+        name: 'pipeline: project-only files under common/, data/, schemas/ (recursive) are known; missing ones are not',
+        async run() {
+            const existing = { 'src/test/java/schemas/user.json': '{}', 'src/test/java/common/sub/x.feature': 'Feature: x\n' };
+            const withRefs = refs => async p => (await echo(p)).replace('* url baseUrl', `* url baseUrl\n${refs.map(r => `    * def v${Math.abs(r.length)} = read('classpath:${r}')`).join('\n')}`);
+            const good = await run(base({ fsApi: memFs(existing), ai: withRefs(['schemas/user.json', 'common/sub/x.feature']) }));
+            const pets = good.features.find(f => f.path.endsWith('pets/pets.feature'));
+            assert.equal(pets.refinement.status, 'refined', JSON.stringify(pets.refinement.findings));
+            assert.equal(good.gate.errors, 0);
+            const bad = await run(base({ fsApi: memFs(existing), ai: withRefs(['schemas/nope.json']) }));
+            const badPets = bad.features.find(f => f.path.endsWith('pets/pets.feature'));
+            assert.equal(badPets.refinement.status, 'rejected');
+            assert.ok(badPets.refinement.findings.some(f => f.ruleId === 'V2-REF-001'));
+        }
+    },
+    {
+        name: 'pipeline: trailing-slash classpathRoot still yields known files; ./ prefixes normalise',
+        async run() {
+            const ai = async p => (await echo(p)).replace('* url baseUrl', "* url baseUrl\n    * def v = read('classpath:schemas/nope.json')");
+            const i = base({ project: project({ classpathRoot: 'src/test/java/' }), ai, extraFiles: [{ path: './src/test/java//extra.txt', content: 'x', owner: 'user' }] });
+            const r = await run(i);
+            assert.equal(r.features.find(f => f.path.endsWith('pets/pets.feature')).refinement.status, 'rejected');
+            assert.ok(i.fsApi.exists('src/test/java/karate-config.js'));
+            assert.ok(i.fsApi.exists('src/test/java/extra.txt'));
+            assert.ok(r.written.created.includes('src/test/java/extra.txt'));
+        }
+    },
+    {
+        name: 'pipeline: root prefix applies to relative paths and rejects an absolute outputRoot',
+        async run() {
+            const rel = base({ root: '/ws/' });
+            await run(rel);
+            assert.ok(rel.fsApi.exists('/ws/src/test/karate/system/system.feature'));
+            assert.ok(rel.fsApi.exists('/ws/src/test/java/karate-config.js'));
+            const abs = base({ root: '/ws', config: config({ layout: { outputRoot: '/abs/out' } }) });
+            const rejected = await run(abs);
+            assert.ok(!abs.fsApi.exists('/abs/out/system/system.feature'));
+            assert.ok(rejected.warnings.some(w => /absolute or escapes/.test(w)));
+            assert.ok(![...abs.fsApi.map.keys()].some(k => k.startsWith('/ws//abs')));
+        }
+    },
+    {
+        name: 'pipeline: write failure returns the partial report after its pre-write dry run',
+        async run() {
+            const i = base();
+            const realWrite = i.fsApi.write;
+            i.fsApi.write = (p, c) => { if (p.endsWith('system/system.feature')) throw new Error('disk full'); realWrite(p, c); };
+            let got;
+            const r = await run({ ...i, dryRun: async files => { got = files; return { status: 'passed', message: 'ok' }; } });
+            assert.ok(r.warnings.some(w => /system\/system\.feature/.test(w) && /disk full/.test(w) && /already written/.test(w)), r.warnings.join('|'));
+            assert.ok(r.written.created.length >= 5);
+            assert.ok(!r.written.created.some(p => p.endsWith('system/system.feature')));
+            assert.equal(got.length, 4);
+            assert.equal(r.dryRun.status, 'passed');
+        }
+    },
+    {
+        name: 'pipeline: failing 3rd write reports exactly the two earlier files after a pre-write dry run',
+        async run() {
+            const i = base();
+            const realWrite = i.fsApi.write;
+            let n = 0;
+            i.fsApi.write = (p, c) => { if (++n === 3) throw new Error('boom'); realWrite(p, c); };
+            let called = false;
+            const r = await run({ ...i, dryRun: async () => { called = true; return { status: 'passed', message: '' }; } });
+            assert.equal(r.written.created.length, 2);
+            assert.ok(r.warnings.some(w => /boom/.test(w) && /2 file/.test(w)));
+            assert.equal(called, true);
+            assert.equal(r.dryRun.status, 'passed');
+        }
+    },
+    {
+        name: 'pipeline: OutputWriter throws WriteError with the partial report',
+        run() {
+            const { OutputWriter, WriteError } = out('generation/write/OutputWriter');
+            const f = memFs();
+            let n = 0;
+            const fsApi = { ...f, write: (p, c) => { if (++n === 2) throw new Error('nope'); f.write(p, c); } };
+            try {
+                OutputWriter.write([{ path: 'a', content: '1', owner: 'user' }, { path: 'b', content: '2', owner: 'user' }], fsApi, history(), { generatorVersion: '1' });
+                assert.fail('should throw');
+            } catch (e) {
+                assert.ok(e instanceof WriteError);
+                assert.equal(e.failedPath, 'b');
+                assert.deepEqual(e.partial.created, ['a']);
+            }
+        }
+    },
+    {
+        name: 'pipeline: duplicate feature paths keep the first with a warning; extraFiles never override scaffold files',
+        async run() {
+            const a = plannedFeature('Dup', [okScenario('first')]);
+            const b = { ...plannedFeature('Dup', [okScenario('second'), okScenario('third')]) };
+            const i = base({ model: scoutModel(), mode: 'scout', scenarios: [a, b], extraFiles: [{ path: 'src/test/java/karate-config.js', content: '// mine', owner: 'user' }] });
+            const r = await run(i);
+            assert.equal(r.features.length, 1);
+            const text = i.fsApi.read('src/test/karate/bad/Dup.feature');
+            assert.ok(text.includes('first') && !text.includes('second'));
+            assert.ok(r.warnings.some(w => /bad\/Dup\.feature/.test(w) && /2 scenario/.test(w) && /collides/.test(w)), r.warnings.join('|'));
+            assert.ok(r.warnings.some(w => /karate-config\.js/.test(w) && /collides/.test(w)));
+            assert.ok(!i.fsApi.read('src/test/java/karate-config.js').includes('// mine'));
+        }
+    },
+    {
+        name: 'pipeline: refined text that keeps pre-existing gate errors is reverted to the deterministic text',
+        async run() {
+            const ai = async p => (await echo(p)).replace('Then status 200', 'Then status 200\n    And match response != null');
+            const i = base({ model: scoutModel(), mode: 'scout', ai, scenarios: [plannedFeature('Bad', [urlScenario('literal url')])] });
+            const r = await run(i);
+            assert.equal(r.features[0].refinement.status, 'rejected');
+            assert.ok(r.warnings.some(w => /refined output failed the quality gate/.test(w)));
+            const text = i.fsApi.read('src/test/karate/bad/Bad.feature');
+            assert.ok(!text.includes('response != null'));
+            assert.match(text, /@ignore @positive\n\s*Scenario: literal url/);
+        }
+    },
+    {
+        name: 'pipeline: extraFeatures are written alongside the planned OpenAPI features (combined mode)',
+        async run() {
+            const i = base({ mode: 'combined', extraFeatures: [plannedFeature('Reqs', [okScenario('from confluence')])] });
+            const r = await run(i);
+            const files = featureFiles(i.fsApi);
+            assert.ok(files.includes('src/test/karate/pets/pets.feature'));
+            assert.ok(files.includes('src/test/karate/bad/Reqs.feature'));
+            assert.equal(r.features.length, 5);
+        }
+    }
+];

@@ -1,8 +1,8 @@
 {
   "name": "karate-test-generator",
   "displayName": "Karate Test Management",
-  "description": "Generate, run, manage, and improve Karate API tests from one professional VS Code workspace",
-  "version": "2.0.3",
+  "description": "Generate, run, manage, and improve Karate API tests (Karate 2.x, Java 21+) from one professional VS Code workspace",
+  "version": "2.0.4",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -13,6 +13,13 @@
   "galleryBanner": {
     "color": "#17191c",
     "theme": "dark"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Karate Test Management runs Maven, Gradle and Java processes and loads project configuration, so it requires a trusted workspace."
+    },
+    "virtualWorkspaces": false
   },
   "engines": {
     "vscode": "^1.108.0"
@@ -326,7 +333,9 @@
         "karateDsl.outputPath": {
           "type": "string",
           "default": "src/test/karate",
-          "description": "Default output path for generated Karate feature files"
+          "description": "Default output path for generated Karate feature files",
+          "markdownDeprecationMessage": "Deprecated. Use `layout.outputRoot` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use layout.outputRoot in .karate-generator.json instead."
         },
         "karateDsl.confluence.baseUrl": {
           "type": "string",
@@ -359,7 +368,9 @@
             "minimal"
           ],
           "default": "standard",
-          "description": "Test generation template style"
+          "description": "Test generation template style",
+          "markdownDeprecationMessage": "Deprecated. Use `scenarios` and `style` in `.karate-generator.json` (`karateDsl.generation.configFile`) instead.",
+          "deprecationMessage": "Deprecated. Use scenarios and style in .karate-generator.json (karateDsl.generation.configFile) instead."
         },
         "karateDsl.useCopilot": {
           "type": "boolean",
@@ -414,12 +425,16 @@
             "Domain grouping — one feature file per API domain (e.g., orders.feature, payments.feature)",
             "Flat — all scenarios in a single feature file (classic behavior)",
             "Method grouping — one feature file per HTTP method (e.g., get.feature, post.feature)"
-          ]
+          ],
+          "markdownDeprecationMessage": "Deprecated. Use `layout.strategy` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use layout.strategy in .karate-generator.json instead."
         },
         "karateDsl.generation.autoTag": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically tag generated scenarios with @positive, @negative, @edge, @boundary, and @domain tags"
+          "description": "Automatically tag generated scenarios with @positive, @negative, @edge, @boundary, and @domain tags",
+          "markdownDeprecationMessage": "Deprecated. Use `tags.auto` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use tags.auto in .karate-generator.json instead."
         },
         "karateDsl.health.disabledRules": {
           "type": "array",
@@ -508,12 +523,12 @@
         "karateDsl.execution.jarPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Exact local Karate standalone JAR path. Leave blank to use the bundled Karate 1.5.0.RC3 JAR."
+          "markdownDescription": "Exact local Karate standalone JAR path. Leave blank to use Karate 1.5.0.RC3, downloaded (SHA-256 verified, with your consent) on first run."
         },
         "karateDsl.execution.karateVersion": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Karate standalone JAR version to download and cache, e.g. `2.1.0`. Leave blank to use the bundled Karate 1.5.0.RC3 JAR."
+          "markdownDescription": "Karate standalone JAR version to download and cache, e.g. `2.1.0`. Leave blank to use Karate 1.5.0.RC3, downloaded (SHA-256 verified, with your consent) on first run."
         },
         "karateDsl.execution.systemProperties": {
           "type": "object",
@@ -726,19 +741,48 @@
         "karateDsl.generation.smartTestData": {
           "type": "boolean",
           "default": true,
-          "description": "Use realistic, field-aware test values instead of generic placeholders"
+          "description": "Use realistic, field-aware test values instead of generic placeholders",
+          "markdownDeprecationMessage": "Deprecated. Use `data.smart` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use data.smart in .karate-generator.json instead."
         },
         "karateDsl.generation.scenarioOutlineThreshold": {
           "type": "number",
           "default": 3,
           "minimum": 1,
           "maximum": 10,
-          "description": "Minimum required fields to trigger Scenario Outline auto-generation"
+          "description": "Minimum required fields to trigger Scenario Outline auto-generation",
+          "markdownDeprecationMessage": "Deprecated. Use `scenarios.outlineThreshold` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use scenarios.outlineThreshold in .karate-generator.json instead."
         },
         "karateDsl.generation.sharedStylePath": {
           "type": "string",
           "default": "",
-          "description": "Path to workspace-shared .karate-style.json file (relative or absolute)"
+          "description": "Path to workspace-shared .karate-style.json file (relative or absolute)",
+          "markdownDeprecationMessage": "Deprecated. Use `style` in `.karate-generator.json` instead.",
+          "deprecationMessage": "Deprecated. Use style in .karate-generator.json instead."
+        },
+        "karateDsl.generation.configFile": {
+          "type": "string",
+          "default": ".karate-generator.json",
+          "description": "Path (relative to the workspace root) of the generator config file. Values in this file override karateDsl.generation.* settings"
+        },
+        "karateDsl.generation.exploratory": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt in to generating additional @exploratory scenarios (speculative edge cases beyond the spec)"
+        },
+        "karateDsl.generation.configMode": {
+          "type": "string",
+          "default": "standard",
+          "enum": [
+            "standard",
+            "env-json"
+          ],
+          "description": "How generated tests get environment configuration: standard (karate-config.js layout) or env-json (config/<env>.json files)",
+          "enumDescriptions": [
+            "Standard karate-config.js (an existing one is adopted, never overwritten)",
+            "Per-environment JSON files under config/"
+          ]
         },
         "karateDsl.mcp.enabled": {
           "type": "boolean",
@@ -892,8 +936,9 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run test:ai-routing && npm run test:scout && npm run typecheck && npm run lint && npm run package:check",
+    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run test:ai-routing && npm run test:scout && npm run test:generation && npm run typecheck && npm run lint && npm run package:check",
     "test:execution": "npm run compile && node ./scripts/test-execution-engine.cjs",
+    "test:generation": "npm run compile && node ./scripts/test-generation.cjs",
     "test:ai-routing": "npm run compile && node ./scripts/test-ai-routing.cjs",
     "package:check": "npm run build:webview && npm run clean && npm run build:extension && node ./scripts/check-package-files.cjs",
     "test": "node ./out/test/runTest.js",

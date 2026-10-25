@@ -2,12 +2,22 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { logger } from '../utils/logger';
-import { SharedStyleService } from '../services/SharedStyleService';
+import { OpenAPIParser } from '../services/openApiParser';
+import { FileUtils } from '../utils/fileUtils';
+import type { GenerationModel } from '../generation/model/TestModel';
+import { planBatchNamespacing } from '../generation/plan/BatchNamespacing';
+import { planOpenApi } from '../generation/plan/OpenApiPlanner';
+import { formatSummary, mergeResults } from '../generation/pipeline/Summary';
+import type { GenerationSummary } from '../generation/pipeline/Summary';
+import type { PipelineResult } from '../generation/pipeline/GenerationPipeline';
+import { GeneratorConfigLoader } from '../generation/vscode/GeneratorConfigLoader';
+import { reportSummary } from '../generation/vscode/reportSummary';
+import { runGenerationForModel, toIncrementalProgress } from '../generation/vscode/runGeneration';
 
 /**
  * Batch generation command — generates tests for all OpenAPI specs in a folder.
  */
-export async function generateFromDirectory(folderUri: vscode.Uri): Promise<void> {
+export async function generateFromDirectory(folderUri: vscode.Uri, context: vscode.ExtensionContext): Promise<void> {
     if (!folderUri) {
         return;
     }
@@ -31,89 +41,78 @@ export async function generateFromDirectory(folderUri: vscode.Uri): Promise<void
 
             progress.report({ increment: 10, message: `Found ${specFiles.length} files. Validating...` });
 
-            // Import dependencies
-            const { OpenAPIParser } = await import('../services/openApiParser');
-            const { KarateGenerator } = await import('../services/karateGenerator');
-            const { FileUtils } = await import('../utils/fileUtils');
-
-            const parser = new OpenAPIParser();
-            const generator = new KarateGenerator();
-            const sharedStyle = SharedStyleService.loadSharedStyle();
-            if (sharedStyle) {
-                generator.setStyle(sharedStyle);
+            const workspaceRoot = FileUtils.getWorkspaceRoot();
+            if (!workspaceRoot) {
+                vscode.window.showErrorMessage('No workspace folder is open.');
+                return;
             }
 
-            const results: { file: string; success: boolean; scenarios: number; error?: string }[] = [];
-            const increment = 80 / specFiles.length;
+            const parser = new OpenAPIParser();
+            const loaded = await GeneratorConfigLoader.load(workspaceRoot);
+            for (const w of loaded.warnings) { logger.warn(`Generator config: ${w}`); }
+            const useAi = vscode.workspace.getConfiguration('karateDsl').get<boolean>('useCopilot', false);
 
-            for (let i = 0; i < specFiles.length; i++) {
-                if (token.isCancellationRequested) {
-                    break;
-                }
-
-                const specFile = specFiles[i];
+            // Parse every spec first so colliding feature paths (two specs sharing a tag) can be separated.
+            const failures: { file: string; error: string }[] = [];
+            const parsed: { specFile: string; baseName: string; specName: string; model: GenerationModel }[] = [];
+            for (const specFile of specFiles) {
+                if (token.isCancellationRequested) { break; }
                 const baseName = path.basename(specFile);
-                progress.report({
-                    increment,
-                    message: `Processing ${baseName} (${i + 1}/${specFiles.length})`
-                });
-
                 try {
-                    // Validate spec
-                    const SwaggerParser = require('@apidevtools/swagger-parser');
-                    await SwaggerParser.validate(specFile);
-
-                    // Parse and generate
-                    const endpoints = await parser.parseSpec(specFile);
-                    const specFileName = path.basename(specFile, path.extname(specFile));
-                    const feature = generator.generateFromOpenAPI(endpoints, specFileName);
-                    feature.background = generator.generateBackground();
-                    const featureContent = generator.featureToString(feature);
-
-                    // Save file
-                    const outputPath = FileUtils.resolveOutputPath();
-                    const outputFile = path.join(outputPath, `${specFileName}.feature`);
-                    const uniqueFile = FileUtils.getUniqueFilename(outputFile);
-                    FileUtils.writeFile(uniqueFile, featureContent);
-
-                    results.push({ file: baseName, success: true, scenarios: endpoints.length });
-                    logger.info(`Batch generation: ${baseName} → ${endpoints.length} scenarios`);
-
+                    const model = await parser.parseModel(specFile);
+                    parsed.push({ specFile, baseName, specName: path.basename(specFile, path.extname(specFile)), model });
                 } catch (error: any) {
-                    results.push({ file: baseName, success: false, scenarios: 0, error: error.message });
+                    failures.push({ file: baseName, error: error.message });
                     logger.warn(`Batch generation: skipped ${baseName} — ${error.message}`);
                 }
             }
 
-            // Show summary
-            const succeeded = results.filter(r => r.success);
-            const failed = results.filter(r => !r.success);
-            const totalScenarios = succeeded.reduce((sum, r) => sum + r.scenarios, 0);
+            const plannedPaths = parsed.map(p => planOpenApi(p.model, loaded.config).features.map(f => f.relativePath));
+            const namespaces = planBatchNamespacing(parsed.map((p, idx) => ({ specName: p.specName, featurePaths: plannedPaths[idx] })));
+            const colliding = namespaces.map(n => n.subfolder !== undefined);
 
-            let message = `✅ Generated ${totalScenarios} scenarios from ${succeeded.length} spec(s)`;
-            if (failed.length > 0) {
-                message += ` | ⚠️ ${failed.length} file(s) skipped`;
+            const results: PipelineResult[] = [];
+            const succeeded: string[] = [];
+            const increment = 80 / Math.max(1, parsed.length);
+
+            for (let i = 0; i < parsed.length; i++) {
+                if (token.isCancellationRequested) { break; }
+                const spec = parsed[i];
+                progress.report({ increment: 0, message: `Processing ${spec.baseName} (${i + 1}/${parsed.length})` });
+                try {
+                    const ns = namespaces[i];
+                    const config = ns.subfolder
+                        ? { ...loaded.config, layout: { ...loaded.config.layout, outputRoot: `${loaded.config.layout.outputRoot}/${ns.subfolder}` } }
+                        : loaded.config;
+                    // Config discovery is shared; scaffold files are written once and later runs keep the existing ones.
+                    const run = await runGenerationForModel({
+                        context, workspaceRoot, model: spec.model, sourceRef: spec.baseName, mode: 'openapi', useAi,
+                        config, planOptions: { filePrefix: ns.filePrefix }, progress: toIncrementalProgress(progress, { from: 0, to: increment })
+                    });
+                    results.push(run);
+                    succeeded.push(spec.baseName);
+                    logger.info(`Batch generation: ${spec.baseName} → ${run.createdPaths.length} feature file(s)`);
+                } catch (error: any) {
+                    failures.push({ file: spec.baseName, error: error.message });
+                    logger.warn(`Batch generation: skipped ${spec.baseName} — ${error.message}`);
+                }
             }
 
-            const action = await vscode.window.showInformationMessage(
-                message,
-                'Show Details',
-                'Dismiss'
-            );
-
-            if (action === 'Show Details') {
-                const details = results.map(r =>
-                    r.success
-                        ? `✅ ${r.file}: ${r.scenarios} scenarios`
-                        : `❌ ${r.file}: ${r.error}`
-                ).join('\n');
-
-                const doc = await vscode.workspace.openTextDocument({
-                    content: `# Batch Generation Report\n\n${details}`,
-                    language: 'markdown'
-                });
-                await vscode.window.showTextDocument(doc);
+            const base = formatSummary(mergeResults(results));
+            const details = [...base.details];
+            if (colliding.some(Boolean)) {
+                details.push('Note: specs that share feature paths were written to per-spec sub-folders; data and schema files are namespaced per spec');
             }
+            if (failures.length > 0) {
+                details.push(`Skipped specs (${failures.length})`);
+                for (const f of failures) { details.push(`  ${f.file}: ${f.error}`); }
+            }
+            const summary: GenerationSummary = {
+                headline: `${succeeded.length} of ${specFiles.length} spec(s) processed: ${base.headline}${failures.length ? `; ${failures.length} skipped` : ''}`,
+                details,
+                level: failures.length > 0 ? 'warning' : base.level
+            };
+            void reportSummary(summary, `Batch: ${path.basename(folderPath)}`);
         });
     } catch (error) {
         logger.error('Batch generation failed', error as Error);
