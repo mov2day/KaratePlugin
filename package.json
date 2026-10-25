@@ -14,6 +14,13 @@
     "color": "#17191c",
     "theme": "dark"
   },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Karate Test Management runs Maven, Gradle and Java processes and loads project configuration, so it requires a trusted workspace."
+    },
+    "virtualWorkspaces": false
+  },
   "engines": {
     "vscode": "^1.108.0"
   },

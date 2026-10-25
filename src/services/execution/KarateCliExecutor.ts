@@ -242,7 +242,7 @@ export class KarateCliExecutor {
     private static async getJavaMajorVersion(): Promise<number | undefined> {
         return new Promise((resolve) => {
             let output = '';
-            const process = spawn('java', ['-version'], { shell: true });
+            const process = spawn('java', ['-version'], { shell: false, windowsHide: true });
             process.stdout?.on('data', data => output += data.toString());
             process.stderr?.on('data', data => output += data.toString());
             process.on('close', () => {
