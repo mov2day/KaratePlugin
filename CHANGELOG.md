@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **No bundled Karate jar.** The ~68 MB Karate jar is no longer packaged; it is downloaded from GitHub Releases after an explicit prompt, SHA-256 verified for known versions, and cached in global storage. Set `karateDsl.execution.jarPath` for offline use. Also: untrusted workspaces are declared unsupported and the Java probe no longer uses a shell.
 
+- **Automated releases.** Merging to `main` tags `v<package.json version>` (if new), builds the VSIX, creates a GitHub release, and publishes to the VS Code Marketplace and Open VSX when `VSCE_PAT` / `OVSX_PAT` secrets are set. Bump `version` in `package.json` to cut a release.
+
 ### Changed
 - **Business enrich follows AI use.** `ai.enrich` now defaults to `business`: when AI generation is enabled (`karateDsl.useCopilot`, via the provider you selected) the model also gets the business context and may add marked `# AI-proposed` scenarios. Without AI nothing changes. Set `ai.enrich: "off"` in the config file to opt out.
 - **AI business enrich covers GraphQL, Postman and HAR.** GraphQL generation now honors `karateDsl.useCopilot` (it was always off) and its model carries field, argument and type descriptions plus enum values. Postman models carry folder names, request descriptions, `pm.test` titles and saved example names; HAR models carry the resource tag and observed id flows. Descriptions are model-only and credential-redacted; generated features are unchanged.
