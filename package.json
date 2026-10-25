@@ -523,12 +523,12 @@
         "karateDsl.execution.jarPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Exact local Karate standalone JAR path. Leave blank to use the bundled Karate 1.5.0.RC3 JAR."
+          "markdownDescription": "Exact local Karate standalone JAR path. Leave blank to use Karate 1.5.0.RC3, downloaded (SHA-256 verified, with your consent) on first run."
         },
         "karateDsl.execution.karateVersion": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Karate standalone JAR version to download and cache, e.g. `2.1.0`. Leave blank to use the bundled Karate 1.5.0.RC3 JAR."
+          "markdownDescription": "Karate standalone JAR version to download and cache, e.g. `2.1.0`. Leave blank to use Karate 1.5.0.RC3, downloaded (SHA-256 verified, with your consent) on first run."
         },
         "karateDsl.execution.systemProperties": {
           "type": "object",

@@ -56,6 +56,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Initialize Agent Skills with extension path for bundled skills
     AgentSkillsService.setExtensionPath(context.extensionPath);
+    KarateCliExecutor.configureStorage(path.join(context.globalStorageUri.fsPath, 'karate'));
 
     // Initialize Services
     const linter = new KarateLinter();

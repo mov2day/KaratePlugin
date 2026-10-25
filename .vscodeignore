@@ -38,3 +38,4 @@ DEVELOPMENT.md
 SETUP.md
 CONTRIBUTING.md
 setup.sh
+lib/*.jar

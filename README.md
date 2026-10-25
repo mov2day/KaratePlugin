@@ -227,7 +227,7 @@ Automatic discovery works for most projects. Use these settings only when your r
 | `karateDsl.execution.karateVersion` | Download and cache a selected standalone Karate version |
 | `karateDsl.execution.historyLimit` | Number of v2 run-history entries retained per workspace folder |
 
-Karate 2.x standalone execution requires Java 21 or later. Leaving `jarPath` and `karateVersion` blank keeps the bundled Karate `1.5.0.RC3` JAR for compatibility. The generation quality gate's dry-run uses only a Karate v2 CLI (`karate` on `PATH`, or a v2 jar set in `jarPath`) and is skipped when none is found; the bundled jar is never used for it.
+Karate 2.x standalone execution requires Java 21 or later. Leaving `jarPath` and `karateVersion` blank uses Karate `1.5.0.RC3` for compatibility; the extension no longer ships a jar and, with your consent, downloads it from GitHub Releases on first run (SHA-256 verified, cached in VS Code's global storage). The generation quality gate's dry-run uses only a Karate v2 CLI (`karate` on `PATH`, or a v2 jar set in `jarPath`) and is skipped when none is found; the downloaded v1 jar is never used for it.
 
 ## AI providers
 

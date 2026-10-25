@@ -27,6 +27,7 @@ const forbidden = [
   /^out\/test\//,
   /^out\/debug\//,
   /^api\//,
+  /\.jar$/,
   /^scripts\/test-telemetry-collector\.cjs$/,
   /^vercel\.json$/,
   /^\.karate-test-management\//,
@@ -63,8 +64,7 @@ const required = [
   'resources/scout-companion/manifest.json',
   'resources/scout-companion/browser-scripts.js',
   'skills/manifest.json',
-  'skills/karate-v2-core.md',
-  'lib/karate-1.5.0.RC3.jar'
+  'skills/karate-v2-core.md'
 ];
 
 const missing = required.filter((file) => !files.includes(file));
