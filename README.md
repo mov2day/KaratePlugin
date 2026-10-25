@@ -2,7 +2,7 @@
 
 Generate, run, manage, and improve Karate API tests without leaving VS Code.
 
-[![Version](https://img.shields.io/badge/version-2.0.4-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-2.0.5-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-2c9b69.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-5c6370.svg)](LICENSE)
 
@@ -10,9 +10,9 @@ Generate, run, manage, and improve Karate API tests without leaving VS Code.
 
 Karate Test Management brings test creation, execution, coverage, quality, and maintenance into one professional workspace. Use the compact Activity Bar view for quick actions, then open the expanded workspace when you need the full test library, run history, quality queue, or import tools.
 
-## Version 2.0.4 highlights
+## Version 2.0.5 highlights
 
-2.0.4 moves OpenAPI, requirements, imports, Scout, and MCP generation onto the same Karate 2.x-focused path. It creates a reviewable project layout, uses contract evidence for runnable scenarios, makes uncertain work explicit `@ignore` drafts, and preserves edited output during regeneration. The detailed behavior, configuration reference, and limitations are in the [generation guide](docs/generation.md).
+2.0.5 builds on 2.0.4, which moves OpenAPI, requirements, imports, Scout, and MCP generation onto the same Karate 2.x-focused path. It creates a reviewable project layout, uses contract evidence for runnable scenarios, makes uncertain work explicit `@ignore` drafts, and preserves edited output during regeneration. The detailed behavior, configuration reference, and limitations are in the [generation guide](docs/generation.md).
 
 ### Generation quality at a glance
 

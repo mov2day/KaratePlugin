@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-10-25
+
 - **No bundled Karate jar.** The ~68 MB Karate jar is no longer packaged; it is downloaded from GitHub Releases after an explicit prompt, SHA-256 verified for known versions, and cached in global storage. Set `karateDsl.execution.jarPath` for offline use. Also: untrusted workspaces are declared unsupported and the Java probe no longer uses a shell.
 
 - **Automated releases.** Merging to `main` tags `v<package.json version>` (if new), builds the VSIX, creates a GitHub release, and publishes to the VS Code Marketplace and Open VSX when `VSCE_PAT` / `OVSX_PAT` secrets are set. Bump `version` in `package.json` to cut a release.
