@@ -86,13 +86,13 @@ module.exports = [
         assert.ok(ctx().buildBusinessContext(model(many), 500)[0].text.length <= 500);
     } },
     // config
-    { name: 'enrich: ai.enrich defaults to off and validates the enum', run() {
-        assert.equal(cfgMod().DEFAULT_GENERATOR_CONFIG.ai.enrich, 'off');
+    { name: 'enrich: ai.enrich defaults to business and validates the enum', run() {
+        assert.equal(cfgMod().DEFAULT_GENERATOR_CONFIG.ai.enrich, 'business');
         const ok = cfgMod().resolveGeneratorConfig({ ai: { enrich: 'business' } }, {});
         assert.equal(ok.config.ai.enrich, 'business');
         assert.deepEqual(ok.warnings, []);
         const bad = cfgMod().resolveGeneratorConfig({ ai: { enrich: 'everything' } }, {});
-        assert.equal(bad.config.ai.enrich, 'off');
+        assert.equal(bad.config.ai.enrich, 'business');
         assert.ok(bad.warnings.some(w => w.includes('ai.enrich')), bad.warnings.join('|'));
     } },
     // prompt and skills
@@ -198,13 +198,15 @@ module.exports = [
             return { calls, files: [...fs2.map.entries()].filter(([k]) => k.endsWith('.feature')).sort() };
         };
         return [
-            { name: 'enrich: pipeline with enrich off sends the plain enhance prompt (identical to the default)', async run() {
-                const a = await run({});
+            { name: 'enrich: pipeline with enrich off sends the plain enhance prompt', async run() {
                 const b = await run({ enrich: 'off' });
-                assert.ok(a.calls.length > 0);
-                assert.deepEqual(a.calls, b.calls);
-                assert.ok(a.calls.every(p => !p.system.includes('AI-proposed') && !p.user.includes('business-context')));
-                assert.deepEqual(a.files, b.files);
+                assert.ok(b.calls.length > 0);
+                assert.ok(b.calls.every(p => !p.system.includes('AI-proposed') && !p.user.includes('business-context')));
+            } },
+            { name: 'enrich: the default (AI on) sends the enrich task with business context', async run() {
+                const r = await run({});
+                assert.ok(r.calls.length > 0);
+                assert.ok(r.calls.every(p => p.user.includes('business-context')));
             } },
             { name: 'enrich: pipeline with enrich business sends the enrich task, business context and skill', async run() {
                 const r = await run({ enrich: 'business' });

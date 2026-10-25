@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Business enrich follows AI use.** `ai.enrich` now defaults to `business`: when AI generation is enabled (`karateDsl.useCopilot`, via the provider you selected) the model also gets the business context and may add marked `# AI-proposed` scenarios. Without AI nothing changes. Set `ai.enrich: "off"` in the config file to opt out.
 - **AI business enrich covers GraphQL, Postman and HAR.** GraphQL generation now honors `karateDsl.useCopilot` (it was always off) and its model carries field, argument and type descriptions plus enum values. Postman models carry folder names, request descriptions, `pm.test` titles and saved example names; HAR models carry the resource tag and observed id flows. Descriptions are model-only and credential-redacted; generated features are unchanged.
 
 ### Fixed

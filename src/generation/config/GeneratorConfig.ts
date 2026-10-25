@@ -47,7 +47,7 @@ export const DEFAULT_GENERATOR_CONFIG: GeneratorConfig = {
         business: 'off'
     },
     data: { smart: true, externalize: true },
-    ai: { refine: true, maxRetries: 1, chunk: 'feature', enrich: 'off' },
+    ai: { refine: true, maxRetries: 1, chunk: 'feature', enrich: 'business' },
     gate: { dryRun: 'auto', failOn: 'error' }
 };
 

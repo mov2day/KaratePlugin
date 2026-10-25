@@ -40,7 +40,7 @@ All keys are optional. Defaults shown.
     "outlineThreshold": 3
   },
   "data": { "smart": true, "externalize": true },
-  "ai": { "refine": true, "maxRetries": 1, "chunk": "feature", "enrich": "off" },
+  "ai": { "refine": true, "maxRetries": 1, "chunk": "feature", "enrich": "business" },
   "gate": { "dryRun": "auto", "failOn": "error" }
 }
 ```
@@ -69,7 +69,7 @@ All keys are optional. Defaults shown.
 | `ai.refine` | boolean | Allow AI refinement when AI is enabled for the run |
 | `ai.maxRetries` | `1` only | One repair round after a rejected AI answer |
 | `ai.chunk` | `feature`, `scenario` | Unit sent to the model |
-| `ai.enrich` | `off` \| `business` | `business` (needs `ai.refine` and AI on) sends each feature to the model with a compact business context built from the spec (descriptions, enums, examples, status fields, declared errors, resource links; capped at 6,000 characters) and lets it add justified scenarios and assertions. See [AI business enrich](#ai-business-enrich). Default `off` leaves AI behavior unchanged |
+| `ai.enrich` | `off` \| `business` | `business` (needs `ai.refine` and AI on) sends each feature to the model with a compact business context built from the spec (descriptions, enums, examples, status fields, declared errors, resource links; capped at 6,000 characters) and lets it add justified scenarios and assertions. See [AI business enrich](#ai-business-enrich). It follows AI use: on whenever AI refinement runs; `off` is the opt-out |
 | `gate.dryRun` | `auto`, `off` | Run a Karate v2 dry-run when a v2 CLI is found |
 | `gate.failOn` | `error`, `never` | Whether gate errors reject a generated file |
 
@@ -185,7 +185,7 @@ AI-refined output is also checked for non-feature content, unterminated docstrin
 
 ## AI business enrich
 
-With `ai.enrich: "business"`, AI refinement of each feature uses the `enrich-business` task instead of `enhance-feature`. The model receives an extra `business-context` evidence block (`src/generation/ai/BusinessContext.ts`, deterministic, sorted by path and method, secret-looking example fields redacted, truncated to a prefix of operations with an "omitted" note) and the `karate-business-invariants` skill. It may add scenarios and assertions the evidence justifies, each marked with a `# AI-proposed: <reason>` comment. The usual guards stay on: `V2-AI-002` (dropped scenario), `V2-AI-003` (invented path or file) and `V2-AI-006` (un-ignored draft); `V2-AI-007` adds that every new scenario carries the comment and passes the quality gate. A rejected answer keeps the deterministic output, as for any refinement. The mode is off by default; it only runs when AI is enabled for the run and `ai.refine` is true.
+With `ai.enrich: "business"`, AI refinement of each feature uses the `enrich-business` task instead of `enhance-feature`. The model receives an extra `business-context` evidence block (`src/generation/ai/BusinessContext.ts`, deterministic, sorted by path and method, secret-looking example fields redacted, truncated to a prefix of operations with an "omitted" note) and the `karate-business-invariants` skill. It may add scenarios and assertions the evidence justifies, each marked with a `# AI-proposed: <reason>` comment. The usual guards stay on: `V2-AI-002` (dropped scenario), `V2-AI-003` (invented path or file) and `V2-AI-006` (un-ignored draft); `V2-AI-007` adds that every new scenario carries the comment and passes the quality gate. A rejected answer keeps the deterministic output, as for any refinement. The mode is on by default but only takes effect when AI is enabled for the run (`karateDsl.useCopilot`, with the provider you selected) and `ai.refine` is true; set `ai.enrich: "off"` in the config file to opt out.
 
 Business context by source: OpenAPI uses summaries, descriptions, enums, examples and links. GraphQL uses field, argument and type descriptions from the SDL or introspection, enum values of arguments, input objects and return types, and the AI switch is `karateDsl.useCopilot` (as for OpenAPI). Postman uses folder names (tags), request descriptions, `pm.test` titles and saved example names. HAR uses the resource segment as tag and observed id flows (`Response response.id (orderId) is reused by GET /api/orders/{orderId}`, names only, no values). These descriptions are model-only: they are never written into feature files, and the context redacts credentials again before sending.
 
