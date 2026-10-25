@@ -135,3 +135,13 @@ Decisions to check:
 
 Left undone: no guard compares existing assertions one by one (the prompt forbids weakening them); assertions added inside existing scenarios are not required to carry the comment; business context is built from the model only, so Postman/HAR/GraphQL get little (no descriptions or enums); `ai.enrich` has no VS Code setting.
 
+## Enrich gaps notes
+
+Done:
+
+- GraphQL: the command reads `karateDsl.useCopilot` (was `useAi: false`). The parser keeps SDL/introspection descriptions (fields, arguments, types); the adapter puts them in `OperationModel.description` and enum values in the model body/response schemas. A unit test shows the refiner keeps `errors == '#notpresent'` and accepts a marked proposal; AI-002/003/006 do not misfire on GraphQL POST scenarios (path `graphql` is in the input feature, so AI-003 sees it).
+- Postman: description = folder path, request description, `pm.test` titles, saved example names; HAR: resource tag and producer -> consumer id-flow lines (names only). Both pass `redactCredentialText`; `BusinessContext` redacts again. Fixed a pre-existing leak of credential text in the Postman "pm script not converted" reason/comment.
+- Tests: `scripts/generation-tests/enrich-flows.cjs` (13). Goldens unchanged.
+- `enumsOf` depth raised from 3 to 4 so list items under `data.field[]` show their enums.
+
+Still left: real-model run (the gateway returned 401 for both Bearer and x-api-key; `scratchpad/real-enrich.cjs` is ready); Scout has no business context; v2 syntax of proposals is not dry-run checked; `ai.enrich` still has no VS Code setting; Postman folder descriptions are not read.

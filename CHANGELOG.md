@@ -5,6 +5,14 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **AI business enrich covers GraphQL, Postman and HAR.** GraphQL generation now honors `karateDsl.useCopilot` (it was always off) and its model carries field, argument and type descriptions plus enum values. Postman models carry folder names, request descriptions, `pm.test` titles and saved example names; HAR models carry the resource tag and observed id flows. Descriptions are model-only and credential-redacted; generated features are unchanged.
+
+### Fixed
+- Postman `UNSUPPORTED (pm script)` comments and model entries no longer repeat credential-looking text from a script.
+
 ## [2.0.4] - 2026-10-24
 
 ### Theme: Generation quality (Karate 2.x)

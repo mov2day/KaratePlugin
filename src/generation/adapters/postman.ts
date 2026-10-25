@@ -9,7 +9,7 @@ import { responseChecksFor } from '../plan/ResponseChecks';
 import { planAuth, unsupportedReason } from '../plan/AuthSchemes';
 import type { PlannedFeature } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
-import { camelName, containsCredentialValue, credentialKeys, isOversized, oversizedReason, SECRET_HEADER, SECRET_NAME, upperSnake } from './secrets';
+import { camelName, containsCredentialValue, credentialKeys, isOversized, oversizedReason, redactCredentialText, SECRET_HEADER, SECRET_NAME, upperSnake } from './secrets';
 import { analyzePreRequestScript, analyzeTestScript, convertBody } from './postmanScript';
 import type { ScriptAnalysis } from './postmanScript';
 
@@ -57,6 +57,8 @@ interface Entry {
     sourceRef: string;
     /** Saved response examples (`item.response[]`), one per status. */
     saved: ResponseModel[];
+    /** Model-only business text: folder path, request description, `pm.test` titles, saved example names. Already scrubbed. */
+    about?: string;
 }
 
 type UrlSplit =
@@ -72,6 +74,29 @@ function execText(item: { event?: { listen: string; script?: { exec?: string[] |
         parts.push(Array.isArray(ex) ? ex.join('\n') : typeof ex === 'string' ? ex : '');
     }
     return parts.join('\n').trim();
+}
+
+const textOf = (d: unknown): string => (typeof d === 'string' ? d : d && typeof (d as { content?: unknown }).content === 'string' ? (d as { content: string }).content : '');
+
+/** Titles of `pm.test("title", ...)` calls (script code is never copied, only the quoted title). */
+function pmTestTitles(script: string): string[] {
+    const out: string[] = [];
+    for (const m of script.matchAll(/pm\.test\(\s*(["'`])((?:\\.|(?!\1)[^\\\n]){1,200})\1/g)) {out.push(m[2]);}
+    return [...new Set(out)].slice(0, 8);
+}
+
+/** Business description for the model from folders, descriptions, test titles and saved example names, with credential text redacted. */
+function aboutText(item: PostmanItem, folders: string[], request: PostmanRequest, test: string): string | undefined {
+    const parts: string[] = [];
+    if (folders.length > 0) {parts.push(`Folder: ${folders.join(' > ')}`);}
+    const desc = textOf(request.description) || textOf(item.description);
+    if (desc.trim()) {parts.push(desc.trim());}
+    const titles = pmTestTitles(test);
+    if (titles.length > 0) {parts.push(`Checks: ${titles.join('; ')}`);}
+    const examples = (Array.isArray(item.response) ? item.response : []).filter(r => r && Number.isInteger(r.code) && typeof r.name === 'string' && r.name.trim()).map(r => `${r.code} ${r.name!.trim()}`);
+    if (examples.length > 0) {parts.push(`Saved examples: ${[...new Set(examples)].slice(0, 6).join('; ')}`);}
+    if (parts.length === 0) {return undefined;}
+    return redactCredentialText(parts.join('\n').replace(/[ \t]+/g, ' ')).text.trim() || undefined;
 }
 
 function rawUrl(request: PostmanRequest): string {
@@ -165,7 +190,8 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
             entries.push({
                 name: item.name, folders, request, auth: request.auth ?? inherited,
                 pre: execText(item, 'prerequest'), test: execText(item, 'test'),
-                method, pathLabel, sourceRef: `${method} ${pathLabel}`, saved: savedResponses(item)
+                method, pathLabel, sourceRef: `${method} ${pathLabel}`, saved: savedResponses(item),
+                about: aboutText(item, folders, request, execText(item, 'test'))
             });
         }
     };
@@ -577,7 +603,7 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                 }
                 unsupportedBits.push(...bits);
                 if (bits.length > 0) {
-                    unsupported.push({ sourceRef: e.sourceRef, reason: `pm script not converted: ${safeComment(bits.join(' ')).slice(0, MAX_COMMENT)}` });
+                    unsupported.push({ sourceRef: e.sourceRef, reason: `pm script not converted: ${safeComment(redactCredentialText(bits.join(' ')).text).slice(0, MAX_COMMENT)}` });
                 }
                 for (const v of [...(m.test?.setVars ?? [])]) {local.add(idn(v));}
 
@@ -585,13 +611,14 @@ export function buildPostmanModel(collection: PostmanCollection, env?: PostmanEn
                 const opSec: string[] | 'none' = sch ? [sch.name] : 'none';
                 operations.push({
                     id: `${e.method.toLowerCase()}-${slug(e.name) || 'request'}`, method: e.method, path: e.pathLabel, summary: e.name,
+                    ...(e.about ? { description: e.about } : {}),
                     tags: e.folders.map(f => slug(f)).filter(Boolean).slice(-1), pathParams: [], queryParams: [], headerParams: [],
                     responses: [...statuses.map(s => e.saved.find(r => r.status === s) ?? { status: s }), ...e.saved.filter(r => !statuses.includes(r.status))], security: opSec, sourceRef: e.sourceRef
                 });
             });
 
             if (unsupportedBits.length > 0) {
-                comments.unshift(`UNSUPPORTED (pm script): ${safeComment(unsupportedBits.join(' ')).slice(0, MAX_COMMENT)}`);
+                comments.unshift(`UNSUPPORTED (pm script): ${safeComment(redactCredentialText(unsupportedBits.join(' ')).text).slice(0, MAX_COMMENT)}`);
             }
             if (lostAssertion) {reasons.push('a Postman test assertion could not be converted');}
 

@@ -65,6 +65,7 @@ export async function generateFromGraphQL(context: vscode.ExtensionContext): Pro
             endpoint = splitEndpointUrl(url);
         }
 
+        const useAi = vscode.workspace.getConfiguration('karateDsl').get<boolean>('useCopilot', false);
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: 'Generating Karate tests from GraphQL...',
@@ -85,7 +86,7 @@ export async function generateFromGraphQL(context: vscode.ExtensionContext): Pro
             for (const w of plan.warnings) {logger.warn(`GraphQL: ${w}`);}
 
             const run = await runGenerationForModel({
-                context, workspaceRoot, model: plan.model, sourceRef, mode: 'graphql', useAi: false,
+                context, workspaceRoot, model: plan.model, sourceRef, mode: 'graphql', useAi,
                 scenarios: plan.features, classpathFiles: plan.files, config: loaded.config,
                 notes: plan.warnings, progress: toIncrementalProgress(progress)
             });
@@ -108,13 +109,15 @@ const INTROSPECTION_QUERY = `{
     types {
       kind
       name
+      description
       enumValues { name }
       possibleTypes { name }
-      inputFields { name defaultValue type { ${TYPE_REF} } }
+      inputFields { name description defaultValue type { ${TYPE_REF} } }
       fields {
         name
+        description
         isDeprecated
-        args { name defaultValue type { ${TYPE_REF} } }
+        args { name description defaultValue type { ${TYPE_REF} } }
         type { ${TYPE_REF} }
       }
     }

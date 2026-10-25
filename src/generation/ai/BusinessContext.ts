@@ -1,5 +1,5 @@
 /** Pure builder of the compact business context the opt-in `enrich-business` AI task reads as evidence. No vscode, no I/O. */
-import { containsCredentialValue, isSecretKey } from '../adapters/secrets';
+import { containsCredentialValue, isSecretKey, redactCredentialText } from '../adapters/secrets';
 import type { GenerationModel, JsonSchema, OperationModel } from '../model/TestModel';
 
 /** Hard cap for the whole context; later operations are dropped and counted. */
@@ -20,7 +20,7 @@ interface EnumField { path: string; values: string[] }
 
 /** Enum-valued properties of a schema (depth 3, sorted by path). */
 function enumsOf(schema: JsonSchema | undefined, prefix = '', depth = 0, out: EnumField[] = []): EnumField[] {
-    if (!schema || typeof schema !== 'object' || depth > 3) {return out;}
+    if (!schema || typeof schema !== 'object' || depth > 4) {return out;}
     if (Array.isArray(schema.enum) && prefix) {
         out.push({ path: prefix, values: schema.enum.slice(0, MAX_ENUM_VALUES).map(v => String(v)) });
     }
@@ -73,8 +73,12 @@ function links(op: OperationModel, resources: Set<string>): string[] {
 
 function describe(op: OperationModel, resources: Set<string>): string {
     const lines: string[] = [`${op.method.toUpperCase()} ${op.path}${op.tags.length ? ` [${op.tags.join(', ')}]` : ''}`];
-    const text = [op.summary, op.description].filter((t): t is string => Boolean(t && t.trim())).map(t => clip(t, MAX_TEXT));
+    // descriptions may come from scripts, headers or captured flows: scrub again here, whatever the adapter did
+    const scrub = (t: string): string => redactCredentialText(t).text;
+    const descLines = (op.description ?? '').split('\n').map(l => l.trim()).filter(Boolean);
+    const text = [op.summary, descLines[0]].filter((t): t is string => Boolean(t && t.trim())).map(t => clip(scrub(t), MAX_TEXT));
     if (text.length) {lines.push(`  about: ${[...new Set(text)].join(' | ')}`);}
+    for (const extra of descLines.slice(1, 8)) {lines.push(`  note: ${clip(scrub(extra), MAX_TEXT)}`);}
     const declared = op.responses.map(r => `${r.status}${r.description ? ` ${clip(r.description, 100)}` : ''}`);
     if (declared.length) {lines.push(`  responses: ${declared.join('; ')}`);}
     const enums: EnumField[] = [

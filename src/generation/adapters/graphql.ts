@@ -9,7 +9,7 @@ import type { GenerationModel, JsonSchema, OperationModel, SecurityScheme } from
 import { valueFor } from '../plan/dataFactory';
 import type { PlannedFeature } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
-import { camelName, isSecretKey, looksLikeCredentialValue, upperSnake } from './secrets';
+import { camelName, isSecretKey, looksLikeCredentialValue, redactCredentialText, upperSnake } from './secrets';
 
 export interface GraphQLPlanOptions {
     config: GeneratorConfig;
@@ -202,6 +202,38 @@ function inputSchema(ref: TypeRef, types: Record<string, GraphQLTypeDef>, gen: G
     return { type: 'object' };
 }
 
+/** Schema view of a GraphQL type for the model only: enum values and nested leaf shapes (depth 3), no credentials. */
+function modelSchema(ref: TypeRef, types: Record<string, GraphQLTypeDef>, depth: number, seen: string[]): JsonSchema | undefined {
+    if (ref.list) {
+        const items = modelSchema(ref.list, types, depth, seen);
+        return items ? { type: 'array', items } : undefined;
+    }
+    const name = ref.name ?? 'Unknown';
+    const def = types[name];
+    if (def?.kind === 'enum') {return def.enumValues.length > 0 ? { enum: def.enumValues.slice(0, 20) } : undefined;}
+    if ((def?.kind === 'object' || def?.kind === 'interface' || def?.kind === 'input') && depth < 3 && !seen.includes(name)) {
+        const props: Obj = {};
+        for (const f of def.fields) {
+            const sub = modelSchema(parseTypeRef(f.type), types, depth + 1, [...seen, name]);
+            if (sub) {props[f.name] = sub;}
+        }
+        return Object.keys(props).length > 0 ? { type: 'object', properties: props } : undefined;
+    }
+    return undefined;
+}
+
+/** Business text for an operation: its own description, argument descriptions and the return type's description. Redacted. */
+function fieldAbout(field: GraphQLField, types: Record<string, GraphQLTypeDef>): string | undefined {
+    const lines: string[] = [];
+    if (field.description) {lines.push(field.description);}
+    for (const a of field.args) {if (a.description) {lines.push(`Argument ${a.name}: ${a.description}`);}}
+    const ret = types[namedType(field.returnType)];
+    if (ret?.description) {lines.push(`Returns ${namedType(field.returnType)}: ${ret.description}`);}
+    for (const f of ret?.fields ?? []) {if (f.description) {lines.push(`Field ${f.name}: ${f.description}`);}}
+    if (lines.length === 0) {return undefined;}
+    return redactCredentialText(lines.slice(0, 12).join('\n')).text.trim() || undefined;
+}
+
 interface Selection { lines: string[]; match: Obj }
 
 export function buildGraphQLPlan(schema: GraphQLSchema, opts: GraphQLPlanOptions): GraphQLPlan {
@@ -374,9 +406,17 @@ export function buildGraphQLPlan(schema: GraphQLSchema, opts: GraphQLPlanOptions
             const tagsOf = (c: 'positive' | 'negative'): string[] => [...cat(c), ...(config.tags.auto ? [`@op=${field.name}`] : [])];
             const base = `${kind} ${field.name}`;
             const opId = `${kind.toLowerCase()}-${field.name}`;
+            const variableProps: Obj = {};
+            for (const a of field.args as GraphQLArg[]) {
+                const sch = modelSchema(parseTypeRef(a.required ? `${a.type}!` : a.type), types, 0, []);
+                if (sch) {variableProps[a.name] = sch;}
+            }
+            const dataSchema = modelSchema(ref, types, 0, []);
+            const about = fieldAbout(field, types);
             operations.push({
-                id: opId, method: 'POST', path: `/${endpoint}`, summary: base, tags: [], pathParams: [], queryParams: [], headerParams: [],
-                responses: [{ status: '200' }], security: scheme ? [scheme.name] : 'none', sourceRef: base
+                id: opId, method: 'POST', path: `/${endpoint}`, summary: base, ...(about ? { description: about } : {}), tags: [], pathParams: [], queryParams: [], headerParams: [],
+                ...(Object.keys(variableProps).length > 0 ? { body: { contentType: 'application/json', schema: { type: 'object', properties: { variables: { type: 'object', properties: variableProps } } } } } : {}),
+                responses: [dataSchema ? { status: '200', contentType: 'application/json', schema: { type: 'object', properties: { data: { type: 'object', properties: { [field.name]: dataSchema } } } } } : { status: '200' }], security: scheme ? [scheme.name] : 'none', sourceRef: base
             });
 
             const pos = variablesFor(field, false);

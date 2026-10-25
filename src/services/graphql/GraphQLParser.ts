@@ -12,6 +12,8 @@ export interface GraphQLField {
     /** Names of the selectable leaf fields of the return type (empty for scalar or enum returns and unknown types). */
     returnFields: string[];
     deprecated?: boolean;
+    /** Description from the schema (SDL string or introspection), when present. */
+    description?: string;
 }
 
 export interface GraphQLArg {
@@ -21,6 +23,7 @@ export interface GraphQLArg {
     required: boolean;
     /** Raw GraphQL literal, for example `10`, `"abc"` or `[1, 2]`. */
     defaultValue?: string;
+    description?: string;
 }
 
 export interface GraphQLTypeField {
@@ -29,6 +32,7 @@ export interface GraphQLTypeField {
     type: string;
     args: GraphQLArg[];
     deprecated?: boolean;
+    description?: string;
 }
 
 export interface GraphQLTypeDef {
@@ -38,6 +42,7 @@ export interface GraphQLTypeDef {
     enumValues: string[];
     /** Union members. */
     possibleTypes: string[];
+    description?: string;
 }
 
 export interface GraphQLSchema {
@@ -75,6 +80,14 @@ export function namedType(text: string): string {
     return r.name ?? 'Unknown';
 }
 
+/** Text of a GraphQL string literal (`".."` or block string), single-spaced; undefined when empty. */
+export function stringText(raw: string): string | undefined {
+    const body = raw.startsWith('"""') ? raw.slice(3, raw.endsWith('"""') && raw.length >= 6 ? -3 : undefined) : raw.replace(/^"/, '').replace(/"$/, '');
+    const text = body.replace(/\\"/g, '"').replace(/\s+/g, ' ').trim();
+    return text === '' ? undefined : text;
+}
+const withDesc = (description: string | undefined): { description?: string } => (description ? { description } : {});
+
 export const BUILTIN_SCALARS = ['String', 'Int', 'Float', 'Boolean', 'ID'];
 
 type RootKind = 'Query' | 'Mutation' | 'Subscription';
@@ -90,15 +103,18 @@ export class GraphQLParser {
         const sc = new Scanner(sdl);
         const types: Record<string, GraphQLTypeDef> = {};
         const roots: Record<RootKind, string> = { Query: 'Query', Mutation: 'Mutation', Subscription: 'Subscription' };
+        let pending: string | undefined;
         const ensure = (name: string, kind: GraphQLTypeDef['kind']): GraphQLTypeDef => {
             types[name] ??= { kind, fields: [], enumValues: [], possibleTypes: [] };
+            if (pending && !types[name].description) {types[name].description = pending;}
+            pending = undefined;
             return types[name];
         };
 
         while (!sc.eof()) {
             sc.skipIgnored();
             if (sc.eof()) {break;}
-            if (sc.peek() === '"') {sc.readString(); continue;}
+            if (sc.peek() === '"') {pending = stringText(sc.readString()); continue;}
             let keyword = sc.readName();
             if (keyword === '') {sc.pos++; continue;}
             if (keyword === 'extend') {
@@ -204,12 +220,14 @@ export class GraphQLParser {
             const rawFields = kind === 'input' ? t.inputFields : t.fields;
             types[t.name] = {
                 kind,
+                ...withDesc(typeof t.description === 'string' ? stringText(`"${t.description}"`) : undefined),
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 fields: (Array.isArray(rawFields) ? rawFields : []).map((f: any): GraphQLTypeField => ({
                     name: String(f.name),
                     type: this.introspectionTypeToString(f.type),
                     args: this.introspectionArgs(f.args),
-                    ...(f.isDeprecated === true ? { deprecated: true } : {})
+                    ...(f.isDeprecated === true ? { deprecated: true } : {}),
+                    ...withDesc(typeof f.description === 'string' ? stringText(`"${f.description}"`) : undefined)
                 })),
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 enumValues: (Array.isArray(t.enumValues) ? t.enumValues : []).map((e: any) => String(e.name)),
@@ -240,7 +258,8 @@ export class GraphQLParser {
             args: f.args,
             returnType: f.type,
             returnFields: this.leafFields(types, f.type),
-            ...(f.deprecated ? { deprecated: true } : {})
+            ...(f.deprecated ? { deprecated: true } : {}),
+            ...withDesc(f.description)
         }));
         return { name: 'GraphQL API', queries: fieldsOf('Query'), mutations: fieldsOf('Mutation'), subscriptions: fieldsOf('Subscription'), types };
     }
@@ -265,7 +284,8 @@ export class GraphQLParser {
                 name: arg.name,
                 type: required ? full.slice(0, -1) : full,
                 required,
-                ...(typeof arg.defaultValue === 'string' ? { defaultValue: arg.defaultValue } : {})
+                ...(typeof arg.defaultValue === 'string' ? { defaultValue: arg.defaultValue } : {}),
+                ...withDesc(typeof arg.description === 'string' ? stringText(`"${arg.description}"`) : undefined)
             };
         });
     }
@@ -418,10 +438,11 @@ class Scanner {
 
     readArgs(): GraphQLArg[] {
         const args: GraphQLArg[] = [];
+        let desc: string | undefined;
         for (;;) {
             this.skipIgnored();
             if (this.eof() || this.peek() === ')') {return args;}
-            if (this.peek() === '"') {this.readString(); continue;}
+            if (this.peek() === '"') {desc = stringText(this.readString()); continue;}
             const name = this.readName();
             if (name === '') {this.pos++; continue;}
             this.skipIgnored();
@@ -432,13 +453,15 @@ class Scanner {
             if (this.peekAfterIgnored() === '=') {this.skipIgnored(); this.pos++; defaultValue = this.readValue();}
             this.skipDirectives();
             const required = full.endsWith('!');
-            args.push({ name, type: required ? full.slice(0, -1) : full, required, ...(defaultValue !== undefined ? { defaultValue } : {}) });
+            args.push({ name, type: required ? full.slice(0, -1) : full, required, ...(defaultValue !== undefined ? { defaultValue } : {}), ...withDesc(desc) });
+            desc = undefined;
         }
     }
 
     /** `{ name(args): Type @dir ... }`; for input objects `name: Type = default`; for `schema` the type is the root name. */
     readFieldBlock(input = false, schemaBlock = false): GraphQLTypeField[] {
         const fields: GraphQLTypeField[] = [];
+        let desc: string | undefined;
         this.skipIgnored();
         if (this.peek() !== '{') {return fields;}
         this.pos++;
@@ -446,7 +469,7 @@ class Scanner {
             this.skipIgnored();
             if (this.eof()) {return fields;}
             if (this.peek() === '}') {this.pos++; return fields;}
-            if (this.peek() === '"') {this.readString(); continue;}
+            if (this.peek() === '"') {desc = stringText(this.readString()); continue;}
             const name = this.readName();
             if (name === '') {this.pos++; continue;}
             let args: GraphQLArg[] = [];
@@ -461,7 +484,8 @@ class Scanner {
             if (input && this.peekAfterIgnored() === '=') {this.skipIgnored(); this.pos++; this.readValue();}
             const directives = this.skipDirectives();
             if (schemaBlock) {fields.push({ name, type: type.replace(/!$/, ''), args: [] }); continue;}
-            fields.push({ name, type, args, ...(directives.includes('deprecated') ? { deprecated: true } : {}) });
+            fields.push({ name, type, args, ...(directives.includes('deprecated') ? { deprecated: true } : {}), ...withDesc(desc) });
+            desc = undefined;
         }
     }
 

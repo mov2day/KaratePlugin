@@ -10,7 +10,7 @@ import { responseChecksFor } from '../plan/ResponseChecks';
 import { planAuth, requiredSecrets, unsupportedReason } from '../plan/AuthSchemes';
 import type { PlannedFeature } from '../plan/OpenApiPlanner';
 import { slug } from '../plan/slug';
-import { camelName, containsCredentialValue, credentialKeys, isOversized, isSecretKey, looksLikeCredentialValue, oversizedReason, scrubOversizedLeaves, upperSnake } from './secrets';
+import { camelName, containsCredentialValue, credentialKeys, isOversized, isSecretKey, looksLikeCredentialValue, oversizedReason, redactCredentialText, scrubOversizedLeaves, upperSnake } from './secrets';
 
 export interface HarModelOptions {
     config: GeneratorConfig;
@@ -355,6 +355,8 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
         const comments: string[] = [];
         const byValue = new Map<string, Candidate>();
         const groups: Group[] = [];
+        const opOf = new Map<Call, OperationModel>();
+        const flowUses: { cand: Candidate; consumer: Call }[] = [];
 
         list.forEach((call, idx) => {
             const n = callIndex.get(call)!;
@@ -363,6 +365,7 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
                     c.name = uniqueName(/^(?:id|_id|uuid|guid)$/i.test(c.key) ? `${camelName(singular(c.resource))}Id` : camelName(c.key));
                 }
                 c.used = true;
+                if (!flowUses.some(u => u.cand === c && u.consumer === call)) {flowUses.push({ cand: c, consumer: call });}
                 return c.name;
             };
             const candFor = (value: string | number, kindMatters: boolean, segName?: string): Candidate | undefined => {
@@ -555,11 +558,31 @@ export function buildHarModel(entries: CapturedRequest[], opts: HarModelOptions)
             let opId = `${call.method.toLowerCase()}-${slug(labelSegs.join('/').replace(/[{}]/g, '')) || 'root'}`;
             for (let i = 2; opIds.has(opId); i++) {opId = `${call.method.toLowerCase()}-${slug(labelSegs.join('/').replace(/[{}]/g, '')) || 'root'}-${i}`;}
             opIds.add(opId);
-            operations.push({
-                id: opId, method: call.method, path: `/${labelSegs.join('/')}`, summary: label, tags: [], pathParams: [], queryParams: [], headerParams: [],
+            const opTag = [...segs].reverse().find(sg => /^[A-Za-z][A-Za-z_-]*$/.test(sg) && !/^(?:api|v\d+)$/i.test(sg));
+            const op: OperationModel = {
+                id: opId, method: call.method, path: `/${labelSegs.join('/')}`, summary: label, tags: opTag ? [slug(opTag)].filter(Boolean) : [], pathParams: [], queryParams: [], headerParams: [],
                 responses: [observed], security: securityOf(call).length > 0 ? securityOf(call) : 'none', sourceRef: label
-            });
+            };
+            operations.push(op);
+            opOf.set(call, op);
         });
+
+        // Observed id flows (producer -> consumer) as model-only description text. Names and labels only, never values.
+        const describeFlow = (op: OperationModel | undefined, line: string): void => {
+            if (!op) {return;}
+            const text = redactCredentialText(line).text;
+            const have = (op.description ?? '').split('\n');
+            if (!have.includes(text)) {op.description = [...have.filter(Boolean), text].join('\n');}
+        };
+        for (const { cand, consumer } of flowUses) {
+            const producer = list[cand.callIdx];
+            if (!producer || producer === consumer || !cand.name) {continue;}
+            const pOp = opOf.get(producer);
+            const cOp = opOf.get(consumer);
+            if (!pOp || !cOp) {continue;}
+            describeFlow(pOp, `Response ${cand.expr} (${cand.name}) is reused by ${cOp.method} ${cOp.path}`);
+            describeFlow(cOp, `Uses ${cand.name} from ${pOp.method} ${pOp.path}`);
+        }
 
         // assemble: a captured id becomes a `def` right after its producing request, only when something reuses it
         const steps: KarateStep[] = [];
