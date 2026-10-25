@@ -9,7 +9,6 @@ export interface LoaderSettings {
     smartTestData?: boolean;
     exploratory?: boolean;
     configMode?: string;
-    aiEnrich?: string;
     /** Parsed content of the shared style file, if any. */
     style?: unknown;
 }
@@ -28,7 +27,6 @@ export function mapSettingsToConfig(s: LoaderSettings): Partial<GeneratorConfig>
     put('scenarios', 'exploratory', s.exploratory);
     put('data', 'smart', s.smartTestData);
     put('config', 'mode', s.configMode);
-    put('ai', 'enrich', s.aiEnrich);
     if (s.style !== undefined) {out.style = s.style as Record<string, unknown>;}
     return out as unknown as Partial<GeneratorConfig>;
 }

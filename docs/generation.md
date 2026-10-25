@@ -80,7 +80,6 @@ All keys are optional. Defaults shown.
 | `karateDsl.generation.configFile` | Path of the generator config file, default `.karate-generator.json` |
 | `karateDsl.generation.configMode` | `standard` or `env-json` (same as `config.mode`) |
 | `karateDsl.generation.exploratory` | Opt in to exploratory scenarios (same as `scenarios.exploratory`) |
-| `karateDsl.generation.aiEnrich` | `off` or `business` (same as `ai.enrich`; needs `karateDsl.useCopilot`; the config file wins) |
 | `karateDsl.generation.structuringStrategy` | Deprecated, use `layout.strategy` |
 | `karateDsl.generation.autoTag` | Deprecated, use `tags.auto` |
 | `karateDsl.generation.smartTestData` | Deprecated, use `data.smart` |
