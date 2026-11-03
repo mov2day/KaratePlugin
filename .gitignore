@@ -12,6 +12,7 @@ out
 /.playwright-cli/
 /target/
 /lib/scout-runtime/
+/resources/workbench/host/
 
 # Local development and planning material
 /.codex/
@@ -23,3 +24,5 @@ out
 .superpowers/
 /lib/*.jar
 /docs/superpowers/
+/.opencode
+.agent-harness/harness.toml

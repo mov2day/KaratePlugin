@@ -1,0 +1,10 @@
+plugins { id 'java' }
+repositories { }
+dependencies {
+  testImplementation files(System.getenv('KARATE_TEST_JAR'))
+  testImplementation files('libs/slug-lib.jar')
+}
+// Karate's recommended layout keeps features and config next to the Java sources.
+sourceSets { test { resources { srcDir file('src/test/java'); exclude '**/*.java' } } }
+// Compile for the Java version that runs Karate; a newer build JDK would otherwise produce classes it cannot load.
+tasks.withType(JavaCompile).configureEach { options.release = 21 }

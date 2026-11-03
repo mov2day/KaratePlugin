@@ -3,6 +3,7 @@
 .agents/**
 .github/**
 scripts/**
+workbench-host/**
 src/**
 .gitignore
 package-lock.json

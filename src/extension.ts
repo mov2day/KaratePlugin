@@ -33,6 +33,7 @@ import { KarateLinter } from './services/linter/KarateLinter';
 import { TestExecutor } from './services/execution/TestExecutor';
 import { TestHistoryService } from './services/execution/TestHistoryService';
 import { TestCodeLensProvider } from './services/execution/TestCodeLensProvider';
+import { WorkbenchController } from './services/workbench/WorkbenchController';
 import { TestStatusDecorationProvider } from './services/execution/TestStatusDecorationProvider';
 import { KarateCliExecutor } from './services/execution/KarateCliExecutor';
 import { KarateTestController } from './services/execution/KarateTestController';
@@ -51,7 +52,15 @@ import { readExecutionSettings } from './services/execution/ExecutionSettings';
 import { scenarioLineFromEditorLine } from './services/execution/ExecutionArguments';
 import { ScoutController } from './services/scout/ScoutController';
 
+let workbenchHandle: WorkbenchController | undefined;
+
+/** The extension's exports are for the end-to-end tests only; they are not a supported API. */
 export async function activate(context: vscode.ExtensionContext) {
+    await activateExtension(context);
+    return { workbenchTesting: workbenchHandle?.testing() };
+}
+
+async function activateExtension(context: vscode.ExtensionContext) {
     logger.info('Karate DSL Generator extension is now active');
 
     // Initialize Agent Skills with extension path for bundled skills
@@ -277,6 +286,11 @@ export async function activate(context: vscode.ExtensionContext) {
             codeLensProvider
         )
     );
+
+    // Karate Workbench: run steps one at a time and click response fields to write assertions
+    const workbench = new WorkbenchController(context);
+    workbenchHandle = workbench;
+    context.subscriptions.push(workbench, ...workbench.register());
 
     // Register test status decorations provider
     const decorationProvider = new TestStatusDecorationProvider(context);
