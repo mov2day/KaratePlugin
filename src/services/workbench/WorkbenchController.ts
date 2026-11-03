@@ -191,27 +191,31 @@ export class WorkbenchController implements vscode.Disposable, vscode.CodeLensPr
             await this.dispose1(key);
             entry = undefined;
         }
-        let plan = planRun(background, stepTexts, stepIndex, mode, entry?.executed ?? []);
+        // Running one step in a session where nothing has run yet can only fail (no url, no variables), so run up to it instead.
+        const effectiveMode: 'to' | 'this' = mode === 'this' && (!entry || entry.executed.length === 0) ? 'to' : mode;
+        let plan = planRun(background, stepTexts, stepIndex, effectiveMode, entry?.executed ?? []);
         if (entry && plan.restart) {
             await this.dispose1(key);
             entry = undefined;
-            plan = planRun(background, stepTexts, stepIndex, mode, []);
+            plan = planRun(background, stepTexts, stepIndex, effectiveMode, []);
         }
         if (!entry) {
             entry = await this.startSession(document, env, scenarioKey);
             this.sessions.set(key, entry);
         }
-        if (mode === 'this') {
+        if (effectiveMode === 'this') {
             // A single step breaks the "everything before it ran in order" guarantee, so the next run-to-here starts over.
             entry.executed = ['\u0000single-step'];
         }
         this.setState({
             title: `${path.basename(document.fileName)} - ${scenario.name || 'Scenario'}`,
-            env, envs: discoverEnvironments(this.configDirFor(document), env), notice: '', variables: maskedVariables(entry.variables)
+            env, envs: discoverEnvironments(this.configDirFor(document), env),
+            notice: effectiveMode !== mode ? 'This session was new, so the Background and the steps before it ran first.' : '',
+            variables: maskedVariables(entry.variables)
         });
 
         const total = background.length + stepIndex + 1;
-        const firstPosition = mode === 'this' ? background.length + stepIndex : total - plan.toRun.length;
+        const firstPosition = effectiveMode === 'this' ? background.length + stepIndex : total - plan.toRun.length;
         for (let k = 0; k < plan.toRun.length; k++) {
             const text = plan.toRun[k];
             const position = firstPosition + k;
@@ -234,7 +238,7 @@ export class WorkbenchController implements vscode.Disposable, vscode.CodeLensPr
                     ? { response: result.response, stepIndex: index, stepText: text, fresh }
                     : { response: result.response, stepIndex: entry.lastResponse?.stepIndex ?? -1, stepText: entry.lastResponse?.stepText ?? '', fresh: false };
             }
-            if (mode === 'to' && result.status === 'PASSED') {
+            if (effectiveMode === 'to' && result.status === 'PASSED') {
                 entry.executed.push(text);
             }
             this.setState({

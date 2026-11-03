@@ -23,7 +23,7 @@ New lines go right after the last step that has run, so the file order always ma
 | Command | What it runs |
 |---|---|
 | **Run to Cursor** (Send) | The Background and every step up to the cursor. Steps that already ran in the session are skipped when they are unchanged; if you edited a step that already ran, the session restarts and runs them again. |
-| **Run This Step Only** | Just the step under the cursor, using the variables already in the session. The next Run to Cursor starts a fresh session. |
+| **Run This Step Only** | Just the step under the cursor, using the variables already in the session. In a new session nothing has run yet, so it runs the Background and the steps before it first (a lone step would fail with no `url`). After a single step the next Run to Cursor starts a fresh session. |
 | **Restart Session** | Stops the session, re-reads the project classpath and starts clean. |
 | **Stop Session** | Stops the Java process. Sessions also stop when the file is closed and after 30 idle minutes. |
 | **Select Environment** | Sets `karate.env` for the session. The names come from `karate-config-<env>.js` files and the environments compared in `karate-config.js`. |

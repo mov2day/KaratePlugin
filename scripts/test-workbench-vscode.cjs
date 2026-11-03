@@ -29,6 +29,8 @@ fs.writeFileSync(path.join(workspace, '.vscode', 'settings.json'), JSON.stringif
 }));
 const resultFile = path.join(base, 'result.txt');
 
+const hostPids = () => new Set(childProcess.spawnSync('pgrep', ['-f', 'KarateWorkbenchHost'], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean));
+const existingHosts = hostPids(); // e.g. a Workbench session in your own VS Code window
 const api = childProcess.spawn(process.execPath, [path.join(__dirname, 'fixtures', 'workbench', 'api', 'server.js'), '8099'], { stdio: 'ignore' });
 setTimeout(() => {
   const run = childProcess.spawnSync(code, [
@@ -42,8 +44,8 @@ setTimeout(() => {
   api.kill();
   const report = fs.existsSync(resultFile) ? fs.readFileSync(resultFile, 'utf8') : `(no result file)\n${run.stdout}\n${run.stderr}`;
   console.log(report);
-  const leftovers = childProcess.spawnSync('pgrep', ['-f', 'KarateWorkbenchHost'], { encoding: 'utf8' }).stdout.trim();
-  if (leftovers) { console.log(`WARNING: leftover host processes: ${leftovers.split('\n').join(',')}`); }
+  const leftovers = [...hostPids()].filter(pid => !existingHosts.has(pid));
+  if (leftovers.length) { console.log(`WARNING: leftover host processes started by this test: ${leftovers.join(',')}`); }
   fs.rmSync(base, { recursive: true, force: true });
   process.exit(run.status === 0 && /RESULT: PASS/.test(report) ? 0 : 1);
 }, 800);

@@ -40,6 +40,14 @@ async function main() {
   const lineOf = pattern => text().split('\n').findIndex(line => pattern.test(line));
   const state = () => api.getState();
 
+  // 0. "This step only" in a brand-new session must not fail for lack of the Background (url, variables).
+  await vscode.commands.executeCommand('karate-dsl.workbench.runStep', uri, lineOf(/When method post/));
+  assert.equal(state().step.status, 'PASSED', `a new session must run the Background first: ${state().step.error}`);
+  assert.equal(state().response.status, 201);
+  assert.match(state().notice, /session was new/);
+  await vscode.commands.executeCommand('karate-dsl.workbench.stop');
+  note('"This step only" on a new session ran the Background and earlier steps first');
+
   // 1. Run to the POST.
   await vscode.commands.executeCommand('karate-dsl.workbench.runToCursor', uri, lineOf(/When method post/));
   assert.equal(state().notice, '', `unexpected notice: ${state().notice}`);
