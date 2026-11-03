@@ -1,14 +1,33 @@
 # Karate Test Management for VS Code
 
-Generate, run, manage, and improve Karate API tests without leaving VS Code.
+Generate, run step by step, manage, and improve Karate API tests without leaving VS Code.
 
-[![Version](https://img.shields.io/badge/version-2.0.5-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-2.0.6-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-2c9b69.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-5c6370.svg)](LICENSE)
 
 ![Karate Test Management 2.0 workspace](images/karate-test-management-2.png)
 
 Karate Test Management brings test creation, execution, coverage, quality, and maintenance into one professional workspace. Use the compact Activity Bar view for quick actions, then open the expanded workspace when you need the full test library, run history, quality queue, or import tools.
+
+## Version 2.0.6 highlights
+
+2.0.6 adds **Karate Workbench**: write Karate against real responses instead of guessing. Run a scenario one step at a time, see what the API returned beside your code, and turn any field into an assertion with a click. Everything it writes is plain Karate in your own `.feature` file.
+
+![Karate Workbench in VS Code: click Send to run to a step, add a status check and a variable from the response, choose a starts-with assertion from the more... list, then run the next request with the saved variable](images/karate-workbench-demo.gif)
+
+*Click **Send**, click response fields to add `status`, `def` and advanced assertions, then send the next request.*
+
+### Karate Workbench at a glance
+
+- **Run one step at a time.** Click **Send** above a `method` step, or run **Karate Workbench: Run to Cursor**. A Karate 2 session keeps your variables between steps, like a notebook, and runs your project's real `karate-config.js`, `karate.env`, `callSingle` authentication, Java helpers and Gradle or Maven dependency jars.
+- **See the real response.** Status, timing, headers, the body as a tree, and your variables appear beside the editor. A failed step shows Karate's own message, including the `match` diff.
+- **Click a field, get an assertion.** Hover any field for **type**, **value**, **def** (save it as a variable such as `userId`), or **schema** on an object or array. New lines go right after the last step that ran, are highlighted briefly, and undo like any edit.
+- **Advanced assertions for every data type.** **more...** offers options that fit the value: contains, starts or ends with, regular expression, length, ranges, whole number, close to, optional, array size, every item, contains only, object fields, exact match ignoring changing fields, response time, status class, and response header checks. Fields that change on every response (ids, dates, tokens) only get options that stay true on the next run.
+- **Safe by default.** Secret-looking values are masked and never written into your test. Write requests to an environment that looks like production ask first, and nothing runs in an untrusted workspace.
+- **Edits are seen immediately.** Workbench runs the text in your editor, saved or not. Editing a step that already ran restarts the session, so you never debug a stale one.
+
+Needs Karate 2.1+ and Java 21+. Workbench works with standalone projects, Gradle and Maven; Maven and Windows wrapper scripts have not been run against a real build yet. Scenario Outlines and browser steps are not supported in Workbench. The [Workbench guide](docs/workbench.md) covers settings, how the project and classpath are found, and the full option list.
 
 ## Version 2.0.5 highlights
 
@@ -107,20 +126,13 @@ All existing command IDs remain available. Several generation settings are depre
 
 | Workflow | Capabilities |
 |---|---|
+| Write step by step | **Karate Workbench**: run steps in a persistent session, see the real response, and click a field to insert `match`, `def`, schema, or advanced assertions |
 | Teach with Scout | Chrome/Edge journeys, existing signed-in tabs, live action/API maps, confirmed variations, and linked Karate suites |
 | Create and import | OpenAPI, OpenAPI + Confluence, Confluence, Postman, HAR, GraphQL, Jira, and recorded sessions |
 | Execute | Feature, exact scenario, folder, tags, saved profiles, environments, and parallel workers |
 | Manage | Indexed scenario library, run history, failure drill-down, rerun, repair review, ownership, and Zephyr links |
 | Improve quality | OpenAPI coverage, missing-test generation, project health, flakiness, specification change impact, and Bug Hunter |
 | Automate | GitHub Actions repair intake, Zephyr Scale result publishing, MCP tools, and shared generation styles |
-
-## Karate Workbench
-
-**Run a scenario one step at a time, see the real response, and click a field to write the assertion.**
-
-Click **Send** above a `method` step (or run **Karate Workbench: Run to Cursor**). Workbench starts a Karate session that keeps your variables between steps, runs your project's real `karate-config.js`, Java helpers and environments, and shows status, timing, headers and body beside the editor. Hover a response field to add a `match` on its type or value, save it as a variable with `def`, or add a schema or status check. Everything it writes is plain Karate in your file.
-
-Needs Karate 2.1+ and Java 21+. Secret-looking values are masked in the view, and Workbench asks before sending a write request to a production-looking environment. [Workbench guide](docs/workbench.md)
 
 ## Meet Karate Scout
 
@@ -168,6 +180,7 @@ You can also right-click a supported file and choose the relevant Karate command
 - Select **Run Scenario** above a `Scenario:` or `Scenario Outline:` declaration.
 - Run a folder or tag selection from the command palette or the Runs area.
 - Save repeatable run profiles with an environment and worker count.
+- Select **Send** above a `method` step to run the scenario up to that step in [Karate Workbench](docs/workbench.md) and inspect the response before writing assertions.
 
 The executor inspects the target feature and surrounding project before choosing a strategy:
 

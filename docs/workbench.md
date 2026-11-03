@@ -1,5 +1,7 @@
 # Karate Workbench
 
+![Karate Workbench: run to a step, click response fields to add assertions, send the next request](karate-workbench-demo.gif)
+
 Run a Karate scenario one step at a time from the editor, see the real response beside your code, and click a field to write the assertion. Everything Workbench writes is ordinary Karate in your own `.feature` file.
 
 Workbench needs **Karate 2.1 or newer** and **Java 21 or newer**. It runs your project's real `karate-config.js`, so `baseUrl`, headers, `callSingle` authentication, Java helpers and environments behave exactly as they do in a normal run.

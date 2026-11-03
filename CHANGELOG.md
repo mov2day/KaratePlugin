@@ -5,16 +5,26 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.6] - 2026-11-04
+
+### Theme: Karate Workbench
 
 ### Added
-- **Karate Workbench.** Run a scenario one step at a time from the editor against your real Karate configuration. A **Send** action above each `method` step (and the **Karate Workbench: Run to Cursor** / **Run This Step Only** commands) runs the steps in a persistent Karate 2 session, so variables carry over like a notebook. The Workbench view shows status, timing, headers, the body and the variables; hover a response field to insert a `match` (type or value), a `def`, a schema match, or a status check into the scenario, or choose **more...** for advanced options by data type (contains, starts or ends with, regular expression, length, ranges, whole number, close to, optional, array size, contains only, every item, object fields, exact match ignoring changing fields, response time, status class, and response header checks). It uses the project's `karate-config.js`, `karate.env`, `callSingle`, Java helpers and Gradle/Maven dependency jars. Secret-looking values are masked, and write requests to production-looking environments ask first. Needs Karate 2.1+ and Java 21+; see the [Workbench guide](docs/workbench.md). New settings: `karateDsl.workbench.*`.
+- **Karate Workbench.** Run a scenario one step at a time from the editor against your real Karate configuration and see the response beside your code. A **Send** action above each `method` step (and the **Karate Workbench: Run to Cursor** / **Run This Step Only** commands) runs the steps in a persistent Karate 2 session, so variables carry over like a notebook. It uses the project's `karate-config.js`, `karate.env`, `callSingle`, Java helpers and Gradle/Maven dependency jars. See the [Workbench guide](docs/workbench.md).
+- **Click-to-assert.** Hover a response field to insert a `match` (type or value), a `def`, a schema match, or a status check into the scenario. New lines go right after the last step that ran, so the next run reuses the session instead of sending the request again.
+- **Advanced assertions.** **more...** on any field, object, array, the response bar or a response header lists options for that data type: contains, starts or ends with, regular expression, length, ranges, whole number, close to, optional, array size, every item, contains only, object fields, exact match ignoring changing fields, response time, status class, and header checks. Fields that change on every response (ids, dates, tokens) only get options that stay true on the next run, and secret-looking fields only get options that do not copy the value.
+- **Safety.** Secret-looking values are masked in the Workbench view and never written into your test. Write requests (`POST`, `PUT`, `PATCH`, `DELETE`) to an environment whose name or base URL host matches `karateDsl.workbench.productionPattern` ask for confirmation first. Nothing runs in an untrusted workspace.
+- New settings: `karateDsl.workbench.codeLens`, `.karateVersion`, `.javaPath`, `.requestTimeoutSeconds`, `.productionPattern` and `.buildArgs`.
 - The Karate 2.1.4 jar's SHA-256 is now pinned in the downloader.
-- **Activation.** The extension now activates when the workspace contains a `.feature` file, so CodeLens actions such as **Send** appear without first opening the sidebar.
+
+### Changed
+- **Activation.** The extension now activates when the workspace contains a `.feature` file (`workspaceContains:**/*.feature`), so CodeLens actions such as **Send** appear without first opening the sidebar.
+- The README, landing page and package description now lead with Workbench.
 
 ### Notes
-- The extension package now includes a small Java session host as plain `.class` files (about 20 KB). Building the package needs a JDK 21 or newer; CI installs one.
-- Maven support follows the Gradle approach but has not been run against a real Maven build yet.
+- Workbench needs Karate 2.1 or newer and Java 21 or newer. Scenario Outlines, browser steps and Karate 1.x are not supported in Workbench.
+- The extension package now includes a small Java session host as plain `.class` files (about 20 KB). Building the package needs a JDK 21 or newer; CI installs one and verifies a pinned Karate jar for the integration tests.
+- Maven support follows the Gradle approach but has not been run against a real Maven build yet. Windows wrapper scripts are untested.
 
 ## [2.0.5] - 2026-10-25
 

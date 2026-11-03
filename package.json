@@ -1,8 +1,8 @@
 {
   "name": "karate-test-generator",
   "displayName": "Karate Test Management",
-  "description": "Generate, run, manage, and improve Karate API tests (Karate 2.x, Java 21+) from one professional VS Code workspace",
-  "version": "2.0.5",
+  "description": "Generate, run step by step, manage, and improve Karate API tests (Karate 2.x, Java 21+) from one professional VS Code workspace, with click-to-assert on real responses",
+  "version": "2.0.6",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -55,7 +55,10 @@
     "api bug hunter",
     "github copilot",
     "ai test generation",
-    "gherkin"
+    "gherkin",
+    "karate workbench",
+    "click to assert",
+    "api assertions"
   ],
   "repository": {
     "type": "git",
