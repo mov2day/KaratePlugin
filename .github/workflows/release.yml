@@ -4,16 +4,16 @@ on:
   push:
     branches:
       - main
-
-permissions:
-  contents: write
+  workflow_dispatch:
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      VSCE_PAT: ${{ secrets.VSCE_PAT }}
-      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    permissions:
+      contents: write
+    outputs:
+      publish: ${{ steps.tag.outputs.exists == 'false' }}
+      vsix: karate-test-generator-${{ steps.version.outputs.tag }}.vsix
 
     steps:
       - name: Checkout
@@ -64,10 +64,39 @@ jobs:
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes
 
+      - name: Upload package
+        if: steps.tag.outputs.exists == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: karate-test-generator-${{ steps.version.outputs.tag }}.vsix
+          if-no-files-found: error
+
+  # Publishes with short-lived OIDC tokens (trusted publishing); no PATs are stored.
+  # The trusted publisher policies on both marketplaces pin this workflow file
+  # (release.yml) and the `publish` environment, so renaming either breaks publishing.
+  publish:
+    needs: release
+    if: needs.release.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: publish
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: vsix
+
       - name: Publish to VS Code Marketplace
-        if: steps.tag.outputs.exists == 'false' && env.VSCE_PAT != ''
-        run: npx vsce publish --packagePath "karate-test-generator-${{ steps.version.outputs.tag }}.vsix"
+        run: npx --yes @vscode/vsce@4.1.0 publish --oidc --packagePath "${{ needs.release.outputs.vsix }}"
 
       - name: Publish to Open VSX
-        if: steps.tag.outputs.exists == 'false' && env.OVSX_PAT != ''
-        run: npx --yes ovsx publish "karate-test-generator-${{ steps.version.outputs.tag }}.vsix" -p "$OVSX_PAT"
+        run: npx --yes ovsx@1.3.0 publish "${{ needs.release.outputs.vsix }}" --trusted-publishing
