@@ -15,8 +15,31 @@ Workbench needs **Karate 2.1 or newer** and **Java 21 or newer**. It runs your p
    - **value** to add an exact match
    - **def** to save the field as a variable (for example `userId`) that later steps can use
    - **schema** (on an object or array) to add a schema match, and **status** or **schema match** in the response header for the status code or the whole body
+   - **more...** for advanced options that fit the field's type (see below)
 
 New lines go right after the last step that has run, so the file order always matches the order things ran and the next **Run to Cursor** reuses the session instead of sending the request again. Steps further down that you have not run yet (such as an existing `Then status 201`) stay below. A line that already exists for that response is not added twice. New lines are highlighted briefly and are undoable with the editor's normal undo. Each new line also runs in the session immediately, so a `def` is available to the next step.
+
+## Advanced assertions
+
+**more...** on any field, object, array, or the response bar opens a list of options for that value's data type. Options that need a value (a substring, a range, a size) ask for it, prefilled with a value that passes against the response you are looking at. Everything is plain Karate.
+
+| Data type | Options |
+|---|---|
+| Any value | is present, is not null, optional with this type (`'##string'`), is not equal to... |
+| Text | is not empty, contains, starts with, ends with, matches a regular expression, has length, has length between, equals ignoring case, is one of |
+| Number | is positive, is zero or more, is a whole number, greater than, at least, less than, at most, between, close to (with a tolerance) |
+| Boolean | the any-value options, plus **value** for `true` or `false` |
+| Null | is present, is null |
+| Array | is not empty, has exactly, at least or at most N items, every item is a type, contains an item, contains only these items in any order, contains at least one of, does not contain |
+| Object | is not empty, has these fields (any values), has exactly these fields, equals this while ignoring changing fields |
+| Array item | also "the array contains this value" |
+| Whole response | responds within N ms, status is in a class (for example 2xx), plus the body options above |
+| Response headers | equals, contains (the media type, so `application/json; charset=utf-8` becomes `application/json`), present |
+
+Some choices keep the result from breaking on the next run:
+- Fields that change on every response (ids, dates, timestamps, tokens) only get options that stay true, such as a type, a pattern, "greater than 0" or "not empty". "Equals this, ignoring changing fields" replaces them with `'#ignore'`.
+- Secret-looking fields only get options that do not copy the value (present, not null, optional, not empty). Masked header values cannot be asserted on.
+- A line that already exists for the same response is not added twice, and invalid input (for example a non-number for a limit) shows a message and changes nothing.
 
 ## How running works
 

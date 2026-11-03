@@ -5,14 +5,15 @@ import { logger } from '../../utils/logger';
 import { KarateCliExecutor } from '../execution/KarateCliExecutor';
 import { ProjectExecutionResolver } from '../execution/ProjectExecutionResolver';
 import { readExecutionSettings } from '../execution/ExecutionSettings';
-import { defStep, matchStep, MatchMode, PathSegment, schemaStep, suggestMode, valueAtPath, variableName } from './AssertionBuilder';
+import { advancedOptions, advancedStepFor, AdvancedOption, headerStep, HeaderOption } from './AdvancedAssertions';
+import { defStep, jsPath, matchStep, MatchMode, PathSegment, schemaStep, suggestMode, valueAtPath, variableName } from './AssertionBuilder';
 import { ClasspathResult, resolveClasspath } from './ClasspathResolver';
 import { discoverEnvironments, findConfigDir } from './EnvDiscovery';
 import {
     FeatureScenario, frontierIndex, insertionPointAt, isMutatingVerb, methodVerb, normalizeStepText, parseFeature, ParsedFeature,
     pathHints, planRun, responseScope, scenarioAtLine, stepAtLine
 } from './GherkinSteps';
-import { isSecretValue, pathIsSecret } from './Redaction';
+import { isSecretKey, isSecretValue, pathIsSecret } from './Redaction';
 import { HostResponse } from './SessionProtocol';
 import {
     emptyState, friendlyError, InsertKind, insertionText, isProductionContext, maskedResponse, maskedVariables, PanelState
@@ -43,13 +44,24 @@ interface FeatureSession {
     lastUsed: number;
 }
 
+interface AssertionContext {
+    entry: FeatureSession;
+    last: LastResponse;
+    document: vscode.TextDocument;
+    parsed: ParsedFeature;
+    scenario: FeatureScenario;
+}
+
 type WebviewMessage =
     | { type: 'ready' }
     | { type: 'restart' }
     | { type: 'stop' }
     | { type: 'cancel' }
     | { type: 'selectEnv'; env: string }
-    | { type: 'assert'; path: PathSegment[]; action: 'type' | 'value' | 'present' | 'schema' | 'def' | 'status' };
+    | { type: 'assert'; root?: 'body' | 'headers'; path: PathSegment[]; action: AssertAction; option?: string; param?: string };
+
+/** `more` opens the option picker; `advanced` applies an option directly (used by automation and tests). */
+type AssertAction = 'type' | 'value' | 'present' | 'schema' | 'def' | 'status' | 'more' | 'advanced' | 'headerEquals' | 'headerContains' | 'headerPresent';
 
 /** Runs Karate steps one at a time from the editor and shows the response beside the code. */
 export class WorkbenchController implements vscode.Disposable, vscode.CodeLensProvider {
@@ -405,34 +417,33 @@ export class WorkbenchController implements vscode.Disposable, vscode.CodeLensPr
     }
 
     // Click to assert.
-    private async assert(fieldPath: PathSegment[], action: 'type' | 'value' | 'present' | 'schema' | 'def' | 'status'): Promise<void> {
-        const key = this.current;
-        const entry = key ? this.sessions.get(key) : undefined;
-        const last = entry?.lastResponse;
-        if (!key || !entry || !last || !last.fresh || last.stepIndex < 0) {
-            this.setState({ notice: 'Run a method step first, then click a field of its response.' });
+    private async assert(message: Extract<WebviewMessage, { type: 'assert' }>): Promise<void> {
+        const ctx = await this.assertionContext();
+        if (!ctx) {
             return;
         }
-        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(key));
-        const parsed = parseFeature(document.getText());
-        const scenario = parsed.scenarios.find((item, index) => `${index}:${item.name}` === entry.scenarioKey);
-        const step = scenario?.steps[last.stepIndex];
-        if (!scenario || !step || step.text !== last.stepText) {
-            this.setState({ notice: 'That step changed after it ran. Run it again, then click the response.' });
+        const { entry, last } = ctx;
+        const fieldPath = message.path;
+        const action = message.action;
+
+        if (message.root === 'headers' || action === 'headerEquals' || action === 'headerContains' || action === 'headerPresent') {
+            await this.assertHeader(ctx, fieldPath, action as HeaderOption);
             return;
         }
+
         const value = valueAtPath(last.response.body, fieldPath);
         if (action !== 'status' && fieldPath.length > 0 && value === undefined) {
             this.setState({ notice: 'That field is not in the response any more.' });
             return;
         }
-        if ((action === 'value' || action === 'def') && (pathIsSecret(fieldPath) || isSecretValue(value))) {
+        const secret = pathIsSecret(fieldPath) || isSecretValue(value);
+        if ((action === 'value' || action === 'def') && secret) {
             this.setState({ notice: 'This value looks like a secret and is masked, so it is not written into your test.' });
             return;
         }
 
         let kind: InsertKind = 'match';
-        let stepText: string;
+        let stepText: string | undefined;
         if (action === 'status') {
             stepText = `status ${last.response.status}`;
         } else if (action === 'schema') {
@@ -440,15 +451,110 @@ export class WorkbenchController implements vscode.Disposable, vscode.CodeLensPr
         } else if (action === 'def') {
             kind = 'def';
             stepText = defStep(fieldPath, variableName(fieldPath, Object.keys(entry.variables), pathHints(entry.executed)));
+        } else if (action === 'more' || action === 'advanced') {
+            stepText = await this.advancedText(message, value, secret, last.response);
         } else {
             const mode: MatchMode = action === 'type' || action === 'present' || action === 'value' ? action : suggestMode(fieldPath[fieldPath.length - 1], value);
             stepText = matchStep(fieldPath, value, mode);
         }
+        if (stepText) {
+            await this.insertAssertion(ctx, kind, stepText);
+        }
+    }
+
+    /** The step text for an advanced option: picked from a list (with a parameter prompt when needed), or given directly. */
+    private async advancedText(message: Extract<WebviewMessage, { type: 'assert' }>, value: unknown, secret: boolean, response: HostResponse): Promise<string | undefined> {
+        const context = { secret, timeMs: response.timeMs, status: response.status };
+        const parentIsArray = typeof message.path[message.path.length - 1] === 'number';
+        const options = advancedOptions(message.path, value, context, parentIsArray);
+        let chosen: AdvancedOption | undefined;
+        let param = message.param ?? '';
+        if (message.action === 'advanced') {
+            chosen = options.find(item => item.id === message.option);
+            if (!chosen) {
+                this.setState({ notice: `That option is not available for this field: ${message.option ?? ''}` });
+                return undefined;
+            }
+        } else {
+            const items: Array<vscode.QuickPickItem & { option?: AdvancedOption }> = [];
+            let group = '';
+            for (const option of options) {
+                if (option.group !== group) {
+                    group = option.group;
+                    items.push({ label: group, kind: vscode.QuickPickItemKind.Separator });
+                }
+                items.push({ label: option.label, detail: option.detail, option });
+            }
+            const picked = await vscode.window.showQuickPick(items, { placeHolder: `Assert on ${jsPath('response', message.path)}`, matchOnDetail: true });
+            chosen = picked?.option;
+            if (!chosen) {
+                return undefined;
+            }
+            if (chosen.param) {
+                const input = await vscode.window.showInputBox({ prompt: chosen.param.prompt, value: chosen.param.value });
+                if (input === undefined) {
+                    return undefined;
+                }
+                param = input;
+            }
+        }
+        try {
+            const given = message.action === 'advanced' && message.param === undefined ? chosen.param?.value ?? '' : param;
+            return advancedStepFor(chosen.id, message.path, value, chosen.param ? given : '', context);
+        } catch (error) {
+            this.setState({ notice: error instanceof Error ? error.message : String(error) });
+            return undefined;
+        }
+    }
+
+    private async assertHeader(ctx: AssertionContext, fieldPath: PathSegment[], option: HeaderOption): Promise<void> {
+        const name = typeof fieldPath[0] === 'string' ? fieldPath[0] : '';
+        const headers = ctx.last.response.headers;
+        const key = Object.keys(headers).find(item => item.toLowerCase() === name.toLowerCase());
+        if (!key) {
+            this.setState({ notice: 'That header is not in the response any more.' });
+            return;
+        }
+        if (isSecretKey(key) && option !== 'headerPresent') {
+            this.setState({ notice: 'This header looks like a secret and is masked, so its value is not written into your test.' });
+            return;
+        }
+        const raw = headers[key];
+        const value = Array.isArray(raw) ? String(raw[0] ?? '') : String(raw ?? '');
+        try {
+            await this.insertAssertion(ctx, 'match', headerStep(option, key, value));
+        } catch (error) {
+            this.setState({ notice: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    /** The session, last response and the scenario step it came from, or undefined with a notice when they are not usable. */
+    private async assertionContext(): Promise<AssertionContext | undefined> {
+        const key = this.current;
+        const entry = key ? this.sessions.get(key) : undefined;
+        const last = entry?.lastResponse;
+        if (!key || !entry || !last || !last.fresh || last.stepIndex < 0) {
+            this.setState({ notice: 'Run a method step first, then click a field of its response.' });
+            return undefined;
+        }
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(key));
+        const parsed = parseFeature(document.getText());
+        const scenario = parsed.scenarios.find((item, index) => `${index}:${item.name}` === entry.scenarioKey);
+        const step = scenario?.steps[last.stepIndex];
+        if (!scenario || !step || step.text !== last.stepText) {
+            this.setState({ notice: 'That step changed after it ran. Run it again, then click the response.' });
+            return undefined;
+        }
+        return { entry, last, document, parsed, scenario };
+    }
+
+    /** Inserts the step after the last step that ran, highlights it, and runs it so the session stays in step with the file. */
+    private async insertAssertion(ctx: AssertionContext, kind: InsertKind, stepText: string): Promise<void> {
+        const { entry, last, document, parsed, scenario } = ctx;
         if (responseScope(scenario.steps, last.stepIndex).some(item => item.text.replace(/^(?:\*|Given|When|Then|And|But)\s+/, '') === stepText)) {
             this.setState({ notice: 'That line is already in the scenario.' });
             return;
         }
-
         const singleStep = entry.executed[0] === '\u0000single-step';
         const frontier = frontierIndex(entry.executed.length, parsed.background.length, last.stepIndex, scenario.steps.length, singleStep);
         const point = insertionPointAt(scenario.steps, last.stepIndex, frontier);
@@ -466,7 +572,6 @@ export class WorkbenchController implements vscode.Disposable, vscode.CodeLensPr
         shown.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
         setTimeout(() => shown.setDecorations(this.highlight, []), 1500);
 
-        // Keep the session in step with the file: the new line runs now, so variables it defines are available.
         const synced = normalizeStepText(text.slice(1));
         const result = await entry.session.step(synced).catch(() => undefined);
         if (result) {
@@ -505,7 +610,7 @@ export class WorkbenchController implements vscode.Disposable, vscode.CodeLensPr
             case 'stop': await this.stop(); break;
             case 'cancel': this.cancel(); break;
             case 'selectEnv': if (this.current) { await this.selectEnvironment(this.current, message.env); } break;
-            case 'assert': await this.assert(message.path, message.action); break;
+            case 'assert': await this.assert(message); break;
         }
     }
 

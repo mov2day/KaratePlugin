@@ -16,6 +16,7 @@ const hostDir = path.join(root, 'resources', 'workbench', 'host');
 
 const steps = require(path.join(out, 'GherkinSteps.js'));
 const assertions = require(path.join(out, 'AssertionBuilder.js'));
+const advanced = require(path.join(out, 'AdvancedAssertions.js'));
 const redaction = require(path.join(out, 'Redaction.js'));
 const protocol = require(path.join(out, 'SessionProtocol.js'));
 const envs = require(path.join(out, 'EnvDiscovery.js'));
@@ -340,6 +341,105 @@ describe('ClasspathResolver', () => {
   });
 });
 
+describe('AdvancedAssertions', () => {
+  const ctx = { secret: false, timeMs: 12, status: 201 };
+  const ids = (p, v, parentIsArray = false, c = ctx) => advanced.advancedOptions(p, v, c, parentIsArray).map(o => o.id);
+
+  test('options fit the data type', () => {
+    assert.deepEqual(ids(['n'], 'Ada'), ['present', 'notNull', 'optional', 'notEqual', 'notEmpty', 'contains', 'startsWith', 'endsWith', 'regex', 'length', 'lengthBetween', 'ignoreCase', 'oneOf']);
+    assert.deepEqual(ids(['n'], 5), ['present', 'notNull', 'optional', 'notEqual', 'positive', 'nonNegative', 'integer', 'greaterThan', 'atLeast', 'lessThan', 'atMost', 'between', 'closeTo']);
+    assert.ok(!ids(['n'], 5.5).includes('integer'), 'a fractional number is not offered "whole number"');
+    assert.deepEqual(ids(['n'], true), ['present', 'notNull', 'optional', 'notEqual']);
+    assert.deepEqual(ids(['n'], null), ['present', 'isNull']);
+    assert.ok(ids(['t'], ['a', 'b']).includes('eachType'));
+    assert.ok(!ids(['t'], [{ a: 1 }]).includes('eachType'));
+    assert.deepEqual(ids(['o'], { a: 1 }).slice(-4), ['notEmptyObject', 'hasKeys', 'onlyKeys', 'exact']);
+    assert.ok(!ids(['o'], {}).includes('hasKeys'), 'an empty object has no fields to list');
+    assert.ok(ids(['t', 0], 'a', true).includes('parentContains'));
+    assert.ok(ids([], { a: 1 }).includes('responseTime') && ids([], { a: 1 }).includes('statusClass'));
+    assert.ok(!ids(['n'], 'x').includes('responseTime'));
+  });
+
+  test('changing fields (ids, dates, tokens) only get options that stay true on the next response', () => {
+    assert.deepEqual(ids(['id'], 7), ['present', 'notNull', 'optional', 'notEqual', 'positive', 'nonNegative', 'integer', 'greaterThan']);
+    assert.deepEqual(ids(['createdAt'], '2026-11-03T09:14:00Z'), ['present', 'notNull', 'optional', 'notEmpty', 'regex']);
+    const regexFor = (key, value) => advanced.advancedOptions([key], value, ctx).find(item => item.id === 'regex').param.value;
+    const uuid = new RegExp(`^${regexFor('id', '123e4567-e89b-12d3-a456-426614174000')}$`);
+    assert.ok(uuid.test('00000000-0000-4000-8000-000000000000') && uuid.test('abcdefab-cdef-abcd-efab-cdefabcdefab'), 'a generated id pattern must match other ids');
+    assert.equal(advanced.advancedOptions(['id'], 7, ctx).find(item => item.id === 'notEqual').param.value, '0');
+    assert.equal(advanced.advancedOptions(['id'], 7, ctx).find(item => item.id === 'greaterThan').param.value, '0');
+  });
+
+  test('secrets only get options that do not copy the value', () => {
+    const secret = { secret: true };
+    assert.deepEqual(ids(['token'], 'abc', false, secret), ['present', 'notNull', 'optional', 'notEmpty']);
+    assert.deepEqual(ids(['pin'], 1234, false, secret), ['present', 'notNull', 'optional']);
+    assert.throws(() => advanced.advancedStep('contains', ['token'], 'abc', 'abc', secret), /secret/);
+    assert.throws(() => advanced.advancedStep('regex', ['token'], 'abc', 'a', secret), /secret/);
+  });
+
+  test('defaults are derived so they pass against the value they came from', () => {
+    const o = (id, v) => advanced.advancedOptions(['x'], v, ctx).find(item => item.id === id).param.value;
+    assert.equal(o('regex', 'ada@example.com'), '[A-Za-z]+@[A-Za-z]+\\.[A-Za-z]+');
+    assert.equal(o('regex', 'AB-12 x'), '[A-Za-z]+\\-\\d+\\s+[A-Za-z]+');
+    assert.equal(o('regex', 'a1b2'), '[A-Za-z0-9]+');
+    assert.equal(o('startsWith', 'Ada Lovelace'), 'Ada');
+    assert.equal(o('endsWith', 'Ada Lovelace'), 'ace');
+    assert.equal(o('between', 10), '4,16');
+    assert.equal(o('greaterThan', 10), '9');
+    assert.equal(o('closeTo', 3.14), '3.14,0.01');
+    assert.equal(o('closeTo', 3), '3,0');
+    assert.equal(advanced.advancedOptions([], { a: 1 }, { secret: false, timeMs: 12 }).find(item => item.id === 'responseTime').param.value, '100');
+    assert.equal(advanced.advancedOptions([], { a: 1 }, { secret: false, timeMs: 480 }).find(item => item.id === 'responseTime').param.value, '2000');
+  });
+
+  test('steps use ordinary Karate syntax', () => {
+    const step = (id, p, v, param = '') => advanced.advancedStepFor(id, p, v, param, ctx);
+    assert.equal(step('present', ['a'], 1), "match response.a == '#present'");
+    assert.equal(step('optional', ['a'], 'x'), "match response.a == '##string'");
+    assert.equal(step('startsWith', ['n'], 'Ada', 'Ad'), "match response.n == '#? _.startsWith(\"Ad\")'");
+    assert.equal(step('contains', ['n'], 'Ada', "it's"), "match response.n contains 'it\\'s'");
+    assert.equal(step('regex', ['n'], 'x', '\\d+'), "match response.n == '#regex \\\\d+'");
+    assert.equal(step('between', ['n'], 5, '1, 9'), "match response.n == '#number? _ >= 1 && _ <= 9'");
+    assert.equal(step('size', ['t'], [1], '3'), "match response.t == '#[3]'");
+    assert.equal(step('contains', ['t'], ['a'], '"b"'), "match response.t contains 'b'");
+    assert.equal(step('containsOnly', ['t'], ['a'], '["b","a"]'), 'match response.t contains only ["b","a"]');
+    assert.equal(step('parentContains', ['t', 1], 'b'), "match response.t contains 'b'");
+    assert.equal(step('hasKeys', ['o'], { a: 1, b: 2 }), "match response.o contains {\"a\":\"#present\",\"b\":\"#present\"}");
+    assert.equal(step('onlyKeys', ['o'], { a: 1, b: 2 }), 'match karate.keysOf(response.o) contains only ["a","b"]');
+    assert.equal(step('responseTime', [], {}, '500'), 'assert responseTime < 500');
+    assert.equal(step('statusClass', [], {}, '2'), 'assert responseStatus >= 200 && responseStatus < 300');
+  });
+
+  test('exact ignores ids, dates and secrets and uses a docstring when long', () => {
+    const text = advanced.advancedStep('exact', ['u'], { id: 7, name: 'Ada', createdAt: '2026-11-03T09:14:00Z', password: 'p', note: 'x' });
+    assert.equal(text, 'match response.u == {"id":"#ignore","name":"Ada","createdAt":"#ignore","password":"#ignore","note":"x"}');
+    const long = advanced.advancedStep('exact', [], { alpha: 'aaaaaaaaaaaaaaaaaaaa', beta: 'bbbbbbbbbbbbbbbbbbbb', gamma: 'cccccccccccccccccccc', delta: 'dddddddddddddddddddd', id: 1 });
+    assert.match(long, /^match response ==\n"""\n\{\n/);
+  });
+
+  test('invalid parameters are rejected with readable messages', () => {
+    const step = (id, v, param) => advanced.advancedStepFor(id, ['x'], v, param, ctx);
+    assert.throws(() => step('greaterThan', 1, 'abc'), /must be a number/);
+    assert.throws(() => step('between', 1, '1'), /two numbers/);
+    assert.throws(() => step('size', [1], '-1'), /whole number/);
+    assert.throws(() => step('size', [1], '1.5'), /whole number/);
+    assert.throws(() => step('regex', 'x', '('), /regular expression/);
+    assert.throws(() => step('containsOnly', [1], '1'), /JSON array/);
+    assert.throws(() => step('closeTo', 1, '1,-2'), /negative/);
+    assert.throws(() => step('oneOf', 'x', ' , '), /at least one/i);
+    assert.throws(() => advanced.advancedStep('statusClass', [], {}, '9'), /1 to 5/);
+    assert.throws(() => advanced.advancedStep('nope', [], 1), /Unknown/);
+  });
+
+  test('headerStep writes match header lines and rejects odd names', () => {
+    assert.equal(advanced.headerStep('headerEquals', 'Content-Type', 'application/json'), "match header Content-Type == 'application/json'");
+    assert.equal(advanced.headerStep('headerContains', 'Content-Type', 'application/json; charset=utf-8'), "match header Content-Type contains 'application/json'");
+    assert.equal(advanced.headerStep('headerPresent', 'X-Id', ''), "match responseHeaders contains { 'X-Id': '#present' }");
+    assert.throws(() => advanced.headerStep('headerEquals', 'bad name', 'x'), /cannot be written/);
+  });
+});
+
 describe('WorkbenchState', () => {
   test('friendlyError explains a Java version mismatch and a missing Java', () => {
     const mismatch = state.friendlyError(new Error('com/x/Util has been compiled by a more recent version of the Java Runtime (class file version 67.0), this version only recognizes up to 65.0'));
@@ -568,6 +668,78 @@ describe('Integration: plain project', () => {
     const normal = childProcess.spawnSync('java', ['-cp', `${path.resolve(karateJar)}${path.delimiter}${dir}`, 'io.karatelabs.Main', 'run', '-g', dir, '-e', 'dev', '-o', path.join(project, 'out'), featurePath], { encoding: 'utf8', cwd: project, env: process.env });
     assert.equal(normal.status, 0, `normal Karate run failed:\n${normal.stdout}\n${normal.stderr}`);
     assert.match(text, /match response ==\n\s+"""/, 'the long schema must use the docstring form');
+  });
+
+  test('every advanced option passes against real Karate, and wrong parameters fail', async () => {
+    const dir = path.join(project, 'src', 'test', 'java');
+    const resolved = await classpath.resolveClasspath({ projectRoot: project, strategy: 'cli', karateJar });
+    const { session: live } = await WorkbenchSession.start({
+      hostDir, classpath: resolved.entries, feature: path.join(dir, 'users.feature'), env: 'dev', configDir: dir, workDir: project, requestTimeoutMs: 60_000
+    });
+    try {
+      await passes(live.step('* url baseUrl'));
+      await passes(live.step("* path 'users'"));
+      await passes(live.step("* request { name: 'Ada Lovelace', email: 'ada@example.com', age: 36, score: 3.14159, active: true, nickname: null, tags: ['a','b','c'], address: { city: 'London', zip: 'N1' }, items: [{ sku: 'x1', qty: 2 }, { sku: 'x2', qty: 5 }] }"));
+      const posted = await passes(live.step('* method post'));
+      const body = posted.response.body;
+      const context = { secret: false, timeMs: posted.response.timeMs, status: posted.response.status };
+      const paths = [[], ['name'], ['email'], ['age'], ['score'], ['active'], ['nickname'], ['tags'], ['tags', 0], ['address'], ['items'], ['items', 0], ['id']];
+      const covered = new Set();
+      const lines = [];
+      for (const fieldPath of paths) {
+        const value = assertions.valueAtPath(body, fieldPath);
+        const parentIsArray = typeof fieldPath[fieldPath.length - 1] === 'number';
+        for (const option of advanced.advancedOptions(fieldPath, value, context, parentIsArray)) {
+          const text = advanced.advancedStepFor(option.id, fieldPath, value, option.param ? option.param.value : '', context);
+          const result = await live.step(`* ${text}`);
+          assert.equal(result.status, 'PASSED', `${JSON.stringify(fieldPath)} ${option.id}: ${text}\n${result.error}`);
+          covered.add(option.id);
+          lines.push(text);
+        }
+      }
+      // Every option the builder knows must have been exercised against some field.
+      const known = ['present', 'notNull', 'optional', 'isNull', 'notEqual', 'notEmpty', 'contains', 'startsWith', 'endsWith', 'regex', 'length', 'lengthBetween', 'ignoreCase', 'oneOf',
+        'positive', 'nonNegative', 'integer', 'greaterThan', 'atLeast', 'lessThan', 'atMost', 'between', 'closeTo',
+        'nonEmpty', 'size', 'minSize', 'maxSize', 'eachType', 'containsOnly', 'containsAny', 'notContains', 'parentContains',
+        'notEmptyObject', 'hasKeys', 'onlyKeys', 'exact', 'responseTime', 'statusClass'];
+      assert.deepEqual(known.filter(id => !covered.has(id)), [], 'options never exercised');
+
+      // The assertions are not vacuous: deliberately wrong parameters must fail.
+      const mustFail = [
+        ['startsWith', ['name'], 'zz'], ['endsWith', ['name'], 'zz'], ['contains', ['name'], 'zz'], ['regex', ['name'], '\\d+'], ['length', ['name'], '3'],
+        ['lengthBetween', ['name'], '1,2'], ['ignoreCase', ['name'], 'someone else'], ['oneOf', ['name'], 'a,b'], ['notEqual', ['name'], 'Ada Lovelace'],
+        ['greaterThan', ['age'], '99'], ['lessThan', ['age'], '1'], ['atLeast', ['age'], '37'], ['atMost', ['age'], '35'], ['between', ['age'], '1,2'], ['closeTo', ['score'], '9,0.1'],
+        ['size', ['tags'], '2'], ['minSize', ['tags'], '4'], ['maxSize', ['tags'], '2'], ['containsOnly', ['tags'], '["a","b"]'], ['containsAny', ['tags'], '["x","y"]'],
+        ['notContains', ['tags'], '"a"'], ['responseTime', [], '0'], ['statusClass', [], '5']
+      ];
+      for (const [id, fieldPath, param] of mustFail) {
+        const value = assertions.valueAtPath(body, fieldPath);
+        const text = advanced.advancedStepFor(id, fieldPath, value, param, context);
+        const result = await live.step(`* ${text}`);
+        assert.equal(result.status, 'FAILED', `${id} with "${param}" must fail but passed: ${text}`);
+      }
+      assert.equal((await live.step('* match response.nickname == \'#notnull\'')).status, 'FAILED');
+
+      // Response headers.
+      for (const [option, name, value] of [['headerEquals', 'content-type', 'application/json'], ['headerContains', 'content-type', 'application/json; charset=x'], ['headerPresent', 'content-type', '']]) {
+        const text = advanced.headerStep(option, name, value);
+        const result = await live.step(`* ${text}`);
+        assert.equal(result.status, 'PASSED', `${option}: ${text}\n${result.error}`);
+      }
+
+      // The same lines pass in a normal Karate run of the saved file.
+      const featurePath = path.join(dir, 'advanced.feature');
+      const feature = [
+        'Feature: advanced', '', 'Background:', '  * url baseUrl', '', 'Scenario: all options', "  Given path 'users'",
+        "  And request { name: 'Ada Lovelace', email: 'ada@example.com', age: 36, score: 3.14159, active: true, nickname: null, tags: ['a','b','c'], address: { city: 'London', zip: 'N1' }, items: [{ sku: 'x1', qty: 2 }, { sku: 'x2', qty: 5 }] }",
+        '  When method post', ...lines.map(line => `  Then ${line.split('\n').join('\n  ')}`), ''
+      ].join('\n');
+      fs.writeFileSync(featurePath, feature);
+      const normal = childProcess.spawnSync('java', ['-cp', `${path.resolve(karateJar)}${path.delimiter}${dir}`, 'io.karatelabs.Main', 'run', '-g', dir, '-e', 'dev', '-o', path.join(project, 'out-advanced'), featurePath], { encoding: 'utf8', cwd: project, env: process.env });
+      assert.equal(normal.status, 0, `normal Karate run failed:\n${normal.stdout}\n${normal.stderr}`);
+    } finally {
+      await live.stop();
+    }
   });
 
   test('a Scenario Outline only file is refused with a clear message', async () => {

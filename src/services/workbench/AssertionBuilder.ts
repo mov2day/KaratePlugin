@@ -38,7 +38,7 @@ export function typeMarker(value: unknown): string {
     }
 }
 
-function quoteString(text: string): string {
+export function quoteString(text: string): string {
     return `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\n/g, '\\n')}'`;
 }
 

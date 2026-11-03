@@ -85,7 +85,7 @@ export function renderWorkbenchHtml(nonce: string, cspSource: string): string {
     var secret = value === MASK;
     if (assertable) {
       var acts = el('span', 'acts');
-      var send = function (action) { return function () { post({ type: 'assert', path: path, action: action }); }; };
+      var send = function (action) { return function () { post({ type: 'assert', root: 'body', path: path, action: action }); }; };
       if (isContainer) {
         acts.appendChild(button('schema', 'Add a schema match for this part', send('schema')));
       } else {
@@ -93,6 +93,7 @@ export function renderWorkbenchHtml(nonce: string, cspSource: string): string {
         acts.appendChild(button('value', secret ? 'Masked values cannot be asserted' : 'match this exact value', send('value'), secret));
         acts.appendChild(button('def', secret ? 'Masked values cannot be saved' : 'Save this field as a variable', send('def'), secret));
       }
+      acts.appendChild(button('more\u2026', 'More assertions for this value: contains, ranges, size, regex, optional and more', send('more')));
       row.appendChild(acts);
     }
     container.appendChild(row);
@@ -104,6 +105,23 @@ export function renderWorkbenchHtml(nonce: string, cspSource: string): string {
       }
       if (keys.length > 500) { var more = el('div', 'row muted', '... ' + (keys.length - 500) + ' more'); more.style.setProperty('--depth', String(depth + 1)); container.appendChild(more); }
     }
+  }
+
+  function headerRow(container, name, value, assertable) {
+    var row = el('div', 'row'); row.tabIndex = 0;
+    row.appendChild(el('span', 'key', name + ':'));
+    var text = Array.isArray(value) ? value.join(', ') : String(value);
+    row.appendChild(el('span', 'str mono', JSON.stringify(text)));
+    if (assertable) {
+      var acts = el('span', 'acts');
+      var secret = text === MASK;
+      var send = function (action) { return function () { post({ type: 'assert', root: 'headers', path: [name], action: action }); }; };
+      acts.appendChild(button('equals', secret ? 'Masked values cannot be asserted' : 'match header ' + name + ' exactly', send('headerEquals'), secret));
+      acts.appendChild(button('contains', secret ? 'Masked values cannot be asserted' : 'match header ' + name + ' contains the media type', send('headerContains'), secret));
+      acts.appendChild(button('present', 'The header is present', send('headerPresent')));
+      row.appendChild(acts);
+    }
+    container.appendChild(row);
   }
 
   function render(state) {
@@ -131,12 +149,13 @@ export function renderWorkbenchHtml(nonce: string, cspSource: string): string {
       head.appendChild(statusChip);
       head.appendChild(el('span', 'muted', r.timeMs + ' ms'));
       if (!r.fresh) { head.appendChild(el('span', 'muted', 'from an earlier step')); }
-      if (r.assertable) { head.appendChild(button('status', 'Add a status assertion', function () { post({ type: 'assert', path: [], action: 'status' }); })); }
-      if (r.assertable) { head.appendChild(button('schema match', 'Add a schema match for the whole body', function () { post({ type: 'assert', path: [], action: 'schema' }); })); }
+      if (r.assertable) { head.appendChild(button('status', 'Add a status assertion', function () { post({ type: 'assert', root: 'body', path: [], action: 'status' }); })); }
+      if (r.assertable) { head.appendChild(button('schema match', 'Add a schema match for the whole body', function () { post({ type: 'assert', root: 'body', path: [], action: 'schema' }); })); }
+      if (r.assertable) { head.appendChild(button('more\u2026', 'More assertions for the response: response time, status class, body size, contains, exact match and more', function () { post({ type: 'assert', root: 'body', path: [], action: 'more' }); })); }
       sec.appendChild(head);
       var details = el('details'); details.appendChild(el('summary', '', 'Headers'));
       var hdr = el('div', 'tree');
-      Object.keys(r.headers || {}).forEach(function (k) { node(hdr, k, r.headers[k], [], 0, false); });
+      Object.keys(r.headers || {}).forEach(function (k) { headerRow(hdr, k, r.headers[k], r.assertable); });
       details.appendChild(hdr); sec.appendChild(details);
       var tree = el('div', 'tree');
       if (r.body === undefined || r.body === null) { tree.appendChild(el('div', 'muted', 'No body')); } else { node(tree, undefined, r.body, [], 0, r.assertable); }

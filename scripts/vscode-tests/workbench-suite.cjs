@@ -74,6 +74,34 @@ async function main() {
   assert.match(lines[post + 2], /match response\.name/);
   note('click-to-assert inserted type and value lines in run order; a duplicate status line was refused');
 
+  // 2b. Advanced options (applied directly; the editor shows the same options in a quick pick).
+  const stepPassed = () => assert.equal(state().step.status, 'PASSED', state().step.error);
+  await send({ path: ['name'], action: 'advanced', option: 'startsWith', param: 'Ad' });
+  assert.match(text(), /match response\.name == '#\? _\.startsWith\("Ad"\)'/);
+  stepPassed();
+  await send({ path: ['email'], action: 'advanced', option: 'regex' });
+  assert.match(text(), /match response\.email == '#regex /);
+  stepPassed();
+  await send({ path: ['id'], action: 'advanced', option: 'greaterThan' });
+  assert.match(text(), /match response\.id == '#number\? _ > 0'/);
+  stepPassed();
+  await send({ path: [], action: 'advanced', option: 'responseTime', param: '60000' });
+  assert.match(text(), /assert responseTime < 60000/);
+  stepPassed();
+  await send({ path: [], action: 'advanced', option: 'exact' });
+  assert.match(text(), /match response == \{"id":"#ignore","role":"member","name":"Ada","email":"ada@example\.com"\}/);
+  stepPassed();
+  await api.send({ type: 'assert', root: 'headers', path: ['content-type'], action: 'headerContains' });
+  assert.match(text(), /match header content-type contains 'application\/json'/);
+  stepPassed();
+  const beforeBad = text();
+  await send({ path: ['name'], action: 'advanced', option: 'length', param: 'abc' });
+  assert.match(state().notice, /must be a number/);
+  assert.equal(text(), beforeBad, 'an invalid parameter must not change the file');
+  await send({ path: ['name'], action: 'advanced', option: 'notAnOption' });
+  assert.match(state().notice, /not available/);
+  note('advanced options (text, regex, number, response time, exact, header) inserted, ran and passed; bad input changed nothing');
+
   // 3. Masked values are refused.
   await send({ path: ['token'], action: 'value' });
   assert.doesNotMatch(text(), /token/, 'a masked or missing field must not be written into the file');
