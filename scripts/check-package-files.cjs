@@ -23,6 +23,7 @@ const forbidden = [
   /^\.agents\//,
   /^\.github\//,
   /^scripts\//,
+  /^workbench-host\//,
   /^src\//,
   /^out\/test\//,
   /^out\/debug\//,
@@ -63,6 +64,7 @@ const required = [
   'lib/scout-runtime/playwright-core/index.js',
   'resources/scout-companion/manifest.json',
   'resources/scout-companion/browser-scripts.js',
+  'resources/workbench/host/KarateWorkbenchHost.class',
   'skills/manifest.json',
   'skills/karate-v2-core.md'
 ];

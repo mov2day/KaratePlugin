@@ -12,6 +12,7 @@ out
 /.playwright-cli/
 /target/
 /lib/scout-runtime/
+/resources/workbench/host/
 
 # Local development and planning material
 /.codex/

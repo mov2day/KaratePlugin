@@ -62,6 +62,9 @@
     "url": "https://github.com/mov2day/KaratePlugin.git"
   },
   "main": "./out/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/*.feature"
+  ],
   "contributes": {
     "commands": [
       {
@@ -231,6 +234,26 @@
       {
         "command": "karate-dsl.scout.open",
         "title": "Karate Scout: Teach a Browser Journey"
+      },
+      {
+        "command": "karate-dsl.workbench.runToCursor",
+        "title": "Karate Workbench: Run to Cursor"
+      },
+      {
+        "command": "karate-dsl.workbench.runStep",
+        "title": "Karate Workbench: Run This Step Only"
+      },
+      {
+        "command": "karate-dsl.workbench.restart",
+        "title": "Karate Workbench: Restart Session"
+      },
+      {
+        "command": "karate-dsl.workbench.stop",
+        "title": "Karate Workbench: Stop Session"
+      },
+      {
+        "command": "karate-dsl.workbench.selectEnvironment",
+        "title": "Karate Workbench: Select Environment"
       }
     ],
     "viewsContainers": {
@@ -315,6 +338,16 @@
           "command": "karate-dsl.runScenario",
           "when": "editorTextFocus && resourceExtname == .feature",
           "group": "karateExecution@2"
+        },
+        {
+          "command": "karate-dsl.workbench.runToCursor",
+          "when": "resourceExtname == .feature",
+          "group": "karate@10"
+        },
+        {
+          "command": "karate-dsl.workbench.runStep",
+          "when": "resourceExtname == .feature",
+          "group": "karate@11"
         }
       ]
     },
@@ -922,12 +955,47 @@
           "type": "string",
           "default": "",
           "description": "Optional Karate reset helper to run before each generated Scout scenario."
+        },
+        "karateDsl.workbench.codeLens": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show a **Send** action above each `method` step in feature files to run it in Karate Workbench."
+        },
+        "karateDsl.workbench.karateVersion": {
+          "type": "string",
+          "default": "2.1.4",
+          "markdownDescription": "Karate 2 version Workbench downloads and uses when `karateDsl.execution.karateVersion` and `karateDsl.execution.jarPath` do not select a Karate 2 jar. Workbench needs Karate 2.1 or newer and Java 21+."
+        },
+        "karateDsl.workbench.javaPath": {
+          "type": "string",
+          "default": "java",
+          "markdownDescription": "Java executable Workbench uses to run Karate. It must be Java 21 or newer and at least as new as the Java your build compiles tests for."
+        },
+        "karateDsl.workbench.requestTimeoutSeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 5,
+          "markdownDescription": "How long Workbench waits for a step before stopping the session."
+        },
+        "karateDsl.workbench.productionPattern": {
+          "type": "string",
+          "default": "prod",
+          "markdownDescription": "Regular expression. When the environment name or the base URL host matches it, Workbench asks before sending a POST, PUT, PATCH or DELETE request. Leave blank to disable the check."
+        },
+        "karateDsl.workbench.buildArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Extra arguments for the Gradle or Maven command Workbench runs to resolve the test classpath, for example `--offline`."
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run build:webview && npm run clean && npm run build:extension",
+    "vscode:prepublish": "npm run build:webview && npm run build:host && npm run clean && npm run build:extension",
+    "build:host": "node ./scripts/build-workbench-host.cjs",
     "clean": "node ./scripts/clean-out.cjs",
     "compile": "tsc -p ./",
     "build:webview": "node ./scripts/build-webview.cjs",
@@ -936,17 +1004,19 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run test:ai-routing && npm run test:scout && npm run test:generation && npm run typecheck && npm run lint && npm run package:check",
+    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run test:ai-routing && npm run test:scout && npm run test:workbench && npm run test:generation && npm run typecheck && npm run lint && npm run package:check",
     "test:execution": "npm run compile && node ./scripts/test-execution-engine.cjs",
     "test:generation": "npm run compile && node ./scripts/test-generation.cjs",
     "test:ai-routing": "npm run compile && node ./scripts/test-ai-routing.cjs",
-    "package:check": "npm run build:webview && npm run clean && npm run build:extension && node ./scripts/check-package-files.cjs",
+    "package:check": "npm run build:webview && npm run build:host && npm run clean && npm run build:extension && node ./scripts/check-package-files.cjs",
+    "test:workbench": "npm run compile && npm run build:host && node ./scripts/test-workbench.cjs",
     "test": "node ./out/test/runTest.js",
     "package": "vsce package",
     "test:scout": "npm run compile && node scripts/test-scout.cjs",
     "test:scout:browsers": "npm run compile && node scripts/test-scout-browsers.cjs",
     "test:scout:companion": "npm run build:webview && npm run compile && node scripts/test-scout-companion.cjs",
-    "test:scout:ui": "npm run build:webview && node scripts/test-scout-ui.cjs"
+    "test:scout:ui": "npm run build:webview && node scripts/test-scout-ui.cjs",
+    "test:workbench:vscode": "npm run compile && npm run build:host && npm run build:extension && node ./scripts/test-workbench-vscode.cjs"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

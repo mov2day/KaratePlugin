@@ -114,6 +114,14 @@ All existing command IDs remain available. Several generation settings are depre
 | Improve quality | OpenAPI coverage, missing-test generation, project health, flakiness, specification change impact, and Bug Hunter |
 | Automate | GitHub Actions repair intake, Zephyr Scale result publishing, MCP tools, and shared generation styles |
 
+## Karate Workbench
+
+**Run a scenario one step at a time, see the real response, and click a field to write the assertion.**
+
+Click **Send** above a `method` step (or run **Karate Workbench: Run to Cursor**). Workbench starts a Karate session that keeps your variables between steps, runs your project's real `karate-config.js`, Java helpers and environments, and shows status, timing, headers and body beside the editor. Hover a response field to add a `match` on its type or value, save it as a variable with `def`, or add a schema or status check. Everything it writes is plain Karate in your file.
+
+Needs Karate 2.1+ and Java 21+. Secret-looking values are masked in the view, and Workbench asks before sending a write request to a production-looking environment. [Workbench guide](docs/workbench.md)
+
 ## Meet Karate Scout
 
 **Sign in normally, show Scout how your app works, and watch it build and test the journey.**

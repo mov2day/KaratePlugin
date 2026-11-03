@@ -5,6 +5,17 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Karate Workbench.** Run a scenario one step at a time from the editor against your real Karate configuration. A **Send** action above each `method` step (and the **Karate Workbench: Run to Cursor** / **Run This Step Only** commands) runs the steps in a persistent Karate 2 session, so variables carry over like a notebook. The Workbench view shows status, timing, headers, the body and the variables; hover a response field to insert a `match` (type or value), a `def`, a schema match, or a status check into the scenario. It uses the project's `karate-config.js`, `karate.env`, `callSingle`, Java helpers and Gradle/Maven dependency jars. Secret-looking values are masked, and write requests to production-looking environments ask first. Needs Karate 2.1+ and Java 21+; see the [Workbench guide](docs/workbench.md). New settings: `karateDsl.workbench.*`.
+- The Karate 2.1.4 jar's SHA-256 is now pinned in the downloader.
+- **Activation.** The extension now activates when the workspace contains a `.feature` file, so CodeLens actions such as **Send** appear without first opening the sidebar.
+
+### Notes
+- The extension package now includes a small Java session host as plain `.class` files (about 20 KB). Building the package needs a JDK 21 or newer; CI installs one.
+- Maven support follows the Gradle approach but has not been run against a real Maven build yet.
+
 ## [2.0.5] - 2026-10-25
 
 - **No bundled Karate jar.** The ~68 MB Karate jar is no longer packaged; it is downloaded from GitHub Releases after an explicit prompt, SHA-256 verified for known versions, and cached in global storage. Set `karateDsl.execution.jarPath` for offline use. Also: untrusted workspaces are declared unsupported and the Java probe no longer uses a shell.

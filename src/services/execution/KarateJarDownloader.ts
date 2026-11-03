@@ -4,7 +4,9 @@ import * as https from 'https';
 
 /** Pinned SHA-256 of release jars the extension knows; other versions download unverified (the user chose them). */
 export const KNOWN_JAR_SHA256: Record<string, string> = {
-    '1.5.0.RC3': 'a685a8c2eae4c1982f5d46071d72a8d98b1212f71774551edb0539c1b6ac3e9a'
+    '1.5.0.RC3': 'a685a8c2eae4c1982f5d46071d72a8d98b1212f71774551edb0539c1b6ac3e9a',
+    // Computed from the v2.1.4 GitHub release asset when Workbench was added; not compared with a publisher checksum.
+    '2.1.4': '1f743f4acc56526b39bd88c84bfe4491c46d5e94f4ab5a38c437c9400dbc2488'
 };
 
 const MAX_REDIRECTS = 5;

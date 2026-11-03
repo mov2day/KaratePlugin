@@ -23,5 +23,19 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Fetch Karate 2 jar for Workbench tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v2.1.4 --repo karatelabs/karate --pattern 'karate-2.1.4.jar' --dir "$RUNNER_TEMP"
+          echo "1f743f4acc56526b39bd88c84bfe4491c46d5e94f4ab5a38c437c9400dbc2488  $RUNNER_TEMP/karate-2.1.4.jar" | sha256sum -c -
+          echo "KARATE_TEST_JAR=$RUNNER_TEMP/karate-2.1.4.jar" >> "$GITHUB_ENV"
+
       - name: Verify
         run: npm run verify
