@@ -1,7 +1,7 @@
 {
   "name": "karate-test-generator",
   "displayName": "Karate Runner & Workbench: Free Karate for Cursor & VS Code",
-  "description": "Free, MIT Karate support for VS Code, Cursor, Windsurf and VSCodium: syntax highlighting, run and Test Explorer, step-by-step Workbench with click-to-assert, and AI test generation from OpenAPI, Postman and more.",
+  "description": "Free, MIT Karate support for VS Code, Cursor, Windsurf and VSCodium: syntax highlighting, smart suggestions, a step debugger, run and Test Explorer, step-by-step Workbench with click-to-assert, and AI test generation from OpenAPI, Postman and more.",
   "version": "2.1.0",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
@@ -36,10 +36,8 @@
     "karate dsl",
     "karate api",
     "api testing",
-    "test execution",
     "openapi",
     "swagger",
-    "rest api testing",
     "bdd",
     "contract testing",
     "test automation",
@@ -48,7 +46,6 @@
     "graphql",
     "maven",
     "gradle",
-    "api bug hunter",
     "github copilot",
     "ai test generation",
     "gherkin",
@@ -62,7 +59,9 @@
     "cursor",
     "windsurf",
     "vscodium",
-    "free"
+    "free",
+    "karate debugger",
+    "karate autocomplete"
   ],
   "repository": {
     "type": "git",

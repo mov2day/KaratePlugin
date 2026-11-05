@@ -9,16 +9,17 @@
 Everything here is free and MIT, with no account or license key:
 
 - **Syntax highlighting** for Karate steps, `match` operators, fuzzy markers, `#(...)` expressions and embedded JSON, XML and JavaScript.
-- **Smart suggestions, built in (no AI, nothing sent anywhere):** ghost text for the next step (`method get` after `path`, `status 201` after a POST, repeating patterns your file already uses), plus completion for your own variables, `response.` fields seen in the file, the `karate.*` API, HTTP methods, status codes, headers, `configure` keys, tags, `path` values used elsewhere in the project, `match` operators, `#` markers and `read('...')` paths.
+- **Smart suggestions, built in (no AI, nothing sent anywhere):** ghost text for the next step, learned from how your own project writes requests (the same `path` and method followed by the same `status` and `match`), plus workflow rules (`method put` after a body that was created and then changed, `method post` after form fields), plus completion for your own variables, `response.` fields seen in the file, the `karate.*` API, HTTP methods, status codes, headers, `configure` keys, tags, `path` values used elsewhere in the project, `match` operators, `#` markers and `read('...')` paths.
 - **Folding** for Feature, Background, Scenario, Examples and doc-strings.
 - **Run and Test Explorer** for features and scenarios, with CodeLens above each one.
-- **Step debugger**: set breakpoints on Karate steps, step through a feature and inspect variables. Run **Karate: Debug Feature** or use the `karate-dsl` debug type.
+- **Step debugger**: set breakpoints on Karate steps, step over, in and out, pause a running feature, and inspect variables or evaluate expressions. Run **Karate: Debug Feature** or use the `karate-dsl` debug type.
 - **Karate Workbench**: run a scenario one step at a time and click response fields to write assertions.
 - **Test generation** from OpenAPI, Postman, HAR, GraphQL, Confluence and Jira.
 
 Works in VS Code, Cursor, Windsurf and VSCodium.
 
-<!-- TODO(human): capture images/karate-language.png (a .feature file showing highlighting and completion) and embed it here. -->
+<!-- TODO(human): capture images/karate-language.png (a .feature file showing highlighting and completion) and embed it here: ![Karate syntax highlighting and completion](images/karate-language.png) -->
+<!-- TODO(human): capture images/karate-suggestions.png (ghost-text next-step suggestion) and images/karate-debugger.png (paused on a breakpoint with variables), then embed them in the 2.1.0 section below. -->
 
 ![Karate Workbench in VS Code: click Send to run to a step, add a status check and a variable from the response, choose a starts-with assertion from the more... list, then run the next request with the saved variable](images/karate-workbench-demo.gif)
 
@@ -28,7 +29,7 @@ Works in VS Code, Cursor, Windsurf and VSCodium.
 
 ## Version 2.1.0 highlights
 
-2.1.0 adds free Karate language support: syntax highlighting, folding and completion in a `karate-dsl` language mode, applied to Karate `.feature` files when the official extension is not installed (plain Cucumber projects are left alone). It also adds a free **step debugger** (breakpoints before Gherkin steps, step over/in/out, variables and an evaluate box; JavaScript statements inside a step are not stop points), a one-time offer to set up Karate for running tests and an occasional, optional review request. Nothing is sent anywhere. See the [changelog](CHANGELOG.md).
+2.1.0 adds free Karate language support: syntax highlighting, folding and smart suggestions in a `karate-dsl` language mode, applied to Karate `.feature` files when the official extension is not installed (plain Cucumber projects are left alone). It also adds a free **step debugger** (breakpoints before Gherkin steps, step over/in/out, Pause, variables and an evaluate box; JavaScript statements inside a step are not stop points), a one-time offer to set up Karate for running tests and an occasional, optional review request. Nothing is sent anywhere. See the [changelog](CHANGELOG.md).
 
 ## Version 2.0.6 highlights
 

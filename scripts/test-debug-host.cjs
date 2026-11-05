@@ -89,6 +89,27 @@ describe('KarateDebugHost', { skip }, () => {
   });
 });
 
+describe('KarateDebugHost pause', { skip }, () => {
+  test('pause stops before the next step while the scenario is running, then continue finishes it', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbg-pause-'));
+    const feature = path.join(dir, 'slow.feature');
+    fs.writeFileSync(feature, ['Feature: slow', '', '  Scenario: s', '    * def a = 1', '    * karate.pause(1500)', '    * def b = 2', '    * def c = 3', ''].join('\n'));
+    const host = new Host();
+    try {
+      assert.equal((await host.send('launch', { feature, workDir: dir })).ok, true);
+      await new Promise(resolve => setTimeout(resolve, 600)); // inside the slow step
+      assert.equal((await host.send('pause')).ok, true);
+      const stop = await host.event('stopped');
+      assert.equal(stop.reason, 'pause');
+      assert.ok(stop.line >= 6, `stopped after the slow step, at line ${stop.line}`);
+      assert.equal((await host.send('pause')).ok, false, 'pausing twice is refused');
+      assert.equal((await host.send('continue')).ok, true);
+      const done = await host.event('terminated');
+      assert.equal(done.failed, 0);
+    } finally { host.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
 describe('KarateDebugAdapter (DAP)', { skip }, () => {
   const { KarateDebugAdapter } = require(path.join(__dirname, '..', 'out', 'debug', 'KarateDebugAdapter.js'));
   let dir; let feature;
@@ -146,5 +167,37 @@ describe('KarateDebugAdapter (DAP)', { skip }, () => {
     await request('continue', { threadId: 1 });
     await wait(m => m.event === 'terminated');
     await request('disconnect', {});
+  });
+});
+
+describe('KarateDebugAdapter pause request', { skip }, () => {
+  const { KarateDebugAdapter } = require(path.join(__dirname, '..', 'out', 'debug', 'KarateDebugAdapter.js'));
+  test('the Pause button stops a running session before the next step', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dap-pause-'));
+    const feature = path.join(dir, 'slow.feature');
+    fs.writeFileSync(feature, ['Feature: slow', '', '  Scenario: s', '    * def a = 1', '    * karate.pause(1500)', '    * def b = 2', ''].join('\n'));
+    const messages = []; const waiters = [];
+    const adapter = new KarateDebugAdapter(msg => {
+      const i = waiters.findIndex(w => w.match(msg));
+      if (i >= 0) { waiters.splice(i, 1)[0].resolve(msg); } else { messages.push(msg); }
+    }, async () => ({ javaPath: 'java', hostDir, classpath: [jar], feature, env: '', configDir: '', workDir: dir }));
+    const wait = match => {
+      const i = messages.findIndex(match);
+      if (i >= 0) { return Promise.resolve(messages.splice(i, 1)[0]); }
+      return new Promise((resolve, reject) => { const t = setTimeout(() => reject(new Error('timeout')), 60000); waiters.push({ match, resolve: m => { clearTimeout(t); resolve(m); } }); });
+    };
+    let seq = 1;
+    const request = async (command, args) => { const id = seq++; adapter.handleMessage({ seq: id, type: 'request', command, arguments: args }); return wait(m => m.type === 'response' && m.request_seq === id); };
+    try {
+      await request('initialize', {}); await wait(m => m.event === 'initialized');
+      await request('launch', { feature });
+      await request('configurationDone', {});
+      await new Promise(resolve => setTimeout(resolve, 700));
+      assert.equal((await request('pause', { threadId: 1 })).success, true);
+      const stop = await wait(m => m.event === 'stopped');
+      assert.equal(stop.body.reason, 'pause');
+      await request('continue', { threadId: 1 });
+      await wait(m => m.event === 'terminated');
+    } finally { await request('disconnect', {}).catch(() => {}); fs.rmSync(dir, { recursive: true, force: true }); }
   });
 });

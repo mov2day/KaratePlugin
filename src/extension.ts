@@ -293,7 +293,7 @@ async function activateExtension(context: vscode.ExtensionContext) {
             new KarateCompletionProvider(workspaceFacts),
             ...KarateCompletionProvider.triggerCharacters
         ),
-        vscode.languages.registerInlineCompletionItemProvider({ language: 'karate-dsl' }, new KarateSmartInlineProvider())
+        vscode.languages.registerInlineCompletionItemProvider({ language: 'karate-dsl' }, new KarateSmartInlineProvider(workspaceFacts))
     );
 
     // Register CodeLens provider for feature files

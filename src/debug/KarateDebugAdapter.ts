@@ -169,7 +169,10 @@ export class KarateDebugAdapter {
                 this.respond(request, true);
                 return;
             case 'pause':
-                throw new Error('Pause is not supported; set a breakpoint instead.');
+                // Stops before the next step; a step that is already running finishes first.
+                await this.host('pause');
+                this.respond(request, true);
+                return;
             case 'terminate':
             case 'disconnect':
                 this.respond(request, true);
@@ -218,7 +221,7 @@ export class KarateDebugAdapter {
         try { message = JSON.parse(line) as HostReply; } catch { this.output(`${line}\n`, 'console'); return; }
         if (message.event === 'stopped') {
             this.stopped = { file: String(message.file), line: Number(message.line) };
-            this.event('stopped', { reason: message.reason === 'breakpoint' ? 'breakpoint' : message.reason === 'entry' ? 'entry' : 'step', threadId: THREAD_ID, allThreadsStopped: true });
+            this.event('stopped', { reason: message.reason === 'breakpoint' ? 'breakpoint' : message.reason === 'entry' ? 'entry' : message.reason === 'pause' ? 'pause' : 'step', threadId: THREAD_ID, allThreadsStopped: true });
         } else if (message.event === 'terminated') {
             if (message.error) { this.output(`${message.error}\n`, 'stderr'); }
             else if (typeof message.failed === 'number' && message.failed > 0) { this.output(`${message.failed} scenario(s) failed\n`, 'stderr'); }

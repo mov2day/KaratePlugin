@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { EMPTY_FACTS, WorkspaceFacts } from './smartCompletions';
+import { Learned, learnFromLines } from './predictor';
 
 const MAX_FILES = 300;
 const MAX_BYTES = 200_000;
@@ -24,6 +25,7 @@ export class WorkspaceFactsService implements vscode.Disposable {
     private async collect(): Promise<WorkspaceFacts> {
         const paths = new Set<string>();
         const tags = new Set<string>();
+        const learned: Learned = new Map();
         const features = await vscode.workspace.findFiles('**/*.feature', '**/{node_modules,target,build,out}/**', MAX_FILES);
         for (const uri of features) {
             let text: string;
@@ -33,6 +35,7 @@ export class WorkspaceFactsService implements vscode.Disposable {
             } catch { continue; }
             for (const m of text.matchAll(/^\s*(?:\*|Given|When|Then|And|But)\s+path\s+['"]([^'"]+)['"]/gm)) { paths.add(m[1]); }
             for (const m of text.matchAll(/^\s*@([\w.-]+)/gm)) { tags.add(m[1]); }
+            learnFromLines(text.split(/\r?\n/), 1, learned);
         }
         const configVariables = new Set<string>();
         const configs = await vscode.workspace.findFiles('**/karate-config*.js', '**/node_modules/**', 5);
@@ -45,7 +48,7 @@ export class WorkspaceFactsService implements vscode.Disposable {
                 }
             } catch { /* optional */ }
         }
-        return { configVariables: [...configVariables], paths: [...paths], tags: [...tags] };
+        return { configVariables: [...configVariables], paths: [...paths], tags: [...tags], learned };
     }
 
     dispose(): void {

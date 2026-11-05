@@ -109,10 +109,12 @@ export class KarateCompletionProvider implements vscode.CompletionItemProvider {
 
 /** Ghost-text prediction of the next step from workflow rules and patterns in the same file. No model, nothing leaves the machine. */
 export class KarateSmartInlineProvider implements vscode.InlineCompletionItemProvider {
-    provideInlineCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.InlineCompletionItem[] | undefined {
+    constructor(private readonly facts?: WorkspaceFactsService) {}
+
+    async provideInlineCompletionItems(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.InlineCompletionItem[] | undefined> {
         if (document.languageId !== 'karate-dsl') { return undefined; }
         if (!vscode.workspace.getConfiguration('karateDsl.language', document.uri).get<boolean>('smartSuggestions', true)) { return undefined; }
-        const text = inlineSuggestion(document.getText().split(/\r?\n/), position.line, position.character);
+        const text = inlineSuggestion(document.getText().split(/\r?\n/), position.line, position.character, this.facts ? await this.facts.facts() : undefined);
         return text ? [new vscode.InlineCompletionItem(text, new vscode.Range(position, position))] : undefined;
     }
 }

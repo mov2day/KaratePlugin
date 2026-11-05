@@ -221,3 +221,81 @@ suite('Smart suggestions', () => {
         assert.strictEqual(items[1].label, 'status');
     });
 });
+
+import { predictCandidates, learnFromLines, keywordFor } from '../../services/language/smart/predictor';
+
+const pets = [
+    'Feature: pets',
+    'Background:',
+    '  * url baseUrl',
+    "  * def pet = { id: 7, name: 'rex', status: 'available', tags: [1] }",
+    '',
+    'Scenario: crud',
+    "  Given path 'pet'",
+    '  And request pet',
+    '  When method post',
+    '  Then status 200',
+    "  And match response contains { id: 7, name: 'rex', status: 'available' }",
+    "  Given path 'pet', idPath",
+    '  When method get',
+    '  Then status 200',
+    "  * set pet.name = 'new'",
+    "  Given path 'pet'",
+    '  And request pet',
+    '  When method put',
+    '  Then status 200',
+    "  Given path 'pet', idPath",
+    '  When method delete',
+    '  Then status 200',
+    ''
+];
+const idx = (text: string, nth = 0): number => pets.reduce<number[]>((acc, l, i) => (l.includes(text) ? [...acc, i] : acc), [])[nth];
+const next = (lines: string[], blankAt: number) => predictCandidates(lines, blankAt)[0]?.text;
+
+suite('Smart accuracy', () => {
+    test('a repeated request reuses the status written for it before, even if status 200 is already in the scenario', () => {
+        const lines = [...pets.slice(0, idx('When method get') + 1), '  '];
+        assert.strictEqual(next(lines, lines.length - 1), 'status 200');
+    });
+    test('half-typed or blank lines never teach the engine', () => {
+        const lines = [...pets.slice(0, idx('When method get') + 1), '  * sta'];
+        assert.ok(!predictCandidates(lines, lines.length - 1).some(c => c.text === 'sta'));
+    });
+    test('form and multipart data is posted', () => {
+        const lines = ['Scenario: a', "  Given path 'pet', idPath", "  And form field name = 'x'", '  '];
+        assert.strictEqual(next(lines, 3), 'method post');
+    });
+    test('a body that was created and then changed is sent again as an update, to the same path', () => {
+        const afterSet = [...pets.slice(0, idx('set pet.name') + 1), '  '];
+        assert.strictEqual(next(afterSet, afterSet.length - 1), "path 'pet'");
+        const afterRequest = [...pets.slice(0, idx('request pet', 1) + 1), '  '];
+        assert.strictEqual(next(afterRequest, afterRequest.length - 1), 'method put');
+    });
+    test('the response echo is suggested from the variable that was sent', () => {
+        const noHistory = ['Background:', "  * def pet = { id: 7, name: 'rex', tags: [1] }", 'Scenario: a', "  Given path 'pet'", '  And request pet', '  When method post', '  Then status 200', '  '];
+        assert.strictEqual(next(noHistory, noHistory.length - 1), "match response contains { id: 7, name: 'rex' }");
+    });
+    test('does not offer the body for a nested resource path', () => {
+        const lines = ['Background:', '  * def pet = { id: 1 }', 'Scenario: a', "  Given path 'pet', 'findByStatus'", '  '];
+        assert.notStrictEqual(next(lines, 4), 'request pet');
+    });
+    test('learns from other files too, with less weight than the open file', () => {
+        const other = learnFromLines([...pets, ...pets], 1);
+        const lines = ['Scenario: z', "  Given path 'pet'", '  And request pet', '  When method post', '  '];
+        assert.strictEqual(predictCandidates(lines, 4, other)[0].text, 'status 200');
+    });
+    test('keyword follows the file style per kind of step', () => {
+        const model = parseFeature(pets);
+        const steps = currentScenarioSteps(model);
+        assert.strictEqual(keywordFor('method put', steps[steps.length - 1], model), 'When');
+        assert.strictEqual(keywordFor("path 'x'", steps[steps.length - 1], model), 'Given');
+        assert.strictEqual(keywordFor('status 200', steps[steps.length - 1], model), 'Then');
+        const stars = parseFeature(['Scenario: a', '  * def a = 1', '  * def b = 2', '  * def c = 3']);
+        assert.strictEqual(keywordFor('def d = 4', undefined, stars), '*');
+    });
+    test('Examples columns are offered inside a scenario outline', () => {
+        const lines = ['Scenario Outline: o', '  * def a = <st', '  Examples:', '    | status | name |', '    | a | b |'];
+        const labels = smartItems(smartContext('  * def a = '), lines, 1).map(i => i.label);
+        assert.ok(labels.includes('<status>') && labels.includes('<name>'));
+    });
+});

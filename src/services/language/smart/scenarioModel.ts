@@ -19,6 +19,8 @@ export interface VarInfo {
     name: string;
     shape: VarShape;
     keys: string[];
+    /** Top-level key/value pairs of an object literal, with the value text as written. */
+    entries?: Array<{ key: string; value: string }>;
     source: string;
 }
 
@@ -91,9 +93,33 @@ function objectKeys(literal: string): string[] {
     return [...keys];
 }
 
+/** Splits `{ a: 1, b: { c: 2 } }` into its top-level pairs. Values stay as written. */
+export function topLevelEntries(literal: string): Array<{ key: string; value: string }> {
+    const out: Array<{ key: string; value: string }> = [];
+    const body = literal.trim().replace(/^\{/, '').replace(/\}$/, '');
+    let depth = 0;
+    let quote = '';
+    let start = 0;
+    const pieces: string[] = [];
+    for (let i = 0; i < body.length; i++) {
+        const ch = body[i];
+        if (quote) { if (ch === quote && body[i - 1] !== '\\') { quote = ''; } continue; }
+        if (ch === "'" || ch === '"') { quote = ch; continue; }
+        if (ch === '{' || ch === '[' || ch === '(') { depth++; }
+        else if (ch === '}' || ch === ']' || ch === ')') { depth--; }
+        else if (ch === ',' && depth === 0) { pieces.push(body.slice(start, i)); start = i + 1; }
+    }
+    pieces.push(body.slice(start));
+    for (const piece of pieces) {
+        const match = /^\s*(?:'([^']+)'|"([^"]+)"|([A-Za-z_$][\w$-]*))\s*:\s*([\s\S]*?)\s*$/.exec(piece);
+        if (match) { out.push({ key: match[1] ?? match[2] ?? match[3], value: match[4] }); }
+    }
+    return out;
+}
+
 export function inferVariable(name: string, kind: string, rhs: string): VarInfo {
     const value = rhs.trim();
-    if (value.startsWith('{')) { return { name, shape: 'object', keys: objectKeys(value), source: kind }; }
+    if (value.startsWith('{')) { return { name, shape: 'object', keys: objectKeys(value), entries: topLevelEntries(value), source: kind }; }
     if (value.startsWith('[')) { return { name, shape: 'array', keys: [], source: kind }; }
     if (/^read\s*\(/.test(value)) {
         const file = /read\(\s*['"]([^'"]+)['"]/.exec(value)?.[1] ?? '';

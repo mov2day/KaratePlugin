@@ -2,7 +2,7 @@ import { FUZZY_MARKERS, MATCH_OPERATORS, STEP_KEYWORDS } from '../karateCompleti
 import {
     BUILTIN_TAGS, BUILTIN_VARIABLES, CONFIGURE_KEYS, CONTENT_TYPES, DEFAULT_STATUS, HEADER_NAMES, HTTP_METHODS, KARATE_API, STATUS_CODES
 } from './karateKnowledge';
-import { keywordFor, predictNextStep, stripKeyword } from './predictor';
+import { Learned, keywordFor, predictCandidates, stripKeyword } from './predictor';
 import { currentScenarioSteps, parseFeature, requestState, responseKeys, variablesIn } from './scenarioModel';
 import { SmartContext } from './smartContext';
 
@@ -26,6 +26,8 @@ export interface WorkspaceFacts {
     configVariables: string[];
     paths: string[];
     tags: string[];
+    /** Step patterns learned from the project's other features. */
+    learned?: Learned;
 }
 
 export const EMPTY_FACTS: WorkspaceFacts = { configVariables: [], paths: [], tags: [] };
@@ -48,16 +50,15 @@ function rank(index: number): string {
     return String(index).padStart(3, '0');
 }
 
-function keywordItems(lines: string[], line: number): SmartItem[] {
+function keywordItems(lines: string[], line: number, facts: WorkspaceFacts): SmartItem[] {
     const model = parseFeature(lines, line);
     const steps = currentScenarioSteps(model);
     const state = requestState(steps);
     const order = state.last ? (LIKELY_NEXT[state.last.kind] ?? []) : ['url', 'def', 'configure', 'call'];
     const items: SmartItem[] = [];
-    const prediction = predictNextStep(lines, line);
-    if (prediction) {
-        items.push({ label: prediction.text, kind: 'snippet', detail: `Suggested next step: ${prediction.reason}`, insertText: prediction.text, sortText: '000' });
-    }
+    predictCandidates(lines, line, facts.learned).slice(0, 3).forEach((prediction, i) => {
+        items.push({ label: prediction.text, kind: 'snippet', detail: `Suggested next step: ${prediction.reason}`, insertText: prediction.text, sortText: `00${i}` });
+    });
     for (const keyword of STEP_KEYWORDS) {
         const position = order.indexOf(keyword.label);
         items.push({ label: keyword.label, kind: 'keyword', detail: keyword.detail, sortText: position >= 0 ? `1${rank(position)}` : `5${keyword.label}` });
@@ -82,8 +83,29 @@ function variableItems(lines: string[], line: number, facts: WorkspaceFacts): Sm
     for (const name of facts.configVariables) {
         if (!vars.has(name)) { items.push({ label: name, kind: 'variable', detail: 'from karate-config.js', sortText: `1${rank(index++)}` }); }
     }
+    for (const column of outlineColumns(lines, line)) { items.push({ label: `<${column}>`, kind: 'variable', detail: 'Examples column', sortText: `0${rank(index++)}` }); }
     for (const name of BUILTIN_VARIABLES) { items.push({ label: name, kind: 'variable', detail: 'built-in', sortText: `2${name}` }); }
     return items;
+}
+
+/** Column names of the Examples table that belongs to the scenario outline around `line`. */
+function outlineColumns(lines: string[], line: number): string[] {
+    let outline = -1;
+    for (let i = Math.min(line, lines.length - 1); i >= 0; i--) {
+        if (/^\s*Scenario\s+(?:Outline|Template)\s*:/.test(lines[i])) { outline = i; break; }
+        if (/^\s*Scenario\s*:/.test(lines[i])) { return []; }
+    }
+    if (outline < 0) { return []; }
+    for (let i = line; i < Math.min(lines.length, line + 200); i++) {
+        if (/^\s*Scenario\b/.test(lines[i]) && i > outline) { return []; }
+        if (/^\s*Examples\s*:/.test(lines[i])) {
+            for (let j = i + 1; j < lines.length; j++) {
+                if (lines[j].trim().startsWith('|')) { return lines[j].split('|').map(cell => cell.trim()).filter(Boolean); }
+                if (lines[j].trim() !== '' && !lines[j].trim().startsWith('@')) { break; }
+            }
+        }
+    }
+    return [];
 }
 
 function memberItems(object: string, lines: string[], line: number): SmartItem[] {
@@ -131,7 +153,7 @@ function uniqueSorted(values: string[]): string[] {
 
 export function smartItems(context: SmartContext, lines: string[], line: number, facts: WorkspaceFacts = EMPTY_FACTS): SmartItem[] {
     switch (context.kind) {
-        case 'keyword': return keywordItems(lines, line);
+        case 'keyword': return keywordItems(lines, line, facts);
         case 'operator': return MATCH_OPERATORS.map((op, i) => ({ label: op, kind: 'operator' as const, detail: 'match operator', sortText: rank(i) }));
         case 'marker': return FUZZY_MARKERS.map(marker => ({ label: marker, kind: 'marker' as const, detail: 'fuzzy matcher' }));
         case 'karate-member':
@@ -162,30 +184,30 @@ export function smartItems(context: SmartContext, lines: string[], line: number,
 }
 
 /** Ghost text for the end of the line at `character`, or undefined. Insert it directly after the cursor. */
-export function inlineSuggestion(lines: string[], line: number, character: number): string | undefined {
+export function inlineSuggestion(lines: string[], line: number, character: number, facts: WorkspaceFacts = EMPTY_FACTS): string | undefined {
     const current = lines[line] ?? '';
     if (current.slice(character).trim() !== '' || current.length !== character) { return undefined; }
     const prefix = current.slice(0, character);
     if (/^\s*#/.test(prefix) || /^\s*(?:Feature|Background|Scenario|Examples|Rule)\b/.test(prefix)) { return undefined; }
-    const prediction = predictNextStep(lines, line);
-    if (!prediction) { return undefined; }
+    const candidates = predictCandidates(lines, line, facts.learned);
+    if (!candidates.length) { return undefined; }
+    const model = parseFeature(lines, line);
+    const steps = currentScenarioSteps(model).filter(step => !step.background);
+    const previous = steps[steps.length - 1];
+
     const keywordOnly = /^\s*(?:\*|Given|When|Then|And|But)\s*$/.exec(prefix);
-    if (keywordOnly) { return `${/\s$/.test(prefix) ? '' : ' '}${prediction.text}`; }
+    if (keywordOnly) { return `${/\s$/.test(prefix) ? '' : ' '}${candidates[0].text}`; }
     const partial = /^\s*(?:\*|Given|When|Then|And|But)\s+(\S.*)$/.exec(prefix);
     if (partial) {
         const typed = partial[1];
-        return prediction.text.startsWith(typed) && prediction.text.length > typed.length ? prediction.text.slice(typed.length) : undefined;
+        const match = candidates.find(c => c.text.startsWith(typed) && c.text.length > typed.length);
+        return match ? match.text.slice(typed.length) : undefined;
     }
     if (prefix.trim() === '' && prefix.length > 0) {
-        const model = parseFeature(lines, line);
-        const steps = currentScenarioSteps(model);
         // Only right after a step, not after a section header or a blank gap.
-        for (let i = line - 1; i >= 0; i--) {
-            if (lines[i].trim() === '') { return undefined; }
-            if (/^\s*(?:Feature|Background|Scenario|Examples|Rule)\b/.test(lines[i])) { return undefined; }
-            break;
-        }
-        return `${keywordFor(prediction.text, steps[steps.length - 1])} ${prediction.text}`;
+        if (line === 0 || lines[line - 1].trim() === '' || /^\s*(?:Feature|Background|Scenario|Examples|Rule)\b/.test(lines[line - 1])) { return undefined; }
+        const full = parseFeature(lines);
+        return `${keywordFor(candidates[0].text, previous, full)} ${candidates[0].text}`;
     }
     return undefined;
 }

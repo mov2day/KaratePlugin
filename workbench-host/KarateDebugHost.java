@@ -39,6 +39,7 @@ public class KarateDebugHost {
     // Debuggee state, guarded by LOCK.
     private static boolean paused;
     private static boolean resume;
+    private static boolean pauseRequested;
     private static String mode = "entry"; // entry | run | into | over | out
     private static Object pausedRuntime;
     private static Object stepRuntime;
@@ -81,6 +82,7 @@ public class KarateDebugHost {
                     case "stepIn": release("into"); reply(id, new LinkedHashMap<>()); break;
                     case "stepOver": release("over"); reply(id, new LinkedHashMap<>()); break;
                     case "stepOut": release("out"); reply(id, new LinkedHashMap<>()); break;
+                    case "pause": requestPause(); reply(id, new LinkedHashMap<>()); break;
                     case "variables": reply(id, variables()); break;
                     case "evaluate": reply(id, evaluate(req)); break;
                     case "disconnect":
@@ -199,11 +201,15 @@ public class KarateDebugHost {
         String reason = null;
         synchronized (LOCK) {
             Set<Integer> lines = BREAKPOINTS.get(point.file);
+            if (pauseRequested) {
+                pauseRequested = false;
+                reason = "pause";
+            }
             switch (mode) {
-                case "entry": reason = "entry"; break;
-                case "into": reason = "step"; break;
-                case "over": if (runtime == stepRuntime) { reason = "step"; } break;
-                case "out": if (runtime != stepRuntime) { reason = "step"; } break;
+                case "entry": if (reason == null) { reason = "entry"; } break;
+                case "into": if (reason == null) { reason = "step"; } break;
+                case "over": if (reason == null && runtime == stepRuntime) { reason = "step"; } break;
+                case "out": if (reason == null && runtime != stepRuntime) { reason = "step"; } break;
                 default: break;
             }
             if (reason == null && lines != null && lines.contains(point.line)) {
@@ -232,6 +238,16 @@ public class KarateDebugHost {
             }
             paused = false;
             pausedRuntime = null;
+        }
+    }
+
+    /** Stops before the next Gherkin step. A step that is already running (a slow request) finishes first. */
+    private static void requestPause() {
+        synchronized (LOCK) {
+            if (paused) {
+                throw new IllegalStateException("The debuggee is already paused.");
+            }
+            pauseRequested = true;
         }
     }
 
