@@ -66,7 +66,6 @@ export class BuildToolExecutor {
             const feature = normalizedFeaturePath(options);
             const matched = feature ? ConfigDiscovery.getRunnerForFeature(project.projectRoot, feature) : undefined;
             if (matched) return matched;
-            if (runners.length > 1) throw new Error(`Multiple Karate runners match this project (${runners.join(', ')}). Configure karateDsl.execution.runnerClass.`);
         }
         return runners.length === 1 ? runners[0] : undefined;
     }

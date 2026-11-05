@@ -91,6 +91,47 @@ class CustomRunner { @Karate.Test Karate tests() { return Karate.run("classpath:
         assert.deepStrictEqual(ConfigDiscovery.findRunnerClasses(root), ['com.acme.CustomRunner']);
     });
 
+    test('picks the runner that fits when several runners exist (petstore layout)', () => {
+        const java = path.join(root, 'src', 'test', 'java', 'com', 'petstore', 'karate');
+        fs.mkdirSync(java, { recursive: true });
+        fs.writeFileSync(path.join(java, 'KarateRunnerTest.java'), `package com.petstore.karate;
+import com.intuit.karate.junit5.Karate;
+class KarateRunnerTest { @Karate.Test Karate all() { return Karate.run("classpath:features"); } }
+`);
+        fs.writeFileSync(path.join(java, 'VerifyMocksTest.java'), `package com.petstore.karate;
+import com.intuit.karate.Runner;
+class VerifyMocksTest { void run() { Runner.path("classpath:mocks").parallel(1); } }
+`);
+        const feature = path.join(root, 'src', 'test', 'resources', 'features', 'api.feature');
+        fs.mkdirSync(path.dirname(feature), { recursive: true });
+        fs.writeFileSync(feature, 'Feature: api');
+        assert.strictEqual(ConfigDiscovery.getRunnerForFeature(root, feature), 'com.petstore.karate.KarateRunnerTest');
+        // A feature outside any named folder still gets the better-named runner instead of an error.
+        const other = path.join(root, 'elsewhere', 'x.feature');
+        assert.strictEqual(ConfigDiscovery.getRunnerForFeature(root, other), 'com.petstore.karate.KarateRunnerTest');
+        fs.writeFileSync(path.join(root, 'pom.xml'), '<project/>');
+        const options: TestExecutionOptions = { type: 'feature', target: feature, buildTool: 'maven' };
+        const project = ProjectExecutionResolver.resolve(options, root, {});
+        const plan = BuildToolExecutor.buildMavenPlan(options, project, defaults, path.join(root, 'reports'));
+        assert.ok(plan.args.includes('-Dtest=com.petstore.karate.KarateRunnerTest'));
+    });
+
+    test('a configured runnerClass always wins over discovery', () => {
+        const java = path.join(root, 'src', 'test', 'java');
+        fs.mkdirSync(java, { recursive: true });
+        fs.writeFileSync(path.join(java, 'A.java'), 'class A { @Karate.Test Karate t() { return Karate.run("classpath:"); } }');
+        fs.writeFileSync(path.join(java, 'B.java'), 'class B { @Karate.Test Karate t() { return Karate.run("classpath:"); } }');
+        fs.writeFileSync(path.join(root, 'pom.xml'), '<project/>');
+        const feature = path.join(java, 'x.feature');
+        fs.writeFileSync(feature, 'Feature: x');
+        const options: TestExecutionOptions = { type: 'feature', target: feature, buildTool: 'maven' };
+        const project = ProjectExecutionResolver.resolve(options, root, { runnerClass: 'B' });
+        assert.ok(BuildToolExecutor.buildMavenPlan(options, project, defaults, path.join(root, 'reports')).args.includes('-Dtest=B'));
+        // Equal candidates no longer throw.
+        const open = ProjectExecutionResolver.resolve(options, root, {});
+        assert.doesNotThrow(() => BuildToolExecutor.buildMavenPlan(options, open, defaults, path.join(root, 'reports')));
+    });
+
     test('preserves the exact scenario line including Windows-style drive prefixes', () => {
         const args = buildKarateArguments({
             type: 'scenario',
