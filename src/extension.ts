@@ -51,6 +51,10 @@ import { QualityWorkflowService } from './services/workspace/QualityWorkflowServ
 import { readExecutionSettings } from './services/execution/ExecutionSettings';
 import { scenarioLineFromEditorLine } from './services/execution/ExecutionArguments';
 import { ScoutController } from './services/scout/ScoutController';
+import { KarateLanguageService } from './services/language/KarateLanguageService';
+import { KarateCompletionProvider } from './services/language/KarateCompletionProvider';
+import { registerSetupPrompt } from './services/language/SetupPrompt';
+import { ReviewPrompt } from './services/growth/ReviewPrompt';
 
 let workbenchHandle: WorkbenchController | undefined;
 
@@ -264,8 +268,10 @@ async function activateExtension(context: vscode.ExtensionContext) {
         .getConfiguration('karateDsl.execution', vscode.Uri.file(scopePath))
         .get<boolean>('autoOpenReport', true);
 
+    const reviewPrompt = new ReviewPrompt(context);
     const showExecutionNotification = (result: TestExecutionResult, label: string): void => {
         if (result.status === 'success') {
+            void reviewPrompt.success();
             vscode.window.showInformationMessage(`${label}: ${result.summary.passed}/${result.summary.totalScenarios} passed`);
         } else if (result.status === 'failed') {
             vscode.window.showErrorMessage(`${label}: ${result.summary.failed} failed, ${result.summary.passed} passed`);
@@ -273,6 +279,17 @@ async function activateExtension(context: vscode.ExtensionContext) {
             vscode.window.showErrorMessage(`${label}: ${result.error || 'execution failed'}`);
         }
     };
+
+    // Free Karate language mode (highlighting, folding, completion) when the official extension is absent
+    context.subscriptions.push(
+        new KarateLanguageService(),
+        registerSetupPrompt(context),
+        vscode.languages.registerCompletionItemProvider(
+            { language: 'karate-dsl' },
+            new KarateCompletionProvider(),
+            ...KarateCompletionProvider.triggerCharacters
+        )
+    );
 
     // Register CodeLens provider for feature files
     const codeLensProvider = new TestCodeLensProvider();
@@ -289,6 +306,7 @@ async function activateExtension(context: vscode.ExtensionContext) {
 
     // Karate Workbench: run steps one at a time and click response fields to write assertions
     const workbench = new WorkbenchController(context);
+    workbench.onAssertionInserted = () => void reviewPrompt.success();
     workbenchHandle = workbench;
     context.subscriptions.push(workbench, ...workbench.register());
 

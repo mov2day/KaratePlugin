@@ -1,8 +1,8 @@
 {
   "name": "karate-test-generator",
-  "displayName": "Karate Test Management",
-  "description": "Generate, run step by step, manage, and improve Karate API tests (Karate 2.x, Java 21+) from one professional VS Code workspace, with click-to-assert on real responses",
-  "version": "2.0.6",
+  "displayName": "Karate Runner & Workbench: Free Karate for Cursor & VS Code",
+  "description": "Free, MIT Karate support for VS Code, Cursor, Windsurf and VSCodium: syntax highlighting, run and Test Explorer, step-by-step Workbench with click-to-assert, and AI test generation from OpenAPI, Postman and more.",
+  "version": "2.1.0",
   "publisher": "MuthuKumarKoodalingam",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -34,9 +34,7 @@
     "karate",
     "karate dsl",
     "karate api",
-    "karate test management",
     "api testing",
-    "test management",
     "test execution",
     "openapi",
     "swagger",
@@ -47,18 +45,23 @@
     "qa automation",
     "postman",
     "graphql",
-    "har",
     "maven",
     "gradle",
-    "zephyr scale",
-    "api test coverage",
     "api bug hunter",
     "github copilot",
     "ai test generation",
     "gherkin",
     "karate workbench",
     "click to assert",
-    "api assertions"
+    "api assertions",
+    "karate runner",
+    "karate syntax",
+    "karate highlighting",
+    "karate language",
+    "cursor",
+    "windsurf",
+    "vscodium",
+    "free"
   ],
   "repository": {
     "type": "git",
@@ -257,6 +260,10 @@
       {
         "command": "karate-dsl.workbench.selectEnvironment",
         "title": "Karate Workbench: Select Environment"
+      },
+      {
+        "command": "karate-dsl.useKarateLanguage",
+        "title": "Karate: Use Karate Language Mode"
       }
     ],
     "viewsContainers": {
@@ -992,9 +999,41 @@
           },
           "default": [],
           "markdownDescription": "Extra arguments for the Gradle or Maven command Workbench runs to resolve the test classpath, for example `--offline`."
+        },
+        "karateDsl.language.autoDetect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use the free Karate language mode (highlighting, folding, completion) for Karate .feature files when the official Karate extension is not installed."
+        },
+        "karateDsl.reviewPrompt.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Occasionally ask (at most twice) for a short review after a few successful runs. Never sends data anywhere."
         }
       }
-    }
+    },
+    "languages": [
+      {
+        "id": "karate-dsl",
+        "aliases": [
+          "Karate",
+          "karate-dsl"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "karate-dsl",
+        "scopeName": "source.karate-dsl",
+        "path": "./syntaxes/karate.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.javascript": "javascript",
+          "meta.embedded.block.json": "json",
+          "meta.embedded.block.xml": "xml"
+        }
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run build:webview && npm run build:host && npm run clean && npm run build:extension",
@@ -1007,7 +1046,7 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run test:ai-routing && npm run test:scout && npm run test:workbench && npm run test:generation && npm run typecheck && npm run lint && npm run package:check",
+    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run test:language && npm run test:grammar && npm run test:ai-routing && npm run test:scout && npm run test:workbench && npm run test:generation && npm run typecheck && npm run lint && npm run package:check",
     "test:execution": "npm run compile && node ./scripts/test-execution-engine.cjs",
     "test:generation": "npm run compile && node ./scripts/test-generation.cjs",
     "test:ai-routing": "npm run compile && node ./scripts/test-ai-routing.cjs",
@@ -1019,7 +1058,9 @@
     "test:scout:browsers": "npm run compile && node scripts/test-scout-browsers.cjs",
     "test:scout:companion": "npm run build:webview && npm run compile && node scripts/test-scout-companion.cjs",
     "test:scout:ui": "npm run build:webview && node scripts/test-scout-ui.cjs",
-    "test:workbench:vscode": "npm run compile && npm run build:host && npm run build:extension && node ./scripts/test-workbench-vscode.cjs"
+    "test:workbench:vscode": "npm run compile && npm run build:host && npm run build:extension && node ./scripts/test-workbench-vscode.cjs",
+    "test:language": "npm run compile && node ./scripts/test-language.cjs",
+    "test:grammar": "vscode-tmgrammar-test -g syntaxes/karate.tmLanguage.json 'src/test/fixtures/language/*.feature'"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
@@ -1033,7 +1074,8 @@
     "esbuild": "^0.28.2",
     "eslint": "^8.56.0",
     "mocha": "^10.2.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vscode-tmgrammar-test": "^0.1.3"
   },
   "dependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",

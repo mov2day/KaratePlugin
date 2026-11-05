@@ -66,7 +66,9 @@ const required = [
   'resources/scout-companion/browser-scripts.js',
   'resources/workbench/host/KarateWorkbenchHost.class',
   'skills/manifest.json',
-  'skills/karate-v2-core.md'
+  'skills/karate-v2-core.md',
+  'syntaxes/karate.tmLanguage.json',
+  'language-configuration.json'
 ];
 
 const missing = required.filter((file) => !files.includes(file));

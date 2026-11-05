@@ -549,6 +549,9 @@ export class WorkbenchController implements vscode.Disposable, vscode.CodeLensPr
     }
 
     /** Inserts the step after the last step that ran, highlights it, and runs it so the session stays in step with the file. */
+    /** Called after an inserted assertion or def step ran successfully; used for the optional review prompt. */
+    onAssertionInserted?: () => void;
+
     private async insertAssertion(ctx: AssertionContext, kind: InsertKind, stepText: string): Promise<void> {
         const { entry, last, document, parsed, scenario } = ctx;
         if (responseScope(scenario.steps, last.stepIndex).some(item => item.text.replace(/^(?:\*|Given|When|Then|And|But)\s+/, '') === stepText)) {
@@ -575,6 +578,7 @@ export class WorkbenchController implements vscode.Disposable, vscode.CodeLensPr
         const synced = normalizeStepText(text.slice(1));
         const result = await entry.session.step(synced).catch(() => undefined);
         if (result) {
+            if (result.status === 'PASSED') { this.onAssertionInserted?.(); }
             entry.variables = result.variables;
             if (result.status === 'PASSED' && entry.executed[0] !== '\u0000single-step') {
                 entry.executed.push(synced);

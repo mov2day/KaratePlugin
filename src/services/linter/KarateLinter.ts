@@ -70,7 +70,7 @@ export class KarateLinter {
     }
 
     private lintDocument(document: vscode.TextDocument) {
-        if (document.languageId !== 'karate' && !document.fileName.endsWith('.feature')) {
+        if (document.languageId !== 'karate' && document.languageId !== 'karate-dsl' && !document.fileName.endsWith('.feature')) {
             return;
         }
 
