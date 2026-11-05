@@ -321,6 +321,123 @@ export class ResultParser {
     }
 
     /**
+     * Finds a `cucumber-json` report folder (Karate 2 with `-f cucumber:json`) written after `minimumModifiedTime`.
+     */
+    static findCucumberJsonDirectory(workingDirectory: string, minimumModifiedTime: number = 0): string | null {
+        const walk = (dir: string, depth: number): string | null => {
+            if (depth > 6) { return null; }
+            let entries: fs.Dirent[];
+            try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return null; }
+            for (const entry of entries) {
+                if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') { continue; }
+                const full = path.join(dir, entry.name);
+                if (entry.name === 'cucumber-json') {
+                    const fresh = fs.readdirSync(full).some(file => file.endsWith('.json') && fs.statSync(path.join(full, file)).mtimeMs + 1000 >= minimumModifiedTime);
+                    if (fresh) { return full; }
+                }
+                const found = walk(full, depth + 1);
+                if (found) { return found; }
+            }
+            return null;
+        };
+        for (const root of [path.join(workingDirectory, 'target'), path.join(workingDirectory, 'build'), workingDirectory]) {
+            if (fs.existsSync(root)) {
+                const found = path.basename(root) === 'cucumber-json' ? root : walk(root, 0);
+                if (found) { return found; }
+            }
+        }
+        return null;
+    }
+
+    /** Resolves a Cucumber JSON `uri` (often classpath-relative) to the real file when it can. */
+    private static resolveFeaturePath(uri: string, workingDirectory: string): string {
+        const clean = uri.replace(/^classpath:/, '').replace(/^file:\/*/, '/');
+        if (path.isAbsolute(clean) && fs.existsSync(clean)) { return clean; }
+        const direct = path.resolve(workingDirectory, clean);
+        if (fs.existsSync(direct)) { return direct; }
+        for (const root of ['src/test/resources', 'src/test/java', 'src/test/karate', 'src/test', 'src/main/resources', 'test', 'tests']) {
+            const candidate = path.resolve(workingDirectory, root, clean);
+            if (fs.existsSync(candidate)) { return candidate; }
+        }
+        return direct;
+    }
+
+    /** Parses Karate 2 Cucumber JSON (`-f cucumber:json`) into the same result shape as the Karate 1 summary. */
+    static parseCucumberJson(directory: string, workingDirectory: string): TestExecutionResult {
+        const features: FeatureResult[] = [];
+        for (const file of fs.readdirSync(directory).filter(name => name.endsWith('.json')).sort()) {
+            let parsed: unknown;
+            try { parsed = JSON.parse(fs.readFileSync(path.join(directory, file), 'utf-8')); } catch { continue; }
+            for (const featureData of (Array.isArray(parsed) ? parsed : [parsed]) as any[]) {
+                if (!featureData || !Array.isArray(featureData.elements)) { continue; }
+                const scenarios: ScenarioResult[] = [];
+                for (const element of featureData.elements) {
+                    if (element.type === 'background') { continue; }
+                    const steps: StepResult[] = (element.steps || []).map((step: any): StepResult => {
+                        const status = step.result?.status === 'passed' ? 'passed' : step.result?.status === 'failed' ? 'failed' : 'skipped';
+                        return {
+                            keyword: String(step.keyword || '').trim(),
+                            text: step.name || '',
+                            line: step.line || 0,
+                            status,
+                            duration: Math.round((step.result?.duration || 0) / 1e6),
+                            errorMessage: step.result?.error_message || undefined
+                        };
+                    });
+                    const failedStep = steps.find(step => step.status === 'failed');
+                    const status: ScenarioResult['status'] = failedStep ? 'failed' : (steps.length > 0 && steps.every(step => step.status === 'skipped') ? 'skipped' : 'passed');
+                    scenarios.push({
+                        name: element.name || 'Unnamed Scenario',
+                        line: element.line || 0,
+                        status,
+                        steps,
+                        duration: steps.reduce((sum, step) => sum + step.duration, 0),
+                        error: failedStep?.errorMessage,
+                        tags: (element.tags || []).map((tag: any) => String(tag.name || tag))
+                    });
+                }
+                const passed = scenarios.filter(s => s.status === 'passed').length;
+                const failed = scenarios.filter(s => s.status === 'failed').length;
+                const skipped = scenarios.filter(s => s.status === 'skipped').length;
+                const absolutePath = this.resolveFeaturePath(String(featureData.uri || ''), workingDirectory);
+                features.push({
+                    name: featureData.name || path.basename(absolutePath, '.feature'),
+                    relativePath: path.relative(workingDirectory, absolutePath) || String(featureData.uri || ''),
+                    absolutePath,
+                    scenarios,
+                    duration: scenarios.reduce((sum, s) => sum + s.duration, 0),
+                    passed,
+                    failed,
+                    skipped,
+                    status: failed > 0 ? 'failed' : (passed > 0 ? 'passed' : 'skipped')
+                });
+            }
+        }
+        const totalScenarios = features.reduce((sum, f) => sum + f.scenarios.length, 0);
+        const passed = features.reduce((sum, f) => sum + f.passed, 0);
+        const failed = features.reduce((sum, f) => sum + f.failed, 0);
+        const skipped = features.reduce((sum, f) => sum + f.skipped, 0);
+        const duration = features.reduce((sum, f) => sum + f.duration, 0);
+        return {
+            id: `exec_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+            timestamp: Date.now(),
+            options: { type: 'feature', target: '', workingDirectory },
+            summary: {
+                totalFeatures: features.length,
+                totalScenarios,
+                passed,
+                failed,
+                skipped,
+                passPercentage: totalScenarios > 0 ? Math.round((passed / totalScenarios) * 10000) / 100 : 0,
+                executionTime: this.formatDuration(duration)
+            },
+            features,
+            duration,
+            status: failed > 0 ? 'failed' : 'success'
+        };
+    }
+
+    /**
      * Find Karate report directory by recursively searching for karate summary JSON file
      * This is more robust than hardcoding paths since Karate's output structure can vary
      * Note: Karate 1.5+ uses karate-summary-json.txt, older versions use karate-summary.json

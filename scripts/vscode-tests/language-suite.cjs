@@ -27,6 +27,15 @@ async function karate(root) {
   await until(() => doc.languageId === 'karate-dsl', 'language mode karate-dsl');
   note('demo.feature switched to karate-dsl automatically');
 
+  const folds = await vscode.commands.executeCommand('vscode.executeFoldingRangeProvider', demo);
+  const text = doc.getText().split('\n');
+  const scenarioLine = text.findIndex(l => /^\s*Scenario:/.test(l));
+  const backgroundLine = text.findIndex(l => /^\s*Background:/.test(l));
+  assert.ok(folds.some(f => f.start === 0), 'Feature folds');
+  assert.ok(folds.some(f => f.start === backgroundLine), 'Background folds');
+  assert.ok(folds.some(f => f.start === scenarioLine && f.end > scenarioLine), 'Scenario folds');
+  note(`folding ranges: ${folds.length} (Feature, Background, Scenario)`);
+
   // Completion
   const probe = vscode.Uri.file(path.join(root, 'probe.feature'));
   const probeDoc = await vscode.workspace.openTextDocument(probe);
@@ -105,6 +114,39 @@ async function karate(root) {
   note('stepped once, continued, session terminated');
 }
 
+// A real run through the extension's executor: standalone Karate 2 jar, results must come back as passed/failed counts.
+async function executeRuns(root) {
+  const ext = vscode.extensions.getExtension('MuthuKumarKoodalingam.karate-test-generator');
+  const executor = ext.exports.executionTesting;
+  assert.ok(executor, 'executor handle must be exposed for tests');
+  const feature = path.join(root, 'demo.feature');
+  const result = await executor.execute({ type: 'feature', target: feature, workingDirectory: root, buildTool: 'cli' });
+  assert.equal(result.status, 'success', `run should pass: ${result.error || JSON.stringify(result.summary)}`);
+  assert.equal(result.summary.totalScenarios, 1);
+  assert.equal(result.summary.passed, 1);
+  assert.equal(result.features[0].absolutePath, feature, 'result maps back to the feature file');
+  note(`standalone Karate 2 run: ${result.summary.passed}/${result.summary.totalScenarios} passed, mapped to ${path.basename(result.features[0].absolutePath)}`);
+  const failing = path.join(root, 'failing.feature');
+  fs.writeFileSync(failing, 'Feature: f\n  Scenario: bad\n    * match 1 == 2\n');
+  const bad = await executor.execute({ type: 'feature', target: failing, workingDirectory: root, buildTool: 'cli' });
+  assert.equal(bad.status, 'failed');
+  assert.equal(bad.summary.failed, 1);
+  assert.match(bad.features[0].scenarios[0].error || '', /match failed|not equal/);
+  note('a failing scenario is reported as failed with Karate\'s message');
+}
+
+// Gradle project with a Karate 2 JUnit runner: the run must be read from the Cucumber JSON report Karate 2 writes.
+async function gradleRun(root) {
+  const ext = vscode.extensions.getExtension('MuthuKumarKoodalingam.karate-test-generator');
+  const executor = ext.exports.executionTesting;
+  const feature = path.join(root, 'src', 'test', 'resources', 'features', 'local.feature');
+  const result = await executor.execute({ type: 'feature', target: feature, workingDirectory: root, buildTool: 'gradle' });
+  assert.equal(result.status, 'success', `gradle run should pass: ${result.error || JSON.stringify(result.summary)}`);
+  assert.equal(result.summary.totalScenarios, 1);
+  assert.equal(result.features[0].absolutePath, feature, `feature path mapped back, got ${result.features[0].absolutePath}`);
+  note(`gradle Karate 2 run: ${result.summary.passed}/${result.summary.totalScenarios} passed`);
+}
+
 async function plain(root) {
   const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(root, 'plain.feature')));
   await vscode.window.showTextDocument(doc);
@@ -131,7 +173,7 @@ async function run() {
     const ext = vscode.extensions.getExtension('MuthuKumarKoodalingam.karate-test-generator');
     assert.ok(ext, 'extension under test must be installed');
     await ext.activate();
-    await { karate, plain, official }[process.env.WB_SCENARIO](root);
+    await { karate, plain, official, run: executeRuns, gradle: gradleRun }[process.env.WB_SCENARIO](root);
     fs.writeFileSync(out, `${notes.join('\n')}\nRESULT: PASS\n`);
   } catch (error) {
     fs.writeFileSync(out, `${notes.join('\n')}\nFAIL: ${error.stack || error}\nRESULT: FAIL\n`);

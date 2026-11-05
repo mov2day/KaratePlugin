@@ -1,5 +1,5 @@
 // End-to-end checks in a real VS Code extension host (the installed VS Code; nothing is downloaded).
-//   KARATE_TEST_JAR=/path/karate-2.1.4.jar [OFFICIAL_EXT_DIR=/path/to/unzipped/extension] node scripts/test-language-vscode.cjs
+//   KARATE_TEST_JAR=/path/karate-2.1.4.jar [GRADLE_SAMPLE=/path/to/karate-gradle-sample] [OFFICIAL_EXT_DIR=/path/to/unzipped/extension] node scripts/test-language-vscode.cjs
 // OFFICIAL_EXT_DIR is the `extension` folder of an unzipped karatelabs.karate VSIX; it is loaded next to this extension.
 const childProcess = require('child_process');
 const fs = require('fs');
@@ -44,6 +44,17 @@ function scenario(name, { config, official }) {
   fs.writeFileSync(path.join(ws, 'plain.feature'), plainFeature);
   fs.writeFileSync(path.join(ws, 'probe.feature'), probeFeature);
   if (config) { fs.writeFileSync(path.join(ws, 'karate-config.js'), 'function fn() { return {}; }\n'); }
+  if (name === 'gradle') {
+    const sample = process.env.GRADLE_SAMPLE;
+    for (const file of ['build.gradle', 'settings.gradle']) { fs.copyFileSync(path.join(sample, file), path.join(ws, file)); }
+    const javaDir = path.join(ws, 'src', 'test', 'java', 'petstore');
+    fs.mkdirSync(javaDir, { recursive: true });
+    fs.copyFileSync(path.join(sample, 'src', 'test', 'java', 'petstore', 'PetstoreTest.java'), path.join(javaDir, 'PetstoreTest.java'));
+    const features = path.join(ws, 'src', 'test', 'resources', 'features');
+    fs.mkdirSync(features, { recursive: true });
+    fs.writeFileSync(path.join(features, 'local.feature'), 'Feature: local\n  Scenario: ok\n    * def a = 1\n    * match a == 1\n');
+    fs.copyFileSync(path.join(ws, 'karate-config.js'), path.join(ws, 'src', 'test', 'resources', 'karate-config.js'));
+  }
   if (name === 'plain') { fs.rmSync(path.join(ws, 'demo.feature')); fs.rmSync(path.join(ws, 'probe.feature')); }
   fs.writeFileSync(path.join(ws, '.vscode', 'settings.json'), JSON.stringify({
     'karateDsl.execution.jarPath': path.resolve(jar), 'telemetry.telemetryLevel': 'off', 'update.mode': 'none'
@@ -59,7 +70,8 @@ function scenario(name, { config, official }) {
   return report;
 }
 
-const plan = [['karate', { config: true }], ['plain', { config: false }]];
+const plan = [['karate', { config: true }], ['plain', { config: false }], ['run', { config: true }]];
+if (process.env.GRADLE_SAMPLE && fs.existsSync(process.env.GRADLE_SAMPLE)) { plan.push(['gradle', { config: true }]); }
 if (officialDir && fs.existsSync(officialDir)) { plan.push(['official', { config: true, official: true }]); }
 let failed = false;
 for (const [name, options] of plan) {

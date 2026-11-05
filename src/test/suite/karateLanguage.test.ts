@@ -299,3 +299,40 @@ suite('Smart accuracy', () => {
         assert.ok(labels.includes('<status>') && labels.includes('<name>'));
     });
 });
+
+import { foldingRanges } from '../../services/language/smart/folding';
+
+suite('Folding', () => {
+    test('folds sections, examples and doc-strings independently', () => {
+        const lines = [
+            'Feature: f',                       // 0
+            '',                                 // 1
+            '  Background:',                    // 2
+            '    * def a = 1',                  // 3
+            '',                                 // 4
+            '  @smoke',                         // 5
+            '  Scenario: one',                  // 6
+            '    * def body =',                 // 7
+            '      """',                        // 8
+            '      { "x": 1 }',                 // 9
+            '      """',                        // 10
+            '    * match a == 1',               // 11
+            '',                                 // 12
+            '  Scenario Outline: two',          // 13
+            '    * def n = <v>',                // 14
+            '    Examples:',                    // 15
+            '      | v |',                      // 16
+            '      | 1 |'                       // 17
+        ];
+        const ranges = foldingRanges(lines).map(r => `${r.kind}:${r.start}-${r.end}`).sort();
+        assert.deepStrictEqual(ranges, [
+            'docstring:8-10', 'section:0-17', 'section:13-17', 'section:15-17', 'section:2-3', 'section:6-11'
+        ].sort());
+    });
+    test('ignores headers inside doc-strings and unmatched quotes', () => {
+        const lines = ['Scenario: a', '  * text t =', '  """', '  Scenario: not real', '  """', '  * def x = 1', '  """'];
+        const ranges = foldingRanges(lines);
+        assert.ok(ranges.some(r => r.kind === 'docstring' && r.start === 2 && r.end === 4));
+        assert.strictEqual(ranges.filter(r => r.kind === 'section').length, 1);
+    });
+});

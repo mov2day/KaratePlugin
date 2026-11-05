@@ -1,23 +1,86 @@
 {
-  "comments": { "lineComment": "#" },
-  "brackets": [["{", "}"], ["[", "]"], ["(", ")"]],
+  "comments": {
+    "lineComment": "#"
+  },
+  "brackets": [
+    [
+      "{",
+      "}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "(",
+      ")"
+    ]
+  ],
   "autoClosingPairs": [
-    { "open": "{", "close": "}" },
-    { "open": "[", "close": "]" },
-    { "open": "(", "close": ")" },
-    { "open": "\"\"\"", "close": "\"\"\"", "notIn": ["string"] },
-    { "open": "'", "close": "'", "notIn": ["string", "comment"] },
-    { "open": "\"", "close": "\"", "notIn": ["string", "comment"] }
+    {
+      "open": "{",
+      "close": "}"
+    },
+    {
+      "open": "[",
+      "close": "]"
+    },
+    {
+      "open": "(",
+      "close": ")"
+    },
+    {
+      "open": "\"\"\"",
+      "close": "\"\"\"",
+      "notIn": [
+        "string"
+      ]
+    },
+    {
+      "open": "'",
+      "close": "'",
+      "notIn": [
+        "string",
+        "comment"
+      ]
+    },
+    {
+      "open": "\"",
+      "close": "\"",
+      "notIn": [
+        "string",
+        "comment"
+      ]
+    }
   ],
   "surroundingPairs": [
-    ["{", "}"], ["[", "]"], ["(", ")"], ["'", "'"], ["\"", "\""], ["\"\"\"", "\"\"\""]
+    [
+      "{",
+      "}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "(",
+      ")"
+    ],
+    [
+      "'",
+      "'"
+    ],
+    [
+      "\"",
+      "\""
+    ],
+    [
+      "\"\"\"",
+      "\"\"\""
+    ]
   ],
   "folding": {
-    "offSide": true,
-    "markers": {
-      "start": "^\\s*(Feature|Background|Scenario|Scenario Outline|Scenario Template|Examples|Rule)\\b.*:|^\\s*\"\"\"\\s*$",
-      "end": "^\\s*\"\"\"\\s*$"
-    }
+    "offSide": true
   },
   "wordPattern": "(#\\??[A-Za-z\\[\\]]+)|([A-Za-z_$][\\w$]*(\\.[A-Za-z_$][\\w$]*)*)|(-?\\d+(\\.\\d+)?)",
   "indentationRules": {

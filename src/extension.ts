@@ -52,18 +52,19 @@ import { readExecutionSettings } from './services/execution/ExecutionSettings';
 import { scenarioLineFromEditorLine } from './services/execution/ExecutionArguments';
 import { ScoutController } from './services/scout/ScoutController';
 import { KarateLanguageService } from './services/language/KarateLanguageService';
-import { KarateCompletionProvider, KarateSmartInlineProvider } from './services/language/KarateCompletionProvider';
+import { KarateCompletionProvider, KarateFoldingProvider, KarateSmartInlineProvider } from './services/language/KarateCompletionProvider';
 import { WorkspaceFactsService } from './services/language/smart/WorkspaceFacts';
 import { registerSetupPrompt } from './services/language/SetupPrompt';
 import { registerKarateDebugger } from './debug/registerKarateDebugger';
 import { ReviewPrompt } from './services/growth/ReviewPrompt';
 
 let workbenchHandle: WorkbenchController | undefined;
+let executorHandle: TestExecutor | undefined;
 
 /** The extension's exports are for the end-to-end tests only; they are not a supported API. */
 export async function activate(context: vscode.ExtensionContext) {
     await activateExtension(context);
-    return { workbenchTesting: workbenchHandle?.testing() };
+    return { workbenchTesting: workbenchHandle?.testing(), executionTesting: executorHandle };
 }
 
 async function activateExtension(context: vscode.ExtensionContext) {
@@ -176,6 +177,7 @@ async function activateExtension(context: vscode.ExtensionContext) {
 
     // Initialize test executor
     const testExecutor = new TestExecutor(context.extensionPath);
+    executorHandle = testExecutor;
     const zephyrPublisher = new ZephyrScalePublisher(context);
 
     // Test history, flakiness, and quality findings are scoped to the folder that
@@ -293,7 +295,8 @@ async function activateExtension(context: vscode.ExtensionContext) {
             new KarateCompletionProvider(workspaceFacts),
             ...KarateCompletionProvider.triggerCharacters
         ),
-        vscode.languages.registerInlineCompletionItemProvider({ language: 'karate-dsl' }, new KarateSmartInlineProvider(workspaceFacts))
+        vscode.languages.registerInlineCompletionItemProvider({ language: 'karate-dsl' }, new KarateSmartInlineProvider(workspaceFacts)),
+        vscode.languages.registerFoldingRangeProvider({ language: 'karate-dsl' }, new KarateFoldingProvider())
     );
 
     // Register CodeLens provider for feature files

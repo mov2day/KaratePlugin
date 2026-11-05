@@ -91,21 +91,26 @@ export class TestExecutor {
             }
             logger.info(`Report directory found: ${reportDir}`);
 
-            if (!reportDir) {
-                const detail = this.outputTail(processResult.output);
-                return this.createErrorResult(executionId, startTime, resolvedOptions, `Karate did not produce a report${processResult.exitCode === null ? '' : ` (exit ${processResult.exitCode})`}.${detail}`);
+            let parsedResult: TestExecutionResult;
+            if (reportDir) {
+                const summaryFile = ResultParser.findSummaryFile(reportDir);
+                logger.info(`Summary file: ${summaryFile}`);
+                if (!summaryFile) {
+                    logger.warn('Report directory found but karate-summary.json is missing');
+                    return this.createErrorResult(executionId, startTime, resolvedOptions, 'Summary file not found in this execution report directory');
+                }
+                parsedResult = ResultParser.parseKarateSummary(summaryFile, project.projectRoot);
+            } else {
+                // Karate 2 writes Cucumber JSON (we ask for it with -f cucumber:json) instead of the Karate 1 summary file.
+                const cucumberDir = ResultParser.findCucumberJsonDirectory(outputDirectory, startTime)
+                    ?? (project.strategy !== 'cli' ? ResultParser.findCucumberJsonDirectory(project.projectRoot, startTime) : null);
+                if (!cucumberDir) {
+                    const detail = this.outputTail(processResult.output);
+                    return this.createErrorResult(executionId, startTime, resolvedOptions, `Karate did not produce a report${processResult.exitCode === null ? '' : ` (exit ${processResult.exitCode})`}.${detail}`);
+                }
+                logger.info(`Cucumber JSON report directory: ${cucumberDir}`);
+                parsedResult = ResultParser.parseCucumberJson(cucumberDir, project.projectRoot);
             }
-
-            const summaryFile = ResultParser.findSummaryFile(reportDir);
-            logger.info(`Summary file: ${summaryFile}`);
-
-            if (!summaryFile) {
-                logger.warn('Report directory found but karate-summary.json is missing');
-                return this.createErrorResult(executionId, startTime, resolvedOptions, 'Summary file not found in this execution report directory');
-            }
-
-            // Parse the summary
-            const parsedResult = ResultParser.parseKarateSummary(summaryFile, project.projectRoot);
             if (parsedResult.summary!.totalScenarios === 0) {
                 return this.createErrorResult(executionId, startTime, resolvedOptions, 'No scenarios matched the selected feature, line, folder, or tags.');
             }

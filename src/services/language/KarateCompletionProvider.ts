@@ -4,6 +4,7 @@ import * as path from 'path';
 import { smartContext } from './smart/smartContext';
 import { SmartItem, inlineSuggestion, smartItems } from './smart/smartCompletions';
 import { WorkspaceFactsService } from './smart/WorkspaceFacts';
+import { foldingRanges } from './smart/folding';
 
 const FILE_EXTENSIONS = new Set(['.feature', '.json', '.js', '.csv', '.yaml', '.yml', '.xml', '.txt', '.graphql']);
 const IGNORED_DIRS = new Set(['node_modules', 'target', 'build', 'out', '.git']);
@@ -116,5 +117,12 @@ export class KarateSmartInlineProvider implements vscode.InlineCompletionItemPro
         if (!vscode.workspace.getConfiguration('karateDsl.language', document.uri).get<boolean>('smartSuggestions', true)) { return undefined; }
         const text = inlineSuggestion(document.getText().split(/\r?\n/), position.line, position.character, this.facts ? await this.facts.facts() : undefined);
         return text ? [new vscode.InlineCompletionItem(text, new vscode.Range(position, position))] : undefined;
+    }
+}
+
+/** Folds Feature, Rule, Background, Scenario, Scenario Outline, Examples and doc-strings. */
+export class KarateFoldingProvider implements vscode.FoldingRangeProvider {
+    provideFoldingRanges(document: vscode.TextDocument): vscode.FoldingRange[] {
+        return foldingRanges(document.getText().split(/\r?\n/)).map(range => new vscode.FoldingRange(range.start, range.end, vscode.FoldingRangeKind.Region));
     }
 }

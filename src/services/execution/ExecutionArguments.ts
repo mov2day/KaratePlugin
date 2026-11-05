@@ -30,6 +30,15 @@ export function buildKarateArguments(options: TestExecutionOptions, configDir?: 
     return args;
 }
 
+/**
+ * Karate 2 writes only HTML reports unless told otherwise, and the extension reads results from Cucumber JSON.
+ * Adds `-f html,cucumber:json` unless the user already chose formats.
+ */
+export function reportFormatArguments(userArgs: string[]): string[] {
+    const chosen = userArgs.some(arg => arg === '-f' || arg === '--format' || arg.startsWith('--format=') || arg.startsWith('-f='));
+    return chosen ? [] : ['-f', 'html,cucumber:json'];
+}
+
 export function serializeKarateOptions(args: string[]): string {
     return args.map(value => {
         if (!/[\s"\\]/.test(value)) return value;
