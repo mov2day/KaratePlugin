@@ -11,6 +11,7 @@ Everything here is free and MIT, with no account or license key:
 - **Syntax highlighting** for Karate steps, `match` operators, fuzzy markers, `#(...)` expressions and embedded JSON, XML and JavaScript.
 - **Folding and completion** for step keywords, `match` operators, `#` markers and `read('...')` file paths.
 - **Run and Test Explorer** for features and scenarios, with CodeLens above each one.
+- **Step debugger**: set breakpoints on Karate steps, step through a feature and inspect variables. Run **Karate: Debug Feature** or use the `karate-dsl` debug type.
 - **Karate Workbench**: run a scenario one step at a time and click response fields to write assertions.
 - **Test generation** from OpenAPI, Postman, HAR, GraphQL, Confluence and Jira.
 
@@ -26,7 +27,7 @@ Works in VS Code, Cursor, Windsurf and VSCodium.
 
 ## Version 2.1.0 highlights
 
-2.1.0 adds free Karate language support: syntax highlighting, folding and completion in a `karate-dsl` language mode, applied to Karate `.feature` files when the official extension is not installed (plain Cucumber projects are left alone). It also adds a one-time offer to set up Karate for running tests and an occasional, optional review request. Nothing is sent anywhere. See the [changelog](CHANGELOG.md).
+2.1.0 adds free Karate language support: syntax highlighting, folding and completion in a `karate-dsl` language mode, applied to Karate `.feature` files when the official extension is not installed (plain Cucumber projects are left alone). It also adds a free **step debugger** (breakpoints before Gherkin steps, step over/in/out, variables and an evaluate box; JavaScript statements inside a step are not stop points), a one-time offer to set up Karate for running tests and an occasional, optional review request. Nothing is sent anywhere. See the [changelog](CHANGELOG.md).
 
 ## Version 2.0.6 highlights
 

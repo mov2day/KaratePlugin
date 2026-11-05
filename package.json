@@ -28,7 +28,8 @@
   "categories": [
     "Testing",
     "AI",
-    "Programming Languages"
+    "Programming Languages",
+    "Debuggers"
   ],
   "keywords": [
     "karate",
@@ -264,6 +265,10 @@
       {
         "command": "karate-dsl.useKarateLanguage",
         "title": "Karate: Use Karate Language Mode"
+      },
+      {
+        "command": "karate-dsl.debugFeature",
+        "title": "Karate: Debug Feature (Step Debugger)"
       }
     ],
     "viewsContainers": {
@@ -1033,6 +1038,70 @@
           "meta.embedded.block.xml": "xml"
         }
       }
+    ],
+    "breakpoints": [
+      {
+        "language": "karate-dsl"
+      },
+      {
+        "language": "karate"
+      },
+      {
+        "language": "gherkin"
+      },
+      {
+        "language": "feature"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "karate-dsl",
+        "label": "Karate (free step debugger)",
+        "languages": [
+          "karate-dsl",
+          "karate",
+          "gherkin",
+          "feature"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "feature": {
+                "type": "string",
+                "description": "Path to the .feature file to debug",
+                "default": "${file}"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Stop before the first step",
+                "default": false
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "karate-dsl",
+            "request": "launch",
+            "name": "Debug Karate feature",
+            "feature": "${file}",
+            "stopOnEntry": false
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Karate: Debug feature",
+            "description": "Debug the open Karate feature step by step",
+            "body": {
+              "type": "karate-dsl",
+              "request": "launch",
+              "name": "Debug Karate feature",
+              "feature": "${file}",
+              "stopOnEntry": false
+            }
+          }
+        ]
+      }
     ]
   },
   "scripts": {
@@ -1046,7 +1115,7 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run test:language && npm run test:grammar && npm run test:ai-routing && npm run test:scout && npm run test:workbench && npm run test:generation && npm run typecheck && npm run lint && npm run package:check",
+    "verify": "npm run build:webview && node ./scripts/check-webview-assets.cjs && node ./scripts/check-webview-protocol.cjs && node ./scripts/check-management-webview-contract.cjs && node ./scripts/check-contributions.cjs && node ./scripts/test-telemetry-collector.cjs && node ./scripts/test-management-search.cjs && npm run test:execution && npm run test:language && npm run test:grammar && npm run test:debug && npm run test:ai-routing && npm run test:scout && npm run test:workbench && npm run test:generation && npm run typecheck && npm run lint && npm run package:check",
     "test:execution": "npm run compile && node ./scripts/test-execution-engine.cjs",
     "test:generation": "npm run compile && node ./scripts/test-generation.cjs",
     "test:ai-routing": "npm run compile && node ./scripts/test-ai-routing.cjs",
@@ -1060,7 +1129,9 @@
     "test:scout:ui": "npm run build:webview && node scripts/test-scout-ui.cjs",
     "test:workbench:vscode": "npm run compile && npm run build:host && npm run build:extension && node ./scripts/test-workbench-vscode.cjs",
     "test:language": "npm run compile && node ./scripts/test-language.cjs",
-    "test:grammar": "vscode-tmgrammar-test -g syntaxes/karate.tmLanguage.json 'src/test/fixtures/language/*.feature'"
+    "test:grammar": "vscode-tmgrammar-test -g syntaxes/karate.tmLanguage.json 'src/test/fixtures/language/*.feature'",
+    "test:debug": "npm run compile && npm run build:host && node ./scripts/test-debug-host.cjs",
+    "test:language:vscode": "npm run compile && npm run build:host && npm run build:extension && node ./scripts/test-language-vscode.cjs"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

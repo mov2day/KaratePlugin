@@ -54,6 +54,7 @@ import { ScoutController } from './services/scout/ScoutController';
 import { KarateLanguageService } from './services/language/KarateLanguageService';
 import { KarateCompletionProvider } from './services/language/KarateCompletionProvider';
 import { registerSetupPrompt } from './services/language/SetupPrompt';
+import { registerKarateDebugger } from './debug/registerKarateDebugger';
 import { ReviewPrompt } from './services/growth/ReviewPrompt';
 
 let workbenchHandle: WorkbenchController | undefined;
@@ -306,6 +307,7 @@ async function activateExtension(context: vscode.ExtensionContext) {
 
     // Karate Workbench: run steps one at a time and click response fields to write assertions
     const workbench = new WorkbenchController(context);
+    context.subscriptions.push(...registerKarateDebugger((featurePath) => workbench.prepareDebugLaunch(featurePath)));
     workbench.onAssertionInserted = () => void reviewPrompt.success();
     workbenchHandle = workbench;
     context.subscriptions.push(workbench, ...workbench.register());

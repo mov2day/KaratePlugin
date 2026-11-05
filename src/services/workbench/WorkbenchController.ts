@@ -1,3 +1,4 @@
+import type { DebugLaunch } from '../../debug/KarateDebugAdapter';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -293,6 +294,55 @@ export class WorkbenchController implements vscode.Disposable, vscode.CodeLensPr
         } catch {
             return undefined;
         }
+    }
+
+    /** Resolves Java, the Karate jar, the project classpath and config for the step debugger, sharing Workbench's caches. */
+    async prepareDebugLaunch(featurePath: string): Promise<DebugLaunch> {
+        const uri = vscode.Uri.file(featurePath);
+        const folder = vscode.workspace.getWorkspaceFolder(uri);
+        if (!folder) {
+            throw new Error('Open the feature from a workspace folder.');
+        }
+        if (!vscode.workspace.isTrusted) {
+            throw new Error('Debugging runs project code, so it needs a trusted workspace.');
+        }
+        const workspaceRoot = folder.uri.fsPath;
+        const settings = readExecutionSettings(workspaceRoot);
+        const config = vscode.workspace.getConfiguration('karateDsl.workbench', uri);
+        const project = ProjectExecutionResolver.resolve({ type: 'feature', target: featurePath }, workspaceRoot, settings);
+        const javaPath = config.get<string>('javaPath', 'java') || 'java';
+        const major = await getJavaMajor(javaPath);
+        if (major !== undefined && major < 21) {
+            throw new Error(`Karate 2 needs Java 21 or newer, but found Java ${major}. Set karateDsl.workbench.javaPath to a newer Java.`);
+        }
+        const hostDir = path.join(this.context.extensionPath, 'resources', 'workbench', 'host');
+        if (!fs.existsSync(path.join(hostDir, 'KarateDebugHost.class'))) {
+            throw new Error('The debug host is missing from this build. Run "npm run build:host" and reload.');
+        }
+        const wanted = (settings.karateVersion || '').trim();
+        const useOwnVersion = settings.jarPath.trim() || (wanted && !/^1[.]/.test(wanted));
+        const jarSettings = useOwnVersion ? settings : { ...settings, karateVersion: config.get<string>('karateVersion', DEFAULT_KARATE_VERSION) };
+        const jar = await KarateCliExecutor.ensureKarateJar(this.context.extensionPath, jarSettings, project.projectRoot);
+        let classpath = this.classpaths.get(project.projectRoot);
+        if (!classpath) {
+            classpath = await resolveClasspath({
+                projectRoot: project.projectRoot,
+                strategy: project.strategy,
+                karateJar: jar.jarPath,
+                additionalClasspath: settings.additionalClasspath,
+                buildArgs: config.get<string[]>('buildArgs', [])
+            });
+            this.classpaths.set(project.projectRoot, classpath);
+        }
+        return {
+            javaPath,
+            hostDir,
+            classpath: classpath.entries,
+            feature: featurePath,
+            env: this.defaultEnv(uri),
+            configDir: project.configDir ?? findConfigDir(featurePath, project.projectRoot) ?? '',
+            workDir: project.projectRoot
+        };
     }
 
     private async startSession(document: vscode.TextDocument, env: string, scenarioKey: string): Promise<FeatureSession> {

@@ -65,6 +65,7 @@ const required = [
   'resources/scout-companion/manifest.json',
   'resources/scout-companion/browser-scripts.js',
   'resources/workbench/host/KarateWorkbenchHost.class',
+  'resources/workbench/host/KarateDebugHost.class',
   'skills/manifest.json',
   'skills/karate-v2-core.md',
   'syntaxes/karate.tmLanguage.json',
