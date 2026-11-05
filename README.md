@@ -18,8 +18,7 @@ Everything here is free and MIT, with no account or license key:
 
 Works in VS Code, Cursor, Windsurf and VSCodium.
 
-<!-- TODO(human): capture images/karate-language.png (a .feature file showing highlighting and completion) and embed it here: ![Karate syntax highlighting and completion](images/karate-language.png) -->
-<!-- TODO(human): capture images/karate-suggestions.png (ghost-text next-step suggestion) and images/karate-debugger.png (paused on a breakpoint with variables), then embed them in the 2.1.0 section below. -->
+![Karate syntax highlighting and completion](images/karate-language.png)
 
 ![Karate Workbench in VS Code: click Send to run to a step, add a status check and a variable from the response, choose a starts-with assertion from the more... list, then run the next request with the saved variable](images/karate-workbench-demo.gif)
 
@@ -30,6 +29,8 @@ Works in VS Code, Cursor, Windsurf and VSCodium.
 ## Version 2.1.0 highlights
 
 2.1.0 adds free Karate language support: syntax highlighting, folding and smart suggestions in a `karate-dsl` language mode, applied to Karate `.feature` files when the official extension is not installed (plain Cucumber projects are left alone). It also adds a free **step debugger** (breakpoints before Gherkin steps, step over/in/out, Pause, variables and an evaluate box; JavaScript statements inside a step are not stop points), a one-time offer to set up Karate for running tests and an occasional, optional review request. Nothing is sent anywhere. See the [changelog](CHANGELOG.md).
+
+![Karate debugger paused at a breakpoint with variables](images/karate-debugger.png)
 
 ## Version 2.0.6 highlights
 
