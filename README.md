@@ -1,22 +1,39 @@
-# Karate Test Management for VS Code
+# Karate Runner & Workbench: Free Karate for Cursor and VS Code
 
-Generate, run step by step, manage, and improve Karate API tests without leaving VS Code.
+**Free Karate for Cursor and VS Code.**
 
-[![Version](https://img.shields.io/badge/version-2.0.6-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
+[![Version](https://img.shields.io/badge/version-2.1.0-1688c9.svg)](https://marketplace.visualstudio.com/items?itemName=MuthuKumarKoodalingam.karate-test-generator)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.108.0+-2c9b69.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-5c6370.svg)](LICENSE)
 
-![Karate Test Management 2.0 workspace](images/karate-test-management-2.png)
+Everything here is free and MIT, with no account or license key:
 
-Karate Test Management brings test creation, execution, coverage, quality, and maintenance into one professional workspace. Use the compact Activity Bar view for quick actions, then open the expanded workspace when you need the full test library, run history, quality queue, or import tools.
+- **Syntax highlighting** for Karate steps, `match` operators, fuzzy markers, `#(...)` expressions and embedded JSON, XML and JavaScript.
+- **Folding and completion** for step keywords, `match` operators, `#` markers and `read('...')` file paths.
+- **Run and Test Explorer** for features and scenarios, with CodeLens above each one.
+- **Karate Workbench**: run a scenario one step at a time and click response fields to write assertions.
+- **Test generation** from OpenAPI, Postman, HAR, GraphQL, Confluence and Jira.
 
-## Version 2.0.6 highlights
+Works in VS Code, Cursor, Windsurf and VSCodium.
 
-2.0.6 adds **Karate Workbench**: write Karate against real responses instead of guessing. Run a scenario one step at a time, see what the API returned beside your code, and turn any field into an assertion with a click. Everything it writes is plain Karate in your own `.feature` file.
+<!-- TODO(human): capture images/karate-language.png (a .feature file showing highlighting and completion) and embed it here. -->
 
 ![Karate Workbench in VS Code: click Send to run to a step, add a status check and a variable from the response, choose a starts-with assertion from the more... list, then run the next request with the saved variable](images/karate-workbench-demo.gif)
 
 *Click **Send**, click response fields to add `status`, `def` and advanced assertions, then send the next request.*
+
+**Works alongside the official Karate extension.** If it is installed, this extension leaves the language mode to it and keeps providing running, Workbench and generation. The **Karate: Use Karate Language Mode** command switches a file to this extension's mode on request, and `karateDsl.language.autoDetect` turns automatic detection off.
+
+## Version 2.1.0 highlights
+
+2.1.0 adds free Karate language support: syntax highlighting, folding and completion in a `karate-dsl` language mode, applied to Karate `.feature` files when the official extension is not installed (plain Cucumber projects are left alone). It also adds a one-time offer to set up Karate for running tests and an occasional, optional review request. Nothing is sent anywhere. See the [changelog](CHANGELOG.md).
+
+## Version 2.0.6 highlights
+
+
+2.0.6 adds **Karate Workbench**: write Karate against real responses instead of guessing. Run a scenario one step at a time, see what the API returned beside your code, and turn any field into an assertion with a click. Everything it writes is plain Karate in your own `.feature` file.
+
+
 
 ### Karate Workbench at a glance
 

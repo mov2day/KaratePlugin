@@ -5,6 +5,20 @@ All notable changes to the Karate Test Generator extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-11-05
+
+### Theme: Free Karate language support
+
+### Added
+- **Karate language mode (`karate-dsl`).** Syntax highlighting (steps, `match` operators, fuzzy markers, `#(...)` expressions, tags, example tables, embedded JSON, XML and JavaScript) and folding for Karate `.feature` files. It is applied automatically only when the official Karate extension is not installed and the file or workspace looks like Karate; plain Cucumber files are left alone. New command **Karate: Use Karate Language Mode** and setting `karateDsl.language.autoDetect`.
+- **Completion** for step keywords, `match` operators, fuzzy markers and `read('...')` / `classpath:` file paths, in the `karate-dsl` mode only.
+- **Set up prompt.** The first time a Karate feature is opened in a project with nothing runnable set up, a one-time message offers to download Karate through the existing verified download.
+- **Review request.** After a few successful runs or Workbench assertions, a single optional prompt asks for a short review (at most twice, never again after "Don't ask again"). Setting `karateDsl.reviewPrompt.enabled` turns it off. No network calls or telemetry.
+
+### Changed
+- New display name and description to reflect free Karate support in VS Code, Cursor, Windsurf and VSCodium; new keywords; README now leads with what is included.
+- The linter also runs on `karate-dsl` documents.
+
 ## [2.0.6] - 2026-11-04
 
 ### Theme: Karate Workbench
