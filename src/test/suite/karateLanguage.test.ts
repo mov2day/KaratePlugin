@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import { isKarateText, shouldApplyKarateMode } from '../../services/language/karateDetection';
+import { buildPrompt, cleanCompletion, contextFrom, redactLine, shouldSuggest, variablesDefined } from '../../services/language/inlineSuggestionLogic';
 import { completionContext } from '../../services/language/karateCompletionContext';
 
 const base = {
@@ -91,5 +92,41 @@ suite('Review prompt state', () => {
     test('review URL follows the host editor', () => {
         assert.ok(reviewUrl('Visual Studio Code').startsWith('https://marketplace.visualstudio.com/'));
         assert.ok(reviewUrl('Cursor').startsWith('https://open-vsx.org/'));
+    });
+});
+
+suite('Inline suggestion logic', () => {
+    test('suggests only at the end of a step line or after a step on a blank indented line', () => {
+        assert.strictEqual(shouldSuggest('    * ', '', undefined), true);
+        assert.strictEqual(shouldSuggest("    Given path 'pets'", '', undefined), true);
+        assert.strictEqual(shouldSuggest('    ', '', "    * def a = 1"), true);
+        assert.strictEqual(shouldSuggest('    ', '', '  Scenario: x'), false);
+        assert.strictEqual(shouldSuggest('    * def', ' = 1', undefined), false);
+        assert.strictEqual(shouldSuggest('  # note', '', undefined), false);
+        assert.strictEqual(shouldSuggest('  Scenario: foo', '', undefined), false);
+    });
+    test('redacts secret-looking values before they leave the editor', () => {
+        assert.ok(!redactLine("    * header Authorization = 'Bearer abcdefghijklmnop'").includes('abcdefghijklmnop'));
+        assert.strictEqual(redactLine("    * def a = 'hello'"), "    * def a = 'hello'");
+    });
+    test('prompt carries context and defined variables', () => {
+        const lines = ['Feature: x', '  Scenario: y', "    * def id = 1", '    * url base', '    * '];
+        const { user, system } = buildPrompt(contextFrom(lines, 4, lines[4].length));
+        assert.ok(user.includes('Variables defined so far: id'));
+        assert.ok(user.includes('<CURSOR>'));
+        assert.ok(/ONLY the text to insert/.test(system));
+        assert.deepStrictEqual(variablesDefined(lines), ['id']);
+    });
+    test('cleans model replies into safe insertions', () => {
+        assert.strictEqual(cleanCompletion("def user = { name: 'ada' }", '    * '), "def user = { name: 'ada' }");
+        assert.strictEqual(cleanCompletion("* match response == { id: '#number' }", '    * '), "match response == { id: '#number' }");
+        assert.strictEqual(cleanCompletion("```\npath 'pets'\n```", "    Given "), "path 'pets'");
+        assert.strictEqual(cleanCompletion("status 200\n* match response == '#array'\nScenario: no", '    Then '), "status 200\n    * match response == '#array'");
+        assert.strictEqual(cleanCompletion("match response == 1", '    * '), "match response == 1");
+        assert.strictEqual(cleanCompletion("   \n", '    * '), undefined);
+        // a bare step on an empty line gets a keyword
+        assert.strictEqual(cleanCompletion("def a = 1", '    '), '* def a = 1');
+        // text the model repeated is not inserted twice
+        assert.strictEqual(cleanCompletion("* match response contains { a: 1 }", '    * match response '), "contains { a: 1 }");
     });
 });

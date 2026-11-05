@@ -10,6 +10,7 @@ Everything here is free and MIT, with no account or license key:
 
 - **Syntax highlighting** for Karate steps, `match` operators, fuzzy markers, `#(...)` expressions and embedded JSON, XML and JavaScript.
 - **Folding and completion** for step keywords, `match` operators, `#` markers and `read('...')` file paths.
+- **AI inline suggestions (opt-in)**: Copilot-style ghost text for the next Karate step, using the AI provider you chose in this extension's settings. Turn on with **Karate: Toggle AI Inline Suggestions**; the text around your cursor is sent to that provider, with secret-looking values redacted.
 - **Run and Test Explorer** for features and scenarios, with CodeLens above each one.
 - **Step debugger**: set breakpoints on Karate steps, step through a feature and inspect variables. Run **Karate: Debug Feature** or use the `karate-dsl` debug type.
 - **Karate Workbench**: run a scenario one step at a time and click response fields to write assertions.

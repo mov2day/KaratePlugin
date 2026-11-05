@@ -42,7 +42,7 @@ function scenario(name, { config, official }) {
   if (config) { fs.writeFileSync(path.join(ws, 'karate-config.js'), 'function fn() { return {}; }\n'); }
   if (name === 'plain') { fs.rmSync(path.join(ws, 'demo.feature')); fs.rmSync(path.join(ws, 'probe.feature')); }
   fs.writeFileSync(path.join(ws, '.vscode', 'settings.json'), JSON.stringify({
-    'karateDsl.execution.jarPath': path.resolve(jar), 'telemetry.telemetryLevel': 'off', 'update.mode': 'none'
+    'karateDsl.execution.jarPath': path.resolve(jar), 'karateDsl.language.inlineSuggestions.enabled': true, 'telemetry.telemetryLevel': 'off', 'update.mode': 'none'
   }));
   const common = ['--user-data-dir', path.join(base, 'u'), '--extensions-dir', path.join(base, 'x')];
   const resultFile = path.join(base, 'result.txt');

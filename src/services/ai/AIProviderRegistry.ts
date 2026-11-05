@@ -145,6 +145,23 @@ export class AIProviderRegistry {
     }
 
     /**
+     * Quiet completion for high-frequency features such as inline suggestions: uses only the configured provider,
+     * never shows a prompt or notification, and returns undefined on any failure.
+     */
+    async completeQuiet(prompt: string, opts: CompletionOptions = {}): Promise<string | undefined> {
+        if (this.aiSkippedForSession) { return undefined; }
+        try {
+            const provider = this.providers.get(this.getConfiguredProviderId());
+            if (!provider || !(await provider.isAvailable())) { return undefined; }
+            const composed = KaratePromptComposer.compose(prompt, opts.task, opts.systemPrompt);
+            return await provider.complete(composed.prompt, { ...opts, systemPrompt: composed.systemPrompt });
+        } catch (error) {
+            logger.warn(`Inline suggestion skipped: ${(error as Error)?.message ?? 'unknown error'}`);
+            return undefined;
+        }
+    }
+
+    /**
      * Check if any AI provider is available
      */
     async isAnyAvailable(): Promise<boolean> {

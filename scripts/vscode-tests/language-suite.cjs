@@ -55,6 +55,22 @@ async function karate(root) {
   assert.ok(files.includes('data/users.json'), `read() path completion, got ${files.slice(0, 5)}`);
   note('read() file path completion ok');
 
+  // AI inline suggestions (stubbed model; the real call goes through the extension's own AI provider setting)
+  const ext = vscode.extensions.getExtension('MuthuKumarKoodalingam.karate-test-generator');
+  const inline = ext.exports.inlineSuggestionsTesting;
+  assert.ok(inline, 'inline suggestion provider must be exposed for tests');
+  const seen = [];
+  inline.setCompleter(async (system, user) => { seen.push({ system, user }); return "* match response == { id: '#number' }"; });
+  const never = new vscode.CancellationTokenSource().token;
+  const items = await inline.provideInlineCompletionItems(probeDoc, at('    * '), { triggerKind: 1 }, never);
+  assert.ok(items && items.length === 1, 'one inline suggestion');
+  assert.equal(items[0].insertText, "match response == { id: '#number' }");
+  assert.ok(seen[0].user.includes('<CURSOR>'), 'prompt marks the cursor');
+  note('inline suggestion: stubbed model reply becomes ghost text, cursor marked in prompt');
+  const none = await inline.provideInlineCompletionItems(probeDoc, new vscode.Position(0, 3), { triggerKind: 1 }, never);
+  assert.equal(none, undefined, 'no suggestion on the Feature line');
+  inline.setCompleter(undefined);
+
   // Debugger
   const wantedLine = doc.getText().split('\n').findIndex(l => /def n =/.test(l)); // zero-based
   vscode.debug.addBreakpoints([new vscode.SourceBreakpoint(new vscode.Location(demo, new vscode.Position(wantedLine, 0)))]);
