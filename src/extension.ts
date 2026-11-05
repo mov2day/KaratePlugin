@@ -52,19 +52,18 @@ import { readExecutionSettings } from './services/execution/ExecutionSettings';
 import { scenarioLineFromEditorLine } from './services/execution/ExecutionArguments';
 import { ScoutController } from './services/scout/ScoutController';
 import { KarateLanguageService } from './services/language/KarateLanguageService';
-import { KarateCompletionProvider } from './services/language/KarateCompletionProvider';
-import { KarateInlineSuggestionProvider } from './services/language/KarateInlineSuggestionProvider';
+import { KarateCompletionProvider, KarateSmartInlineProvider } from './services/language/KarateCompletionProvider';
+import { WorkspaceFactsService } from './services/language/smart/WorkspaceFacts';
 import { registerSetupPrompt } from './services/language/SetupPrompt';
 import { registerKarateDebugger } from './debug/registerKarateDebugger';
 import { ReviewPrompt } from './services/growth/ReviewPrompt';
 
 let workbenchHandle: WorkbenchController | undefined;
-let inlineSuggestionsHandle: KarateInlineSuggestionProvider | undefined;
 
 /** The extension's exports are for the end-to-end tests only; they are not a supported API. */
 export async function activate(context: vscode.ExtensionContext) {
     await activateExtension(context);
-    return { workbenchTesting: workbenchHandle?.testing(), inlineSuggestionsTesting: inlineSuggestionsHandle };
+    return { workbenchTesting: workbenchHandle?.testing() };
 }
 
 async function activateExtension(context: vscode.ExtensionContext) {
@@ -283,29 +282,18 @@ async function activateExtension(context: vscode.ExtensionContext) {
         }
     };
 
+    const workspaceFacts = new WorkspaceFactsService();
     // Free Karate language mode (highlighting, folding, completion) when the official extension is absent
     context.subscriptions.push(
         new KarateLanguageService(),
         registerSetupPrompt(context),
+        workspaceFacts,
         vscode.languages.registerCompletionItemProvider(
             { language: 'karate-dsl' },
-            new KarateCompletionProvider(),
+            new KarateCompletionProvider(workspaceFacts),
             ...KarateCompletionProvider.triggerCharacters
-        )
-    );
-
-    const inlineSuggestions = new KarateInlineSuggestionProvider();
-    inlineSuggestionsHandle = inlineSuggestions;
-    context.subscriptions.push(
-        vscode.languages.registerInlineCompletionItemProvider({ language: 'karate-dsl' }, inlineSuggestions),
-        vscode.commands.registerCommand('karate-dsl.toggleInlineSuggestions', async () => {
-            const config = vscode.workspace.getConfiguration('karateDsl.language.inlineSuggestions');
-            const next = !config.get<boolean>('enabled', false);
-            await config.update('enabled', next, vscode.ConfigurationTarget.Global);
-            vscode.window.showInformationMessage(next
-                ? 'Karate AI inline suggestions are on. Text around your cursor is sent to the AI provider set in karateDsl.ai.provider.'
-                : 'Karate AI inline suggestions are off.');
-        })
+        ),
+        vscode.languages.registerInlineCompletionItemProvider({ language: 'karate-dsl' }, new KarateSmartInlineProvider())
     );
 
     // Register CodeLens provider for feature files

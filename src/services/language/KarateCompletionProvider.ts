@@ -1,12 +1,9 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import {
-    FUZZY_MARKERS,
-    MATCH_OPERATORS,
-    STEP_KEYWORDS,
-    completionContext
-} from './karateCompletionContext';
+import { smartContext } from './smart/smartContext';
+import { SmartItem, inlineSuggestion, smartItems } from './smart/smartCompletions';
+import { WorkspaceFactsService } from './smart/WorkspaceFacts';
 
 const FILE_EXTENSIONS = new Set(['.feature', '.json', '.js', '.csv', '.yaml', '.yml', '.xml', '.txt', '.graphql']);
 const IGNORED_DIRS = new Set(['node_modules', 'target', 'build', 'out', '.git']);
@@ -43,49 +40,50 @@ function classpathRoots(workspaceRoot: string): string[] {
     return roots.map(r => path.resolve(workspaceRoot, r)).filter(r => fs.existsSync(r));
 }
 
-/** Free completion for the `karate-dsl` language only. Never registered for the official `karate` id. */
+const KIND: Record<SmartItem['kind'], vscode.CompletionItemKind> = {
+    keyword: vscode.CompletionItemKind.Keyword,
+    snippet: vscode.CompletionItemKind.Snippet,
+    operator: vscode.CompletionItemKind.Operator,
+    marker: vscode.CompletionItemKind.EnumMember,
+    variable: vscode.CompletionItemKind.Variable,
+    function: vscode.CompletionItemKind.Function,
+    property: vscode.CompletionItemKind.Property,
+    value: vscode.CompletionItemKind.Value,
+    tag: vscode.CompletionItemKind.Reference
+};
+
+/**
+ * Built-in smart completion for the `karate-dsl` language only (never the official `karate` id).
+ * Everything runs locally from the open file, the project's other features and karate-config.js; no model and no network.
+ */
 export class KarateCompletionProvider implements vscode.CompletionItemProvider {
-    static readonly triggerCharacters = [' ', '#', "'", '"', '/', ':'];
+    static readonly triggerCharacters = [' ', '#', "'", '"', '/', ':', '.', '@', '('];
 
-    provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] {
+    constructor(private readonly facts?: WorkspaceFactsService) {}
+
+    async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.CompletionItem[]> {
         const linePrefix = document.lineAt(position.line).text.slice(0, position.character);
-        const context = completionContext(linePrefix);
-        switch (context.kind) {
-            case 'keyword': return this.keywords();
-            case 'operator': return MATCH_OPERATORS.map(op => {
-                const item = new vscode.CompletionItem(op, vscode.CompletionItemKind.Operator);
-                item.detail = 'match operator';
-                return item;
-            });
-            case 'marker': return FUZZY_MARKERS.map(marker => {
-                const item = new vscode.CompletionItem(marker, vscode.CompletionItemKind.EnumMember);
-                item.detail = 'fuzzy matcher';
-                return item;
-            });
-            case 'path': return this.paths(document, position, context.prefix, context.classpath);
-            default: return [];
+        const context = smartContext(linePrefix);
+        if (context.kind === 'path') {
+            return this.paths(document, position, context.prefix, context.classpath);
         }
-    }
-
-    private keywords(): vscode.CompletionItem[] {
-        const items = STEP_KEYWORDS.map(k => {
-            const item = new vscode.CompletionItem(k.label, vscode.CompletionItemKind.Keyword);
-            item.detail = k.detail;
-            return item;
+        if (context.kind === 'none') { return []; }
+        const lines = document.getText().split(/\r?\n/);
+        const facts = this.facts ? await this.facts.facts() : undefined;
+        return smartItems(context, lines, position.line, facts).map(item => {
+            const completion = new vscode.CompletionItem(item.label, KIND[item.kind]);
+            completion.detail = item.detail;
+            completion.sortText = item.sortText;
+            if (item.snippet) {
+                completion.insertText = new vscode.SnippetString(item.insertText ?? item.label);
+            } else if (item.insertText !== undefined) {
+                completion.insertText = item.insertText;
+            }
+            if (item.replaceTyped !== undefined) {
+                completion.range = new vscode.Range(position.line, position.character - item.replaceTyped, position.line, position.character);
+            }
+            return completion;
         });
-        const snippet = (label: string, body: string, detail: string): vscode.CompletionItem => {
-            const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Snippet);
-            item.insertText = new vscode.SnippetString(body);
-            item.detail = detail;
-            return item;
-        };
-        items.push(
-            snippet('match response ==', 'match response == ${1}', 'Assert the whole response'),
-            snippet('def (variable)', 'def ${1:name} = ${2}', 'Define a variable'),
-            snippet("call read('')", "call read('${1}')", 'Call another feature'),
-            snippet('configure headers', 'configure headers = ${1}', 'Set default headers')
-        );
-        return items;
     }
 
     private paths(document: vscode.TextDocument, position: vscode.Position, prefix: string, classpath: boolean): vscode.CompletionItem[] {
@@ -106,5 +104,15 @@ export class KarateCompletionProvider implements vscode.CompletionItemProvider {
             }
         }
         return items;
+    }
+}
+
+/** Ghost-text prediction of the next step from workflow rules and patterns in the same file. No model, nothing leaves the machine. */
+export class KarateSmartInlineProvider implements vscode.InlineCompletionItemProvider {
+    provideInlineCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.InlineCompletionItem[] | undefined {
+        if (document.languageId !== 'karate-dsl') { return undefined; }
+        if (!vscode.workspace.getConfiguration('karateDsl.language', document.uri).get<boolean>('smartSuggestions', true)) { return undefined; }
+        const text = inlineSuggestion(document.getText().split(/\r?\n/), position.line, position.character);
+        return text ? [new vscode.InlineCompletionItem(text, new vscode.Range(position, position))] : undefined;
     }
 }

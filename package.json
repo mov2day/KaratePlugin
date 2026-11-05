@@ -269,10 +269,6 @@
       {
         "command": "karate-dsl.debugFeature",
         "title": "Karate: Debug Feature (Step Debugger)"
-      },
-      {
-        "command": "karate-dsl.toggleInlineSuggestions",
-        "title": "Karate: Toggle AI Inline Suggestions"
       }
     ],
     "viewsContainers": {
@@ -1019,10 +1015,10 @@
           "default": true,
           "description": "Occasionally ask (at most twice) for a short review after a few successful runs. Never sends data anywhere."
         },
-        "karateDsl.language.inlineSuggestions.enabled": {
+        "karateDsl.language.smartSuggestions": {
           "type": "boolean",
-          "default": false,
-          "markdownDescription": "Show AI ghost-text suggestions (like Copilot) while typing Karate steps. Off by default: the text around your cursor is sent to the AI provider selected in `karateDsl.ai.provider`, and nothing is sent any other way. Secret-looking values on a line are redacted first."
+          "default": true,
+          "description": "Show built-in ghost-text suggestions for the next Karate step in the karate-dsl language mode. Works locally from your files; no AI model and nothing is sent anywhere."
         }
       }
     },

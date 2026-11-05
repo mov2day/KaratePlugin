@@ -1,6 +1,5 @@
 import * as assert from 'assert';
 import { isKarateText, shouldApplyKarateMode } from '../../services/language/karateDetection';
-import { buildPrompt, cleanCompletion, contextFrom, redactLine, shouldSuggest, variablesDefined } from '../../services/language/inlineSuggestionLogic';
 import { completionContext } from '../../services/language/karateCompletionContext';
 
 const base = {
@@ -95,38 +94,130 @@ suite('Review prompt state', () => {
     });
 });
 
-suite('Inline suggestion logic', () => {
-    test('suggests only at the end of a step line or after a step on a blank indented line', () => {
-        assert.strictEqual(shouldSuggest('    * ', '', undefined), true);
-        assert.strictEqual(shouldSuggest("    Given path 'pets'", '', undefined), true);
-        assert.strictEqual(shouldSuggest('    ', '', "    * def a = 1"), true);
-        assert.strictEqual(shouldSuggest('    ', '', '  Scenario: x'), false);
-        assert.strictEqual(shouldSuggest('    * def', ' = 1', undefined), false);
-        assert.strictEqual(shouldSuggest('  # note', '', undefined), false);
-        assert.strictEqual(shouldSuggest('  Scenario: foo', '', undefined), false);
+
+import { smartContext } from '../../services/language/smart/smartContext';
+import { inlineSuggestion, smartItems } from '../../services/language/smart/smartCompletions';
+import { predictNextStep } from '../../services/language/smart/predictor';
+import { parseFeature, requestState, currentScenarioSteps, variablesIn, responseKeys } from '../../services/language/smart/scenarioModel';
+
+const feature = [
+    'Feature: pets',
+    '',
+    '  Background:',
+    "    * def baseUrl = 'http://localhost:8080'",
+    '    * url baseUrl',
+    '',
+    '  Scenario: list pets',
+    "    Given path 'pet'",
+    '    When method get',
+    '    Then status 200',
+    "    And match response == '#array'",
+    '',
+    '  Scenario: create pet',
+    "    * def pet = { name: 'rex', status: 'available' }",
+    "    Given path 'pet'",
+    '    And request pet',
+    '    When method post',
+    '    Then status 201',
+    "    And match response contains { id: '#number', name: '#string' }",
+    '',
+    '  Scenario: get one',
+    "    Given path 'pet', 1",
+    '    When method get',
+    ''
+];
+const at = (needle: string, from = 0): number => feature.findIndex((l, i) => i >= from && l.includes(needle));
+
+suite('Smart context', () => {
+    test('detects member, karate api, method, status, header and configure contexts', () => {
+        assert.deepStrictEqual(smartContext('    * match response.'), { kind: 'member', object: 'response', typed: '' });
+        assert.deepStrictEqual(smartContext('    * def x = karate.ge'), { kind: 'karate-member', typed: 'ge' });
+        assert.deepStrictEqual(smartContext('    When method '), { kind: 'method', typed: '' });
+        assert.deepStrictEqual(smartContext('    Then status '), { kind: 'status' });
+        assert.deepStrictEqual(smartContext('    * header Auth'), { kind: 'header-name', typed: 'Auth' });
+        assert.deepStrictEqual(smartContext('    * header Content-Type = '), { kind: 'header-value', header: 'Content-Type' });
+        assert.deepStrictEqual(smartContext('    * configure '), { kind: 'configure-key', typed: '' });
+        assert.deepStrictEqual(smartContext("    * path 'pe"), { kind: 'url-path', typed: 'pe' });
+        assert.deepStrictEqual(smartContext('@sm'), { kind: 'tag', typed: 'sm' });
+        assert.deepStrictEqual(smartContext('    * def y = pet.'), { kind: 'member', object: 'pet', typed: '' });
+        assert.strictEqual(smartContext('    * def y = pe').kind, 'expression');
+        assert.strictEqual(smartContext('  Scenario: x').kind, 'none');
     });
-    test('redacts secret-looking values before they leave the editor', () => {
-        assert.ok(!redactLine("    * header Authorization = 'Bearer abcdefghijklmnop'").includes('abcdefghijklmnop'));
-        assert.strictEqual(redactLine("    * def a = 'hello'"), "    * def a = 'hello'");
+});
+
+suite('Smart scenario model', () => {
+    test('reads variables with shapes and keys, and the request being built', () => {
+        const model = parseFeature(feature, at('When method post') + 1);
+        const steps = currentScenarioSteps(model);
+        const vars = variablesIn(steps);
+        assert.deepStrictEqual(vars.get('pet')?.keys, ['name', 'status']);
+        assert.strictEqual(vars.get('baseUrl')?.shape, 'string');
+        const state = requestState(steps);
+        assert.strictEqual(state.hasUrl, true);
+        assert.strictEqual(state.hasRequest, true);
+        assert.strictEqual(state.method, 'post');
+        assert.deepStrictEqual(responseKeys(feature), ['id', 'name']);
     });
-    test('prompt carries context and defined variables', () => {
-        const lines = ['Feature: x', '  Scenario: y', "    * def id = 1", '    * url base', '    * '];
-        const { user, system } = buildPrompt(contextFrom(lines, 4, lines[4].length));
-        assert.ok(user.includes('Variables defined so far: id'));
-        assert.ok(user.includes('<CURSOR>'));
-        assert.ok(/ONLY the text to insert/.test(system));
-        assert.deepStrictEqual(variablesDefined(lines), ['id']);
+    test('ignores doc-string bodies', () => {
+        const lines = ['Scenario: a', '  * text x =', '  """', '  * def hidden = 1', '  """', '  * def y = 2'];
+        const names = [...variablesIn(parseFeature(lines).steps).keys()];
+        assert.ok(names.includes('y') && !names.includes('hidden'));
     });
-    test('cleans model replies into safe insertions', () => {
-        assert.strictEqual(cleanCompletion("def user = { name: 'ada' }", '    * '), "def user = { name: 'ada' }");
-        assert.strictEqual(cleanCompletion("* match response == { id: '#number' }", '    * '), "match response == { id: '#number' }");
-        assert.strictEqual(cleanCompletion("```\npath 'pets'\n```", "    Given "), "path 'pets'");
-        assert.strictEqual(cleanCompletion("status 200\n* match response == '#array'\nScenario: no", '    Then '), "status 200\n    * match response == '#array'");
-        assert.strictEqual(cleanCompletion("match response == 1", '    * '), "match response == 1");
-        assert.strictEqual(cleanCompletion("   \n", '    * '), undefined);
-        // a bare step on an empty line gets a keyword
-        assert.strictEqual(cleanCompletion("def a = 1", '    '), '* def a = 1');
-        // text the model repeated is not inserted twice
-        assert.strictEqual(cleanCompletion("* match response contains { a: 1 }", '    * match response '), "contains { a: 1 }");
+});
+
+suite('Smart suggestions', () => {
+    test('predicts the next step from workflow rules', () => {
+        assert.strictEqual(predictNextStep(feature, at('Given path', at('Scenario: get one')) + 1)?.text, 'method get');
+        assert.strictEqual(predictNextStep(feature, feature.length - 1)?.text, 'status 200');
+        const afterPost = [...feature.slice(0, at('Then status 201')), '    '];
+        assert.strictEqual(predictNextStep(afterPost, afterPost.length - 1)?.text, 'status 201');
+    });
+    test('repeats a pattern the file already uses, and says so', () => {
+        const lines = [
+            'Scenario: a', "  * path 'x'", '  * method get', '  * status 200', "  * match response == '#array'",
+            'Scenario: b', "  * path 'y'", '  * method get', '  * status 200', "  * match response == '#array'",
+            'Scenario: c', "  * path 'z'", '  * method get', '  * status 200', '  * '
+        ];
+        const prediction = predictNextStep(lines, lines.length - 1);
+        assert.strictEqual(prediction?.source, 'learned');
+        assert.strictEqual(prediction?.text, "match response == '#array'");
+    });
+    test('does not suggest what the scenario already has', () => {
+        const lines = ['Scenario: a', "  * path 'x'", '  * method get', '  * status 200', "  * match response == '#array'", '  * '];
+        assert.strictEqual(predictNextStep(lines, lines.length - 1), undefined);
+    });
+    test('ghost text for a keyword, a partial step and a blank line', () => {
+        const base = [...feature.slice(0, feature.length - 1)];
+        const lines = [...base, '    * '];
+        assert.strictEqual(inlineSuggestion(lines, lines.length - 1, 6), 'status 200');
+        const partial = [...base, '    * sta'];
+        assert.strictEqual(inlineSuggestion(partial, partial.length - 1, 9), 'tus 200');
+        const styled = [...base.slice(0, -1), "    Given path 'pet', 1", '    When method get', '    '];
+        assert.strictEqual(inlineSuggestion(styled, styled.length - 1, 4), 'Then status 200');
+        const header = [...feature, '  Scenario: z'];
+        assert.strictEqual(inlineSuggestion(header, header.length - 1, header[header.length - 1].length), undefined);
+    });
+    test('variable, member, api, method, status and tag items', () => {
+        const line = at('And request pet') ;
+        const labels = (context: ReturnType<typeof smartContext>, ln = line) => smartItems(context, feature, ln, { configVariables: ['token'], paths: ['owner'], tags: ['smoke'] }).map(i => i.label);
+        const expr = labels(smartContext('    * print p'));
+        assert.ok(expr.indexOf('pet') < expr.indexOf('response') && expr.includes('token') && expr.includes('baseUrl'));
+        assert.deepStrictEqual(labels(smartContext('    * print pet.')), ['name', 'status']);
+        assert.ok(labels(smartContext('    * print response.')).includes('id'));
+        const api = smartItems(smartContext('    * def a = karate.'), feature, line);
+        assert.ok(api.some(i => i.label === 'get' && i.insertText === 'get($1)' && i.snippet));
+        assert.ok(api.some(i => i.label === 'env' && !i.snippet));
+        const methods = smartItems(smartContext('    When method '), feature, at('When method post')).sort((a, b) => (a.sortText ?? '').localeCompare(b.sortText ?? ''));
+        assert.strictEqual(methods[0].label, 'post');
+        const statuses = smartItems(smartContext('    Then status '), feature, at('Then status 201')).sort((a, b) => (a.sortText ?? '').localeCompare(b.sortText ?? ''));
+        assert.strictEqual(statuses[0].label, '201');
+        assert.ok(labels(smartContext('@')).includes('smoke') && labels(smartContext('@')).includes('ignore'));
+        assert.ok(labels(smartContext("    * path 'o")).includes('owner') && labels(smartContext("    * path 'o")).includes('pet'));
+        assert.deepStrictEqual(labels(smartContext('    * header Authorization = ')), ["'Bearer '"]);
+    });
+    test('keyword list puts the predicted next step first', () => {
+        const items = smartItems(smartContext('    * '), feature, feature.length - 1).sort((a, b) => (a.sortText ?? '').localeCompare(b.sortText ?? ''));
+        assert.strictEqual(items[0].label, 'status 200');
+        assert.strictEqual(items[1].label, 'status');
     });
 });
