@@ -90,8 +90,8 @@ export function proposeVariants(journey: ScoutJourney): ScoutVariant[] {
     }
     const lastWrite = [...journey.requests].reverse().find(request => !['GET', 'HEAD', 'OPTIONS'].includes(request.method));
     const lastClick = lastWrite && journey.actions.find(action => action.id === lastWrite.actionId && action.kind === 'click');
-    if (lastWrite && lastClick) result.push({ id: randomUUID(), name: `Repeat ${lastClick.label}`, source: 'observed', kind: 'repeat', actionId: lastClick.id,
-        expectation: { requestId: lastWrite.id, statuses: [409], assertions: [], confirmed: false }, outcome: 'proposed', evidence: [] });
+    if (lastWrite && lastClick) {result.push({ id: randomUUID(), name: `Repeat ${lastClick.label}`, source: 'observed', kind: 'repeat', actionId: lastClick.id,
+        expectation: { requestId: lastWrite.id, statuses: [409], assertions: [], confirmed: false }, outcome: 'proposed', evidence: [] });}
     return result.slice(0, 12);
 }
 

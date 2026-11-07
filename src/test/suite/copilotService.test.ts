@@ -4,7 +4,7 @@ import { CopilotService } from '../../services/copilotService';
 
 suite('CopilotService Test Suite', () => {
     let originalSelectChatModels: any;
-    let mockModels: any[] = [];
+    const mockModels: any[] = [];
 
     setup(() => {
         // Mock vscode.lm.selectChatModels

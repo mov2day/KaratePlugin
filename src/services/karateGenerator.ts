@@ -356,7 +356,7 @@ export class KarateGenerator {
     private applyTemplate(feature: KarateFeature): string {
         if (!this.template) return '';
 
-        let content = this.template
+        const content = this.template
             .replace('{{featureName}}', feature.name)
             .replace('{{featureDescription}}', feature.description || '')
             .replace('{{backgroundSteps}}', feature.background ? feature.background.steps.map(s => this.stepToString(s, 4)).join('\n') : '')

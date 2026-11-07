@@ -69,9 +69,9 @@ export class LaunchedBrowserAdapter extends BrowserAdapter {
         page.on('requestfailed', request => {
             if (this.inFlight.delete(request)) this.lastNetwork = Date.now();
             const capture = this.requests.get(request);
-            if (capture && this.enabled && capture.epoch === this.epoch) this.emit('request', {
+            if (capture && this.enabled && capture.epoch === this.epoch) {this.emit('request', {
                 id: capture.id, timestamp: capture.at, actionId: capture.actionId, method: request.method(), url: request.url(), headers: {}, incomplete: 'Network request did not complete.'
-            } satisfies ScoutRequest);
+            } satisfies ScoutRequest);}
         });
     }
 
