@@ -2,6 +2,47 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { logger } from '../../utils/logger';
 
+export interface RunnerInfo {
+    className: string;
+    content: string;
+}
+
+const NON_FEATURE_RUNNER = /mock|verify|perf|gatling|load|stress/i;
+
+/**
+ * Scores runners for one feature, best first (ties keep the alphabetical order they arrive in).
+ * A runner that names the feature's folder or file, or sits in the same package, wins; a runner that runs the whole
+ * classpath is a fair fallback; names that suggest mocks, verification or performance runs rank lower.
+ */
+export function rankRunners(runners: RunnerInfo[], featureRelativeDir: string, featureRelativeFile: string): Array<RunnerInfo & { score: number }> {
+    const dirPackage = featureRelativeDir.replace(/\//g, '.');
+    return runners
+        .map(runner => {
+            let score = 0;
+            const simpleName = runner.className.split('.').pop() ?? runner.className;
+            const packageName = runner.className.includes('.') ? runner.className.slice(0, runner.className.lastIndexOf('.')) : '';
+            if (featureRelativeFile && runner.content.includes(featureRelativeFile)) {
+                score += 100;
+            } else if (featureRelativeDir && runner.content.includes(featureRelativeDir)) {
+                score += 80;
+            }
+            if (dirPackage && (packageName === dirPackage || packageName.startsWith(`${dirPackage}.`) || dirPackage.startsWith(`${packageName}.`))) {
+                score += 60;
+            }
+            if (/classpath:\s*["']|classpath:["']/.test(runner.content) || /\.path\(\s*["']classpath:["']/.test(runner.content)) {
+                score += 30; // runs everything on the classpath
+            }
+            if (NON_FEATURE_RUNNER.test(simpleName)) {
+                score -= 50;
+            }
+            if (/runner|karate/i.test(simpleName)) {
+                score += 10;
+            }
+            return { ...runner, score };
+        })
+        .sort((a, b) => b.score - a.score);
+}
+
 /**
  * Configuration discovered from Karate project
  */
@@ -215,7 +256,12 @@ export class ConfigDiscovery {
      * Find Java runner classes
      */
     static findRunnerClasses(workingDir: string): string[] {
-        const runners: string[] = [];
+        return Array.from(new Set(this.findRunnerFiles(workingDir).map(runner => runner.className))).sort();
+    }
+
+    /** Runner classes with their source text, so a runner can be matched to a feature by what it actually runs. */
+    static findRunnerFiles(workingDir: string): RunnerInfo[] {
+        const runners: RunnerInfo[] = [];
 
         // Search in common Java source directories
         const searchDirs = [
@@ -233,14 +279,17 @@ export class ConfigDiscovery {
             }
         }
 
-        return Array.from(new Set(runners)).sort();
+        const seen = new Set<string>();
+        return runners
+            .filter(runner => !seen.has(runner.className) && seen.add(runner.className))
+            .sort((a, b) => a.className.localeCompare(b.className));
     }
 
     /**
      * Find runners recursively in a directory
      */
-    private static findRunnersInDir(dir: string): string[] {
-        const runners: string[] = [];
+    private static findRunnersInDir(dir: string): RunnerInfo[] {
+        const runners: RunnerInfo[] = [];
 
         try {
             const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -259,7 +308,7 @@ export class ConfigDiscovery {
                         if (this.isKarateRunner(content)) {
                             const className = this.extractClassName(content, fullPath);
                             if (className) {
-                                runners.push(className);
+                                runners.push({ className, content });
                             }
                         }
                     } catch { /* ignore read errors */ }
@@ -374,34 +423,30 @@ export class ConfigDiscovery {
      * Get the best runner class for a given feature file
      */
     static getRunnerForFeature(workingDir: string, featurePath: string): string | undefined {
-        const runners = this.findRunnerClasses(workingDir);
-
+        const runners = this.findRunnerFiles(workingDir);
         if (runners.length === 0) {
             return undefined;
         }
-
-        // Try to find a runner in the same package as the feature
-        const featureDir = path.dirname(featurePath);
-
-        // Try multiple possible java roots
+        if (runners.length === 1) {
+            return runners[0].className;
+        }
         const javaRoots = ['src/test/java', 'src/test/resources', 'src/main/java', 'src/main/resources', 'test', 'tests'];
-
+        let relativeDir = '';
+        let relativeFile = '';
         for (const root of javaRoots) {
             const rootPath = path.join(workingDir, root);
-            if (featureDir.startsWith(rootPath)) {
-                const relativePath = path.relative(rootPath, featureDir);
-                const packagePrefix = relativePath.replace(/\\/g, '/').replace(/\//g, '.');
-
-                const matchingRunner = runners.find(runner => runner.startsWith(packagePrefix));
-                if (matchingRunner) {
-                    return matchingRunner;
-                }
+            const relative = path.relative(rootPath, featurePath);
+            if (!relative.startsWith('..') && !path.isAbsolute(relative)) {
+                relativeFile = relative.replace(/\\/g, '/');
+                relativeDir = path.posix.dirname(relativeFile) === '.' ? '' : path.posix.dirname(relativeFile);
+                break;
             }
         }
-
-        // A single project runner is safe. Multiple unmatched runners are
-        // ambiguous and must be resolved by an explicit runnerClass setting.
-        return runners.length === 1 ? runners[0] : undefined;
+        const ranked = rankRunners(runners, relativeDir, relativeFile);
+        if (ranked.length > 1 && ranked[0].score === ranked[1].score) {
+            logger.warn(`Several Karate runners fit ${featurePath} equally (${ranked.filter(r => r.score === ranked[0].score).map(r => r.className).join(', ')}); using ${ranked[0].className}. Set karateDsl.execution.runnerClass to choose another.`);
+        }
+        return ranked[0].className;
     }
 
     /**

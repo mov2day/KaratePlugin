@@ -51,13 +51,20 @@ import { QualityWorkflowService } from './services/workspace/QualityWorkflowServ
 import { readExecutionSettings } from './services/execution/ExecutionSettings';
 import { scenarioLineFromEditorLine } from './services/execution/ExecutionArguments';
 import { ScoutController } from './services/scout/ScoutController';
+import { KarateLanguageService } from './services/language/KarateLanguageService';
+import { KarateCompletionProvider, KarateFoldingProvider, KarateSmartInlineProvider } from './services/language/KarateCompletionProvider';
+import { WorkspaceFactsService } from './services/language/smart/WorkspaceFacts';
+import { registerSetupPrompt } from './services/language/SetupPrompt';
+import { registerKarateDebugger } from './debug/registerKarateDebugger';
+import { ReviewPrompt } from './services/growth/ReviewPrompt';
 
 let workbenchHandle: WorkbenchController | undefined;
+let executorHandle: TestExecutor | undefined;
 
 /** The extension's exports are for the end-to-end tests only; they are not a supported API. */
 export async function activate(context: vscode.ExtensionContext) {
     await activateExtension(context);
-    return { workbenchTesting: workbenchHandle?.testing() };
+    return { workbenchTesting: workbenchHandle?.testing(), executionTesting: executorHandle };
 }
 
 async function activateExtension(context: vscode.ExtensionContext) {
@@ -170,6 +177,7 @@ async function activateExtension(context: vscode.ExtensionContext) {
 
     // Initialize test executor
     const testExecutor = new TestExecutor(context.extensionPath);
+    executorHandle = testExecutor;
     const zephyrPublisher = new ZephyrScalePublisher(context);
 
     // Test history, flakiness, and quality findings are scoped to the folder that
@@ -264,8 +272,10 @@ async function activateExtension(context: vscode.ExtensionContext) {
         .getConfiguration('karateDsl.execution', vscode.Uri.file(scopePath))
         .get<boolean>('autoOpenReport', true);
 
+    const reviewPrompt = new ReviewPrompt(context);
     const showExecutionNotification = (result: TestExecutionResult, label: string): void => {
         if (result.status === 'success') {
+            void reviewPrompt.success();
             vscode.window.showInformationMessage(`${label}: ${result.summary.passed}/${result.summary.totalScenarios} passed`);
         } else if (result.status === 'failed') {
             vscode.window.showErrorMessage(`${label}: ${result.summary.failed} failed, ${result.summary.passed} passed`);
@@ -273,6 +283,21 @@ async function activateExtension(context: vscode.ExtensionContext) {
             vscode.window.showErrorMessage(`${label}: ${result.error || 'execution failed'}`);
         }
     };
+
+    const workspaceFacts = new WorkspaceFactsService();
+    // Free Karate language mode (highlighting, folding, completion) when the official extension is absent
+    context.subscriptions.push(
+        new KarateLanguageService(),
+        registerSetupPrompt(context),
+        workspaceFacts,
+        vscode.languages.registerCompletionItemProvider(
+            { language: 'karate-dsl' },
+            new KarateCompletionProvider(workspaceFacts),
+            ...KarateCompletionProvider.triggerCharacters
+        ),
+        vscode.languages.registerInlineCompletionItemProvider({ language: 'karate-dsl' }, new KarateSmartInlineProvider(workspaceFacts)),
+        vscode.languages.registerFoldingRangeProvider({ language: 'karate-dsl' }, new KarateFoldingProvider())
+    );
 
     // Register CodeLens provider for feature files
     const codeLensProvider = new TestCodeLensProvider();
@@ -289,6 +314,8 @@ async function activateExtension(context: vscode.ExtensionContext) {
 
     // Karate Workbench: run steps one at a time and click response fields to write assertions
     const workbench = new WorkbenchController(context);
+    context.subscriptions.push(...registerKarateDebugger((featurePath) => workbench.prepareDebugLaunch(featurePath)));
+    workbench.onAssertionInserted = () => void reviewPrompt.success();
     workbenchHandle = workbench;
     context.subscriptions.push(workbench, ...workbench.register());
 

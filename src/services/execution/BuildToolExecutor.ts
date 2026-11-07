@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { TestExecutionOptions } from '../../types';
 import { logger } from '../../utils/logger';
 import { ConfigDiscovery } from './ConfigDiscovery';
-import { buildKarateArguments, normalizedFeaturePath, serializeKarateOptions } from './ExecutionArguments';
+import { buildKarateArguments, normalizedFeaturePath, reportFormatArguments, serializeKarateOptions } from './ExecutionArguments';
 import { ExecutionRuntimeSettings } from './ExecutionSettings';
 import { ProcessResult, ProcessRunner } from './ProcessRunner';
 import { ResolvedExecutionProject } from './ProjectExecutionResolver';
@@ -34,7 +34,7 @@ export class BuildToolExecutor {
         const args = [settings.mavenGoal || 'test'];
         const runner = this.resolveRunner(options, project);
         if (runner) args.push(`-Dtest=${runner}${project.runnerMethod ? `#${project.runnerMethod}` : ''}`);
-        args.push(`-Dkarate.options=${serializeKarateOptions([...buildKarateArguments(options, project.configDir), ...settings.karateArgs])}`);
+        args.push(`-Dkarate.options=${serializeKarateOptions([...buildKarateArguments(options, project.configDir), ...reportFormatArguments(settings.karateArgs), ...settings.karateArgs])}`);
         args.push(`-Dkarate.output.dir=${outputDirectory}`);
         this.addSystemProperties(args, options, settings);
         if (settings.jvmArgs.length) args.push(`-DargLine=${settings.jvmArgs.join(' ')}`);
@@ -45,7 +45,7 @@ export class BuildToolExecutor {
         const args = [settings.gradleTask || 'test'];
         const runner = this.resolveRunner(options, project);
         if (runner) args.push('--tests', `${runner}${project.runnerMethod ? `.${project.runnerMethod}` : ''}`);
-        args.push(`-Dkarate.options=${serializeKarateOptions([...buildKarateArguments(options, project.configDir), ...settings.karateArgs])}`);
+        args.push(`-Dkarate.options=${serializeKarateOptions([...buildKarateArguments(options, project.configDir), ...reportFormatArguments(settings.karateArgs), ...settings.karateArgs])}`);
         args.push(`-Dkarate.output.dir=${outputDirectory}`);
         this.addSystemProperties(args, options, settings);
         const environment = settings.jvmArgs.length
@@ -66,7 +66,6 @@ export class BuildToolExecutor {
             const feature = normalizedFeaturePath(options);
             const matched = feature ? ConfigDiscovery.getRunnerForFeature(project.projectRoot, feature) : undefined;
             if (matched) return matched;
-            if (runners.length > 1) throw new Error(`Multiple Karate runners match this project (${runners.join(', ')}). Configure karateDsl.execution.runnerClass.`);
         }
         return runners.length === 1 ? runners[0] : undefined;
     }

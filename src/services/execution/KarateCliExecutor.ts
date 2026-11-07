@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import { spawn } from 'child_process';
 import { TestExecutionOptions } from '../../types';
 import { logger } from '../../utils/logger';
-import { buildKarateArguments } from './ExecutionArguments';
+import { buildKarateArguments, reportFormatArguments } from './ExecutionArguments';
 import { ExecutionRuntimeSettings, readExecutionSettings } from './ExecutionSettings';
 import { KNOWN_JAR_SHA256, downloadVerified, isSafeVersion, karateJarUrl } from './KarateJarDownloader';
 import { ProcessResult, ProcessRunner } from './ProcessRunner';
@@ -202,7 +202,9 @@ export class KarateCliExecutor {
         ];
         const environment = settings.systemProperties['karate.env'] || options.environment;
         if (environment) args.push('--env', environment);
-        args.push('--output', outputDirectory, ...settings.karateArgs);
+        // Karate 2 only writes HTML by default; the extension reads Cucumber JSON.
+        const formats = jar.version.startsWith('2') || jar.customPath ? reportFormatArguments(settings.karateArgs) : [];
+        args.push('--output', outputDirectory, ...formats, ...settings.karateArgs);
         logger.info(`Executing Karate CLI in ${project.projectRoot}; report output ${outputDirectory}`);
         return ProcessRunner.run('java', args, project.projectRoot, cancellationToken);
     }

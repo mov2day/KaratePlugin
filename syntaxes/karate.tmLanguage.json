@@ -1,0 +1,127 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Karate",
+  "scopeName": "source.karate-dsl",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#tag-line" },
+    { "include": "#section" },
+    { "include": "#table-row" },
+    { "include": "#step" },
+    { "include": "#docstring" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "^\\s*(#.*)$",
+      "captures": { "1": { "name": "comment.line.number-sign.karate" } }
+    },
+    "tag-line": {
+      "begin": "^\\s*(?=@)",
+      "end": "$",
+      "patterns": [
+        { "match": "@[\\w.\\-]+(=[^\\s@]+)?", "name": "entity.name.tag.karate" },
+        { "match": "#.*$", "name": "comment.line.number-sign.karate" }
+      ]
+    },
+    "section": {
+      "match": "^\\s*(Feature|Background|Scenario Outline|Scenario Template|Scenario|Examples|Rule)(:)(.*)$",
+      "captures": {
+        "1": { "name": "keyword.other.section.karate" },
+        "2": { "name": "punctuation.separator.karate" },
+        "3": { "name": "entity.name.section.karate" }
+      }
+    },
+    "table-row": {
+      "begin": "^\\s*(\\|)",
+      "beginCaptures": { "1": { "name": "punctuation.separator.table.karate" } },
+      "end": "$",
+      "name": "meta.table.row.karate",
+      "patterns": [
+        { "match": "\\|", "name": "punctuation.separator.table.karate" },
+        { "include": "#value" }
+      ]
+    },
+    "step": {
+      "begin": "^\\s*(\\*|Given|When|Then|And|But)\\b\\s*",
+      "beginCaptures": { "1": { "name": "keyword.control.step.karate" } },
+      "end": "$",
+      "name": "meta.step.karate",
+      "patterns": [
+        { "include": "#step-keyword" },
+        { "include": "#match-operator" },
+        { "include": "#inline-function" },
+        { "include": "#value" }
+      ]
+    },
+    "step-keyword": {
+      "match": "\\G(url|path|method|status|params|param|headers|header|cookies|cookie|form field|form|field|request|def|text|yaml|csv|string|json|xmlstring|xml|bytes|copy|table|replace|match|assert|print|callonce|call|configure|eval|retry until|retry|until|soap action|multipart file|multipart field|multipart|listen)\\b",
+      "name": "support.function.step.karate"
+    },
+    "match-operator": {
+      "match": "(?<=\\s)(==|!=|!contains|contains only|contains any|contains deep|contains|within|each)(?=\\s)",
+      "name": "keyword.operator.match.karate"
+    },
+    "inline-function": {
+      "begin": "\\b(function)\\s*(\\()",
+      "beginCaptures": {
+        "1": { "name": "storage.type.function.karate" },
+        "2": { "name": "punctuation.definition.parameters.begin.karate" }
+      },
+      "end": "$",
+      "contentName": "meta.embedded.block.javascript",
+      "patterns": [{ "include": "source.js" }]
+    },
+    "docstring": {
+      "patterns": [
+        {
+          "begin": "^(\\s*)(\"\"\")(?=\\s*\\n\\s*[\\{\\[])",
+          "end": "^(\\s*)(\"\"\")",
+          "name": "string.quoted.docstring.karate",
+          "beginCaptures": { "2": { "name": "punctuation.definition.string.begin.karate" } },
+          "endCaptures": { "2": { "name": "punctuation.definition.string.end.karate" } },
+          "contentName": "meta.embedded.block.json",
+          "patterns": [{ "include": "#embedded-expression" }, { "include": "source.json" }]
+        },
+        {
+          "begin": "^(\\s*)(\"\"\")(?=\\s*\\n\\s*<)",
+          "end": "^(\\s*)(\"\"\")",
+          "name": "string.quoted.docstring.karate",
+          "beginCaptures": { "2": { "name": "punctuation.definition.string.begin.karate" } },
+          "endCaptures": { "2": { "name": "punctuation.definition.string.end.karate" } },
+          "contentName": "meta.embedded.block.xml",
+          "patterns": [{ "include": "#embedded-expression" }, { "include": "text.xml" }]
+        },
+        {
+          "begin": "^(\\s*)(\"\"\")",
+          "end": "^(\\s*)(\"\"\")",
+          "name": "string.quoted.docstring.karate",
+          "beginCaptures": { "2": { "name": "punctuation.definition.string.begin.karate" } },
+          "endCaptures": { "2": { "name": "punctuation.definition.string.end.karate" } },
+          "contentName": "meta.embedded.block.javascript",
+          "patterns": [{ "include": "source.js" }]
+        }
+      ]
+    },
+    "embedded-expression": {
+      "match": "#{1,2}\\([^)]*\\)",
+      "name": "meta.embedded.expression.karate variable.other.embedded.karate"
+    },
+    "fuzzy-marker": {
+      "match": "#(?:string|number|boolean|array|object|null|notnull|present|notpresent|ignore|uuid|regex|date|datetime|ignore|\\[[^\\]]*\\]|\\?)",
+      "name": "constant.language.fuzzy.karate"
+    },
+    "value": {
+      "patterns": [
+        { "include": "#embedded-expression" },
+        { "include": "#fuzzy-marker" },
+        { "match": "\\b(read|karate\\.[A-Za-z_]\\w*)(?=\\s*\\()", "name": "support.function.builtin.karate" },
+        { "match": "\\bkarate\\.[A-Za-z_]\\w*", "name": "support.function.builtin.karate" },
+        { "match": "\\b(response|responseStatus|responseHeaders|responseTime|responseCookies|responseType|request|karate|read|call|callonce)\\b", "name": "variable.language.karate" },
+        { "match": "\\b(true|false|null)\\b", "name": "constant.language.karate" },
+        { "match": "(?<![\\w.])-?\\d+(\\.\\d+)?\\b", "name": "constant.numeric.karate" },
+        { "match": "'(?:[^'\\\\]|\\\\.)*'", "name": "string.quoted.single.karate" },
+        { "match": "\"(?:[^\"\\\\]|\\\\.)*\"", "name": "string.quoted.double.karate" }
+      ]
+    }
+  }
+}

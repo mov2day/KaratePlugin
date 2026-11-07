@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { BuildToolExecutor } from '../../services/execution/BuildToolExecutor';
 import { ConfigDiscovery } from '../../services/execution/ConfigDiscovery';
-import { buildKarateArguments, scenarioLineFromEditorLine } from '../../services/execution/ExecutionArguments';
+import { buildKarateArguments, reportFormatArguments, scenarioLineFromEditorLine } from '../../services/execution/ExecutionArguments';
 import { ExecutionRuntimeSettings } from '../../services/execution/ExecutionSettings';
 import { KNOWN_JAR_SHA256, downloadVerified, isSafeVersion, karateJarUrl } from '../../services/execution/KarateJarDownloader';
 import { ProjectExecutionResolver } from '../../services/execution/ProjectExecutionResolver';
@@ -91,6 +91,47 @@ class CustomRunner { @Karate.Test Karate tests() { return Karate.run("classpath:
         assert.deepStrictEqual(ConfigDiscovery.findRunnerClasses(root), ['com.acme.CustomRunner']);
     });
 
+    test('picks the runner that fits when several runners exist (petstore layout)', () => {
+        const java = path.join(root, 'src', 'test', 'java', 'com', 'petstore', 'karate');
+        fs.mkdirSync(java, { recursive: true });
+        fs.writeFileSync(path.join(java, 'KarateRunnerTest.java'), `package com.petstore.karate;
+import com.intuit.karate.junit5.Karate;
+class KarateRunnerTest { @Karate.Test Karate all() { return Karate.run("classpath:features"); } }
+`);
+        fs.writeFileSync(path.join(java, 'VerifyMocksTest.java'), `package com.petstore.karate;
+import com.intuit.karate.Runner;
+class VerifyMocksTest { void run() { Runner.path("classpath:mocks").parallel(1); } }
+`);
+        const feature = path.join(root, 'src', 'test', 'resources', 'features', 'api.feature');
+        fs.mkdirSync(path.dirname(feature), { recursive: true });
+        fs.writeFileSync(feature, 'Feature: api');
+        assert.strictEqual(ConfigDiscovery.getRunnerForFeature(root, feature), 'com.petstore.karate.KarateRunnerTest');
+        // A feature outside any named folder still gets the better-named runner instead of an error.
+        const other = path.join(root, 'elsewhere', 'x.feature');
+        assert.strictEqual(ConfigDiscovery.getRunnerForFeature(root, other), 'com.petstore.karate.KarateRunnerTest');
+        fs.writeFileSync(path.join(root, 'pom.xml'), '<project/>');
+        const options: TestExecutionOptions = { type: 'feature', target: feature, buildTool: 'maven' };
+        const project = ProjectExecutionResolver.resolve(options, root, {});
+        const plan = BuildToolExecutor.buildMavenPlan(options, project, defaults, path.join(root, 'reports'));
+        assert.ok(plan.args.includes('-Dtest=com.petstore.karate.KarateRunnerTest'));
+    });
+
+    test('a configured runnerClass always wins over discovery', () => {
+        const java = path.join(root, 'src', 'test', 'java');
+        fs.mkdirSync(java, { recursive: true });
+        fs.writeFileSync(path.join(java, 'A.java'), 'class A { @Karate.Test Karate t() { return Karate.run("classpath:"); } }');
+        fs.writeFileSync(path.join(java, 'B.java'), 'class B { @Karate.Test Karate t() { return Karate.run("classpath:"); } }');
+        fs.writeFileSync(path.join(root, 'pom.xml'), '<project/>');
+        const feature = path.join(java, 'x.feature');
+        fs.writeFileSync(feature, 'Feature: x');
+        const options: TestExecutionOptions = { type: 'feature', target: feature, buildTool: 'maven' };
+        const project = ProjectExecutionResolver.resolve(options, root, { runnerClass: 'B' });
+        assert.ok(BuildToolExecutor.buildMavenPlan(options, project, defaults, path.join(root, 'reports')).args.includes('-Dtest=B'));
+        // Equal candidates no longer throw.
+        const open = ProjectExecutionResolver.resolve(options, root, {});
+        assert.doesNotThrow(() => BuildToolExecutor.buildMavenPlan(options, open, defaults, path.join(root, 'reports')));
+    });
+
     test('preserves the exact scenario line including Windows-style drive prefixes', () => {
         const args = buildKarateArguments({
             type: 'scenario',
@@ -127,6 +168,47 @@ class CustomRunner { @Karate.Test Karate tests() { return Karate.run("classpath:
         const plan = BuildToolExecutor.buildMavenPlan(options, project, defaults, path.join(root, 'reports'));
         assert.ok(plan.args.includes('-Dtest=com.acme.CustomRunner#smoke'));
         assert.ok(plan.args.some(arg => arg.startsWith('-Dkarate.options=') && arg.includes('happy path.feature:9')));
+    });
+
+    test('reads Karate 2 Cucumber JSON reports and maps them back to the real feature file', () => {
+        const featureFile = path.join(root, 'src', 'test', 'resources', 'features', 'pets.feature');
+        fs.mkdirSync(path.dirname(featureFile), { recursive: true });
+        fs.writeFileSync(featureFile, 'Feature: pets');
+        const dir = path.join(root, 'build', 'karate-reports', 'cucumber-json');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'features.pets.json'), JSON.stringify([{
+            id: 'pets', uri: 'features/pets.feature', name: 'Pet operations', keyword: 'Feature', line: 1,
+            elements: [
+                { id: 'a', name: 'ok', keyword: 'Scenario', line: 3, type: 'scenario', tags: [{ name: '@smoke' }], steps: [
+                    { keyword: 'Given ', name: "path 'pet'", line: 4, result: { status: 'passed', duration: 2000000 } },
+                    { keyword: 'Then ', name: 'status 200', line: 5, result: { status: 'passed', duration: 1000000 } }] },
+                { id: 'b', name: 'bad', keyword: 'Scenario', line: 7, type: 'scenario', steps: [
+                    { keyword: '* ', name: 'match 1 == 2', line: 8, result: { status: 'failed', duration: 500000, error_message: 'match failed' } },
+                    { keyword: '* ', name: 'print 1', line: 9, result: { status: 'skipped', duration: 0 } }] }
+            ]
+        }]));
+        const found = ResultParser.findCucumberJsonDirectory(root, 0);
+        assert.strictEqual(found, dir);
+        const result = ResultParser.parseCucumberJson(dir, root);
+        assert.strictEqual(result.summary!.totalScenarios, 2);
+        assert.strictEqual(result.summary!.passed, 1);
+        assert.strictEqual(result.summary!.failed, 1);
+        assert.strictEqual(result.status, 'failed');
+        assert.strictEqual(result.features![0].absolutePath, featureFile);
+        assert.strictEqual(result.features![0].scenarios[0].tags![0], '@smoke');
+        assert.strictEqual(result.features![0].scenarios[1].error, 'match failed');
+        assert.strictEqual(result.features![0].scenarios[0].duration, 3);
+        assert.strictEqual(ResultParser.findCucumberJsonDirectory(root, Date.now() + 60_000), null, 'stale reports are ignored');
+    });
+
+    test('asks for Cucumber JSON next to HTML unless the user chose formats', () => {
+        assert.deepStrictEqual(reportFormatArguments([]), ['-f', 'html,cucumber:json']);
+        assert.deepStrictEqual(reportFormatArguments(['--format', 'junit:xml']), []);
+        fs.writeFileSync(path.join(root, 'pom.xml'), '<project/>');
+        const options: TestExecutionOptions = { type: 'feature', target: path.join(root, 'a.feature'), buildTool: 'maven' };
+        const project = ProjectExecutionResolver.resolve(options, root, { runnerClass: 'com.acme.R' });
+        const plan = BuildToolExecutor.buildMavenPlan(options, project, defaults, path.join(root, 'reports'));
+        assert.ok(plan.args.some(arg => arg.startsWith('-Dkarate.options=') && arg.includes('-f html,cucumber:json')));
     });
 
     test('ignores stale reports and maps reported feature paths back to absolute files', () => {
