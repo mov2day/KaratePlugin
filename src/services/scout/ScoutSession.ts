@@ -127,18 +127,18 @@ export class ScoutSession extends EventEmitter {
             journey.baselineConfirmed = command.baselineConfirmed;
             journey.expectations.forEach(expectation => { expectation.confirmed = command.baselineConfirmed!; });
         }
-        if (command.dependencies) for (const changed of command.dependencies) {
+        if (command.dependencies) {for (const changed of command.dependencies) {
             const dependency = journey.dependencies.find(item => item.id === changed.id);
             if (!dependency || !dependency.candidates.some(candidate => candidate.requestId === changed.fromRequestId && candidate.pointer === changed.fromPointer)) throw new Error('Choose one of the observed data sources.');
             Object.assign(dependency, { fromRequestId: changed.fromRequestId, fromPointer: changed.fromPointer, confirmed: changed.confirmed });
-        }
-        if (command.variants) for (const changed of command.variants) {
+        }}
+        if (command.variants) {for (const changed of command.variants) {
             const variant = journey.variants.find(item => item.id === changed.id);
             if (!variant || !journey.requests.some(request => request.id === changed.expectation.requestId) || !validExpectation(changed.expectation)) throw new Error('Unknown variation or invalid expectation.');
             if (variant.kind === 'repeat' && !journey.requests.some(request => request.id === changed.expectation.requestId && request.actionId === variant.actionId)) throw new Error('A repeat variation must check a request triggered by that repeated action.');
             variant.expectation = variant.kind === 'baseline' ? { ...journey.expectations[journey.expectations.length - 1], confirmed: changed.expectation.confirmed } : changed.expectation;
             variant.outcome = 'proposed'; variant.evidence = []; variant.verifiedAt = undefined;
-        }
+        }}
         if (command.discardVariantIds) journey.variants = journey.variants.filter(variant => !command.discardVariantIds!.includes(variant.id));
         if (command.auth) journey.verification.auth = command.auth;
         journey.verification.browser = undefined; journey.verification.karate = undefined;

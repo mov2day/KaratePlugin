@@ -191,7 +191,7 @@ export class PostmanToKarateConverter {
      */
     private parseUrlForKarate(url: string, variables: Map<string, string>): { baseUrl: string; path: string } {
         // Replace Postman variables {{var}} with Karate variables
-        let processedUrl = this.replaceVariables(url, variables);
+        const processedUrl = this.replaceVariables(url, variables);
 
         try {
             const urlObj = new URL(processedUrl);

@@ -291,7 +291,7 @@ export class FeatureStructurer {
      * Convert a step to feature file string
      */
     private static stepToString(step: KarateStep): string {
-        let line = `    ${step.keyword} ${step.text}`;
+        const line = `    ${step.keyword} ${step.text}`;
 
         if (step.docString) {
             return `${line}\n    """\n${step.docString}\n    """`;
